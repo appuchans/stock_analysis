@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  stock-analysis:
+    build: .
+    container_name: stock-analysis-app
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./logs:/app/logs
+    command: ["python", "-m", "stock_analysis.main", "--help"]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: stock-analysis-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: stock-analysis-postgres
+    environment:
+      - POSTGRES_DB=stock_analysis
+      - POSTGRES_USER=stock_analysis
+      - POSTGRES_PASSWORD=stock_analysis_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  postgres_data:
