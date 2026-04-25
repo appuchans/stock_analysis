@@ -4,9 +4,10 @@ from typing import List, Any
 
 from .base_agent import BaseAgent
 from ..tools.free_data_collection import (
-    YahooFinanceTool, FreeSECFilingTool, FreeFREDTool, 
+    YahooFinanceTool, FreeSECFilingTool, FreeFREDTool,
     FreeNewsTool, FreeEconomicDataTool, FreeWebSearchTool,
-    FreeCompetitorAnalysisTool, FreeIndustryAnalysisTool
+    FreeCompetitorAnalysisTool, FreeIndustryAnalysisTool,
+    ParallelDataCollectionTool,
 )
 from ..config.settings import settings
 
@@ -22,7 +23,10 @@ class DataCollectorAgent(BaseAgent):
         """Get data collection tools (all free)."""
         tools = []
         
-        # Yahoo Finance (always available and free)
+        # Parallel collector — fetches all enabled sources concurrently
+        tools.append(ParallelDataCollectionTool())
+
+        # Individual tools kept for targeted queries by the agent
         tools.append(YahooFinanceTool())
         
         # Free SEC filings

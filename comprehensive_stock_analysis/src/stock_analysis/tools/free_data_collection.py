@@ -17,9 +17,12 @@ import re
 from urllib.parse import urljoin, urlparse
 import xml.etree.ElementTree as ET
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from crewai_tools import BaseTool
 from pydantic import BaseModel, Field
 
+from .cache import cached_tool
 from ..models.stock_data import (
     StockData, PriceData, VolumeData, CompanyInfo, MarketData,
     NewsData, EarningsData, AnalystData, FundamentalData as FundamentalDataModel,
@@ -33,6 +36,7 @@ class YahooFinanceTool(BaseTool):
     name: str = "Yahoo Finance Data Collector"
     description: str = "Collects comprehensive stock data from Yahoo Finance including prices, fundamentals, and company information"
     
+    @cached_tool()
     def _run(self, symbol: str, period: str = "1y", interval: str = "1d") -> Dict[str, Any]:
         """Collect data from Yahoo Finance."""
         try:
@@ -263,6 +267,7 @@ class FreeFREDTool(BaseTool):
             # Use a demo key or direct web scraping
             self.api_key = "demo"  # FRED allows demo access
     
+    @cached_tool(ttl=86400)  # FRED macro data is stable; cache for 24 h
     def _run(self, series_id: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
         """Collect economic data from FRED."""
         try:
@@ -707,3 +712,41 @@ class FreeIndustryAnalysisTool(BaseTool):
             
         except Exception as e:
             return {"error": f"Failed to analyze industry: {str(e)}"}
+
+
+class ParallelDataCollectionTool(BaseTool):
+    """Fetches data from all enabled sources concurrently and merges the results."""
+
+    name: str = "Parallel Data Collection Tool"
+    description: str = (
+        "Concurrently fetches Yahoo Finance prices, SEC filings, FRED economic data, "
+        "and news for a stock symbol, returning a merged result dict."
+    )
+
+    def _run(self, symbol: str, period: str = "1y") -> Dict[str, Any]:
+        from ..config.settings import settings
+
+        tasks = [("yahoo_finance", YahooFinanceTool()._run, {"symbol": symbol, "period": period})]
+
+        if settings.sec_edgar_enabled:
+            tasks.append(("sec_filings", FreeSECFilingTool()._run, {"symbol": symbol}))
+        if settings.fred_enabled:
+            tasks.append(
+                ("economic_data", FreeEconomicDataTool(fred_api_key=settings.fred_api_key)._run, {})
+            )
+        if settings.rss_feeds_enabled:
+            tasks.append(("news", FreeNewsTool()._run, {"symbol": symbol}))
+
+        results: Dict[str, Any] = {}
+        with ThreadPoolExecutor(max_workers=min(len(tasks), 4)) as executor:
+            futures = {executor.submit(fn, **kwargs): name for name, fn, kwargs in tasks}
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    results[name] = future.result(timeout=30)
+                except Exception as exc:
+                    results[name] = {"error": str(exc)}
+
+        results["symbol"] = symbol
+        results["collection_timestamp"] = datetime.now().isoformat()
+        return results

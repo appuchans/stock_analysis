@@ -19,6 +19,9 @@ html2text>=2020.1.16
 feedparser>=6.0.0
 newspaper3k>=0.2.8
 
+# Report generation
+jinja2>=3.1.0
+
 # Analysis and visualization
 plotly>=5.17.0
 matplotlib>=3.7.0
