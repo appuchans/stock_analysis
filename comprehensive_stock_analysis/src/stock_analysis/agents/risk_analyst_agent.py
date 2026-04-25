@@ -10,7 +10,7 @@ from ..tools.calculation_tools import FinancialCalculatorTool, RiskCalculatorToo
 class RiskAnalystAgent(BaseAgent):
     """Agent responsible for risk analyst."""
 
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4o"):
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         """Initialize the RiskAnalystAgent."""
         super().__init__("risk_analyst", llm_provider, model)
 

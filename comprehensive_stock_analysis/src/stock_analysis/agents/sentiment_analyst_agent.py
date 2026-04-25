@@ -14,7 +14,7 @@ from ..config.settings import settings
 class SentimentAnalystAgent(BaseAgent):
     """Agent responsible for sentiment analyst."""
     
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4"):
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         """Initialize the SentimentAnalystAgent."""
         super().__init__("sentiment_analyst", llm_provider, model)
     

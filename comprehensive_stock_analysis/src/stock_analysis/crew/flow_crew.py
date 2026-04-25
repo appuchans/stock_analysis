@@ -21,6 +21,7 @@ from ..agents import (
     SentimentAnalystAgent,
     TechnicalAnalystAgent,
 )
+from ..config.loader import config_loader
 from ..config.settings import settings
 from ..models.stock_data import InvestmentRecommendation, RiskMetrics, TechnicalIndicators
 
@@ -33,8 +34,9 @@ class StockAnalysisState(BaseModel):
     """Shared state carried through the analysis flow."""
     symbol: str = ""
     analysis_depth: str = "standard"  # "quick" | "standard" | "deep"
-    llm_provider: str = "openai"
-    model: str = "gpt-4o"
+    # None = resolved by BaseAgent from llm_config.yaml + env vars
+    llm_provider: Optional[str] = None
+    model: Optional[str] = None
     data: Dict[str, Any] = Field(default_factory=dict)
     technical: Dict[str, Any] = Field(default_factory=dict)
     fundamental: Dict[str, Any] = Field(default_factory=dict)
@@ -76,9 +78,14 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
       collect_data  →  (router)  →  quick / standard / deep  →  synthesize  →  report
     """
 
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4o", **kwargs: Any):
+    def __init__(
+        self,
+        llm_provider: Optional[str] = None,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ):
         super().__init__(**kwargs)
-        self._llm_provider = llm_provider
+        self._llm_provider = llm_provider  # None = read from config
         self._model = model
 
     # ── helpers ───────────────────────────────────────────────────────────────
@@ -312,7 +319,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
 class QuickAnalysisFlowCrew(StockAnalysisFlow):
     """Quick (technical + fundamental only) analysis flow."""
 
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4o"):
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         super().__init__(llm_provider=llm_provider, model=model)
 
     def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:  # type: ignore[override]
@@ -322,7 +329,7 @@ class QuickAnalysisFlowCrew(StockAnalysisFlow):
 class StockAnalysisFlowCrew(StockAnalysisFlow):
     """Standard analysis flow (technical, fundamental, risk, sentiment)."""
 
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4o"):
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         super().__init__(llm_provider=llm_provider, model=model)
 
     def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:  # type: ignore[override]
@@ -332,7 +339,7 @@ class StockAnalysisFlowCrew(StockAnalysisFlow):
 class DeepDiveAnalysisFlowCrew(StockAnalysisFlow):
     """Deep-dive analysis flow (all eight specialist agents)."""
 
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4o"):
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         super().__init__(llm_provider=llm_provider, model=model)
 
     def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:  # type: ignore[override]

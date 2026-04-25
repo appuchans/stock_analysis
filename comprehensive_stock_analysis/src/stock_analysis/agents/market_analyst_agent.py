@@ -14,7 +14,7 @@ from ..config.settings import settings
 class MarketAnalystAgent(BaseAgent):
     """Agent responsible for market analyst."""
     
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4"):
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         """Initialize the MarketAnalystAgent."""
         super().__init__("market_analyst", llm_provider, model)
     

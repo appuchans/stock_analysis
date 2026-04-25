@@ -20,10 +20,19 @@ from ..agents import (
     SentimentAnalystAgent,
     TechnicalAnalystAgent,
 )
+from ..config.loader import config_loader
 from ..config.settings import settings
 from ..models.stock_data import InvestmentRecommendation, RiskMetrics, TechnicalIndicators
 
 _logger = logging.getLogger(__name__)
+
+
+def _build_embedder_config() -> dict:
+    """Build the embedder dict for Crew memory from settings / llm_config.yaml."""
+    llm_cfg = config_loader.load_llm_config()
+    provider = settings.embedder_provider or llm_cfg.embedder.provider
+    model = settings.embedder_model or llm_cfg.embedder.model
+    return {"provider": provider, "config": {"model": model}}
 
 
 def _recommendation_guardrail(result: Any) -> Tuple[bool, Any]:
@@ -45,8 +54,12 @@ def _step_callback(step_output: Any) -> None:
 class StockAnalysisCrew:
     """Main crew for comprehensive stock analysis."""
 
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4o"):
-        """Initialize the stock analysis crew."""
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
+        """Initialize the stock analysis crew.
+
+        Pass llm_provider / model to override config/llm_config.yaml globally for
+        all agents in this crew.  None means "read from config".
+        """
         self.llm_provider = llm_provider
         self.model = model
         self._initialize_agents()
@@ -337,10 +350,7 @@ class StockAnalysisCrew:
             memory=True,
             planning=True,
             step_callback=_step_callback,
-            embedder={
-                "provider": "openai",
-                "config": {"model": "text-embedding-3-small"},
-            },
+            embedder=_build_embedder_config(),
         )
 
     # ── public API ────────────────────────────────────────────────────────────

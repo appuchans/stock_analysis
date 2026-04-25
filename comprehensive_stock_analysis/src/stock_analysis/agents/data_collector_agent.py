@@ -15,7 +15,7 @@ from ..config.settings import settings
 class DataCollectorAgent(BaseAgent):
     """Agent responsible for collecting comprehensive stock data from multiple sources."""
     
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4"):
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         """Initialize the Data Collector Agent."""
         super().__init__("data_collector", llm_provider, model)
     

@@ -9,7 +9,7 @@ from ..tools.report_tools import ReportGeneratorTool
 class ReportGeneratorAgent(BaseAgent):
     """Agent responsible for report generator."""
 
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4"):
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         """Initialize the ReportGeneratorAgent."""
         super().__init__("report_generator", llm_provider, model)
 

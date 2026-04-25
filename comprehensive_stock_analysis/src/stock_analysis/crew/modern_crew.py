@@ -21,10 +21,18 @@ from ..agents import (
     SentimentAnalystAgent,
     TechnicalAnalystAgent,
 )
+from ..config.loader import config_loader
 from ..config.settings import settings
 from ..tasks.task_factory import task_factory
 
 _logger = logging.getLogger(__name__)
+
+
+def _build_embedder_config() -> dict:
+    llm_cfg = config_loader.load_llm_config()
+    provider = settings.embedder_provider or llm_cfg.embedder.provider
+    model = settings.embedder_model or llm_cfg.embedder.model
+    return {"provider": provider, "config": {"model": model}}
 
 
 def _step_callback(step_output: Any) -> None:
@@ -35,8 +43,8 @@ def _step_callback(step_output: Any) -> None:
 class ModernStockAnalysisCrew:
     """Modern crew for comprehensive stock analysis using configuration-based approach."""
 
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4o"):
-        """Initialize the modern stock analysis crew."""
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
+        """Initialize the modern stock analysis crew.  None = read from config."""
         self.llm_provider = llm_provider
         self.model = model
         self._initialize_agents()
@@ -174,10 +182,7 @@ class ModernStockAnalysisCrew:
             memory=True,
             planning=True,
             step_callback=_step_callback,
-            embedder={
-                "provider": "openai",
-                "config": {"model": "text-embedding-3-small"},
-            },
+            embedder=_build_embedder_config(),
         )
 
     # ── public API ────────────────────────────────────────────────────────────

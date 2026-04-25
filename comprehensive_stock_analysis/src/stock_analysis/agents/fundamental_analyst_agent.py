@@ -10,7 +10,7 @@ from ..tools.calculation_tools import FinancialCalculatorTool, ValuationCalculat
 class FundamentalAnalystAgent(BaseAgent):
     """Agent responsible for fundamental analyst."""
 
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4o"):
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         """Initialize the FundamentalAnalystAgent."""
         super().__init__("fundamental_analyst", llm_provider, model)
 
