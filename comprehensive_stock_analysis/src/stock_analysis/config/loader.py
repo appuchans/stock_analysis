@@ -62,6 +62,8 @@ class LLMGlobalConfig(BaseModel):
     model: str = "gpt-4o"
     temperature: float = 0.1
     max_tokens: int = 4000
+    timeout: int = 120
+    max_retries: int = 3
 
 
 class LLMEmbedderConfig(BaseModel):
@@ -74,6 +76,7 @@ class LLMConfig(BaseModel):
     """Root LLM configuration loaded from llm_config.yaml."""
     global_defaults: LLMGlobalConfig = Field(default_factory=LLMGlobalConfig, alias="global")
     agents: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    planning: LLMGlobalConfig = Field(default_factory=lambda: LLMGlobalConfig(model="gpt-4o-mini", max_tokens=2000))
     embedder: LLMEmbedderConfig = Field(default_factory=LLMEmbedderConfig)
     provider_prefixes: Dict[str, str] = Field(default_factory=lambda: {
         "openai": "openai/",
@@ -204,6 +207,24 @@ class ConfigLoader:
         if flow_name not in flows_config:
             raise ValueError(f"Flow '{flow_name}' not found in configuration")
         return flows_config[flow_name]
+
+    def build_embedder_config(self) -> Dict[str, Any]:
+        """Return the embedder dict for Crew memory, honouring settings overrides."""
+        from .settings import settings  # local import to avoid circular dep at module load
+        llm_cfg = self.load_llm_config()
+        provider = settings.embedder_provider or llm_cfg.embedder.provider
+        model = settings.embedder_model or llm_cfg.embedder.model
+        return {"provider": provider, "config": {"model": model}}
+
+    def build_planning_llm_model_string(self) -> str:
+        """Return the LiteLLM model string for the planning LLM."""
+        llm_cfg = self.load_llm_config()
+        p = llm_cfg.planning
+        prefix = llm_cfg.provider_prefixes.get(p.provider, f"{p.provider}/")
+        model = p.model
+        if "/" in model:
+            return model
+        return f"{prefix}{model}"
 
     def reload_configs(self) -> None:
         """Invalidate all cached configs so they are reloaded on next access."""

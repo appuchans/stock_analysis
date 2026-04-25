@@ -1,6 +1,6 @@
 """Data Collector Agent for comprehensive stock data gathering."""
 
-from typing import List, Any
+from typing import List, Any, Optional
 
 from .base_agent import BaseAgent
 from ..tools.free_data_collection import (

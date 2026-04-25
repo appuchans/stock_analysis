@@ -8,9 +8,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config.settings import settings
-from .crew.flow_crew import DeepDiveAnalysisFlowCrew, QuickAnalysisFlowCrew, StockAnalysisFlowCrew
-from .crew.modern_crew import ModernStockAnalysisCrew
-from .crew.stock_analysis_crew import StockAnalysisCrew
+from .crew.modern_crew import StockAnalysisCrew
+from .crew.flow_crew import StockAnalysisFlow
 
 
 class StockAnalysisApp:
@@ -19,24 +18,27 @@ class StockAnalysisApp:
     llm_provider and model are both optional — when None (the default) the
     values come from config/llm_config.yaml (with env-var overrides).  Pass
     explicit values only when you need a one-off runtime override.
+
+    crew_type choices:
+      "standard"  — YAML-config crew with 11 agents (default)
+      "flow"      — event-driven Flow; combine with depth="quick|standard|deep"
     """
 
     def __init__(
         self,
         llm_provider: Optional[str] = None,
         model: Optional[str] = None,
-        crew_type: str = "modern",
+        crew_type: str = "standard",
+        depth: str = "standard",
     ):
         self.llm_provider = llm_provider
         self.model = model
         self.crew_type = crew_type
+        self.depth = depth
 
         crew_map = {
-            "modern": ModernStockAnalysisCrew,
             "standard": StockAnalysisCrew,
-            "flow": StockAnalysisFlowCrew,
-            "quick": QuickAnalysisFlowCrew,
-            "deep_dive": DeepDiveAnalysisFlowCrew,
+            "flow": StockAnalysisFlow,
         }
         if crew_type not in crew_map:
             raise ValueError(
@@ -48,7 +50,10 @@ class StockAnalysisApp:
     def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:
         print(f"Starting comprehensive analysis for {symbol}…")
         try:
-            result = self.crew.analyze_stock(symbol, **kwargs)
+            if self.crew_type == "flow":
+                result = self.crew.analyze_stock(symbol, analysis_depth=self.depth, **kwargs)
+            else:
+                result = self.crew.analyze_stock(symbol, **kwargs)
             if result["status"] == "completed":
                 print(f"Analysis completed for {symbol}")
             else:
@@ -104,6 +109,10 @@ LLM configuration priority (highest wins):
   CLI flags  >  env vars (LLM_PROVIDER, LLM_MODEL)  >  llm_config.yaml per-agent
   >  env vars  >  llm_config.yaml global defaults
 
+Crew types:
+  standard  — full 11-agent pipeline, YAML-configured (default)
+  flow      — event-driven Flow; use --depth to control analysis scope
+
 Examples:
   # Use defaults from config/llm_config.yaml
   python -m stock_analysis.main AAPL
@@ -111,8 +120,11 @@ Examples:
   # Override provider/model at runtime
   python -m stock_analysis.main AAPL --llm-provider anthropic --model claude-sonnet-4-6
 
-  # Analyse multiple stocks with the deep-dive flow
-  python -m stock_analysis.main AAPL MSFT GOOGL --crew-type deep_dive
+  # Flow crew with deep analysis
+  python -m stock_analysis.main AAPL --crew-type flow --depth deep
+
+  # Analyse multiple stocks
+  python -m stock_analysis.main AAPL MSFT GOOGL
 """,
     )
     parser.add_argument("symbol", nargs="+", help="Stock symbol(s) to analyse")
@@ -145,14 +157,20 @@ Examples:
     )
     parser.add_argument(
         "--crew-type",
-        default="modern",
-        choices=["modern", "standard", "flow", "quick", "deep_dive"],
-        help="Crew implementation to use (default: modern)",
+        default="standard",
+        choices=["standard", "flow"],
+        help="Crew implementation (default: standard)",
+    )
+    parser.add_argument(
+        "--depth",
+        default="standard",
+        choices=["quick", "standard", "deep"],
+        help="Analysis depth for flow crew (default: standard)",
     )
 
     args = parser.parse_args()
 
-    app = StockAnalysisApp(args.llm_provider, args.model, args.crew_type)
+    app = StockAnalysisApp(args.llm_provider, args.model, args.crew_type, args.depth)
 
     extra: Dict[str, Any] = {"timeframe": args.timeframe, "format": args.format}
     if args.config:

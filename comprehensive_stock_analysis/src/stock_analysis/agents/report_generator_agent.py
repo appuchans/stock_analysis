@@ -1,6 +1,6 @@
 """Agent for Report Generator."""
 
-from typing import List, Any
+from typing import List, Any, Optional
 
 from .base_agent import BaseAgent
 from ..tools.report_tools import ReportGeneratorTool

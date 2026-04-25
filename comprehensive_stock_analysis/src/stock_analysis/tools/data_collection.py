@@ -2,24 +2,50 @@
 
 import os
 import asyncio
-import aiohttp
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None  # type: ignore[assignment]
 import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Union
-from alpha_vantage.timeseries import TimeSeries
-from alpha_vantage.fundamentaldata import FundamentalData
-from sec_api import QueryApi, RenderApi
-from fredapi import Fred
-import quandl
+try:
+    from alpha_vantage.timeseries import TimeSeries
+    from alpha_vantage.fundamentaldata import FundamentalData
+except ImportError:
+    TimeSeries = None  # type: ignore[assignment,misc]
+    FundamentalData = None  # type: ignore[assignment,misc]
+try:
+    from sec_api import QueryApi, RenderApi
+except ImportError:
+    QueryApi = None  # type: ignore[assignment,misc]
+    RenderApi = None  # type: ignore[assignment,misc]
+try:
+    from fredapi import Fred
+except ImportError:
+    Fred = None  # type: ignore[assignment,misc]
+try:
+    import quandl
+except ImportError:
+    quandl = None  # type: ignore[assignment]
 import requests
-from bs4 import BeautifulSoup
-import feedparser
-from newspaper import Article
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None  # type: ignore[assignment,misc]
+try:
+    import feedparser
+except ImportError:
+    feedparser = None  # type: ignore[assignment]
+try:
+    from newspaper import Article
+except ImportError:
+    Article = None  # type: ignore[assignment,misc]
 import json
 
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from ..models.stock_data import (

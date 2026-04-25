@@ -52,6 +52,8 @@ class BaseAgent:
             "model": g.model,
             "temperature": g.temperature,
             "max_tokens": g.max_tokens,
+            "timeout": g.timeout,
+            "max_retries": g.max_retries,
         }
 
         # 2. Apply settings (env vars) — only when non-empty
@@ -65,13 +67,13 @@ class BaseAgent:
 
         # 3. Apply llm_config.yaml per-agent overrides
         agent_yaml = llm_file_cfg.agents.get(self.agent_name) or {}
-        for key in ("provider", "model", "temperature", "max_tokens"):
+        for key in ("provider", "model", "temperature", "max_tokens", "timeout", "max_retries"):
             if agent_yaml.get(key) is not None:
                 resolved[key] = agent_yaml[key]
 
         # 4. Apply agents.yaml llm_config block (provider/model/temperature/max_tokens)
         agent_block = self.config.llm_config or {}
-        for key in ("provider", "model", "temperature", "max_tokens"):
+        for key in ("provider", "model", "temperature", "max_tokens", "timeout", "max_retries"):
             if agent_block.get(key) is not None:
                 resolved[key] = agent_block[key]
 
@@ -113,6 +115,8 @@ class BaseAgent:
             model=litellm_model,
             temperature=self._resolved["temperature"],
             max_tokens=self._resolved["max_tokens"],
+            timeout=self._resolved["timeout"],
+            max_retries=self._resolved["max_retries"],
             api_key=settings.openai_api_key if provider == "openai"
                     else settings.anthropic_api_key if provider == "anthropic"
                     else None,
@@ -135,6 +139,7 @@ class BaseAgent:
             tools=self.tools,
             llm=self.llm,
             max_iter=self.config.max_iter,
+            respect_context_window=True,
         )
         # reasoning is opt-in via agents.yaml llm_config block
         agent_block = self.config.llm_config or {}

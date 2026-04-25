@@ -6,6 +6,15 @@ import numpy as np
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 
+# Optional heavy dependencies — tests that need them are skipped if unavailable
+try:
+    import ta as _ta_check
+    _TA_AVAILABLE = True
+except ImportError:
+    _TA_AVAILABLE = False
+
+requires_ta = pytest.mark.skipif(not _TA_AVAILABLE, reason="'ta' package not installed")
+
 from src.stock_analysis.tools.data_collection import YahooFinanceTool
 from src.stock_analysis.tools.analysis_tools import TechnicalAnalysisTool, FundamentalAnalysisTool
 from src.stock_analysis.tools.calculation_tools import (
@@ -127,6 +136,7 @@ class TestTechnicalAnalysisTool:
         assert tool.name == "Technical Analysis Tool"
         assert tool.description is not None
     
+    @requires_ta
     def test_calculate_indicators(self):
         """Test technical indicator calculations."""
         # Create sample data
@@ -155,6 +165,7 @@ class TestTechnicalAnalysisTool:
         assert indicators['sma_20'] is not None
         assert 0 <= indicators['rsi'] <= 100 if indicators['rsi'] is not None else True
     
+    @requires_ta
     def test_generate_signals(self):
         """Test signal generation."""
         # Create sample data
@@ -390,6 +401,7 @@ def sample_volume_data():
     ]
 
 
+@requires_ta
 def test_technical_analysis_integration(sample_price_data, sample_volume_data):
     """Test technical analysis with sample data."""
     tool = TechnicalAnalysisTool()
@@ -460,12 +472,14 @@ class TestTechnicalIndicatorTool:
         tool = TechnicalIndicatorTool()
         assert tool.name == "Technical Indicator Tool"
 
+    @requires_ta
     def test_moving_averages(self):
         tool = TechnicalIndicatorTool()
         result = tool._run(self._make_ohlcv(), indicator_type="moving_averages")
         assert "sma_20" in result
         assert "ema_20" in result
 
+    @requires_ta
     def test_momentum_indicators(self):
         tool = TechnicalIndicatorTool()
         result = tool._run(self._make_ohlcv(), indicator_type="momentum")

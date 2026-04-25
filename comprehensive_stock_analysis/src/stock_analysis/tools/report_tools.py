@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 
 from ..config.settings import settings
 

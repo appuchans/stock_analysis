@@ -18,6 +18,8 @@ global:
   model: gpt-4o
   temperature: 0.1
   max_tokens: 4000
+  timeout: 120        # seconds before LLM call is aborted
+  max_retries: 3      # retry attempts on transient errors
 
 # ── Per-agent overrides ────────────────────────────────────────────────────────
 # Set only the values that differ from the global defaults above.
@@ -34,6 +36,15 @@ global:
 #     provider: anthropic
 #     model: claude-haiku-4-5-20251001
 agents: {}
+
+# ── Planning LLM (used when Crew planning=True) ───────────────────────────────
+# A lighter/cheaper model is usually sufficient for the planning phase.
+# Leave blank to inherit from the global defaults above.
+planning:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0.1
+  max_tokens: 2000
 
 # ── Embedder configuration (used for Crew-level memory) ───────────────────────
 embedder:

@@ -4,16 +4,28 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
-from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
-import ta
-from scipy import stats
-from scipy.optimize import minimize
+try:
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.cluster import KMeans
+    from sklearn.decomposition import PCA
+except ImportError:
+    StandardScaler = None  # type: ignore[assignment,misc]
+    KMeans = None  # type: ignore[assignment,misc]
+    PCA = None  # type: ignore[assignment,misc]
+try:
+    import ta
+except ImportError:
+    ta = None  # type: ignore[assignment]
+try:
+    from scipy import stats
+    from scipy.optimize import minimize
+except ImportError:
+    stats = None  # type: ignore[assignment]
+    minimize = None  # type: ignore[assignment]
 import warnings
 warnings.filterwarnings('ignore')
 
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from ..models.stock_data import (

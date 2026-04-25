@@ -1,6 +1,6 @@
 """Agent for Investment Advisor."""
 
-from typing import List, Any
+from typing import List, Any, Optional
 
 from .base_agent import BaseAgent
 from ..tools.analysis_tools import ValuationTool, ComparisonTool

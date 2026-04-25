@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     embedder_provider: str = Field("", validation_alias="EMBEDDER_PROVIDER")
     embedder_model: str = Field("", validation_alias="EMBEDDER_MODEL")
 
+    # ── Crew output log ───────────────────────────────────────────────────────
+    crew_log_file: str = Field("logs/crew_output.log", validation_alias="CREW_LOG_FILE")
+
     # ── Database ──────────────────────────────────────────────────────────────
     database_url: str = Field(
         "sqlite:///./stock_analysis.db", validation_alias="DATABASE_URL"

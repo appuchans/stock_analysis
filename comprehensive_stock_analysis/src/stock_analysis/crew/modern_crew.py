@@ -1,11 +1,11 @@
-"""Modern crew implementation with configuration-based agents and tasks."""
+"""Crew implementation using configuration-based agents and tasks."""
 
 import asyncio
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from crewai import Crew, Process, Task
+from crewai import Crew, LLM, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 
 from ..agents import (
@@ -24,33 +24,26 @@ from ..agents import (
 from ..config.loader import config_loader
 from ..config.settings import settings
 from ..tasks.task_factory import task_factory
+from .event_listener import event_listener  # noqa: F401 — registers event handlers on import
 
 _logger = logging.getLogger(__name__)
 
 
-def _build_embedder_config() -> dict:
-    llm_cfg = config_loader.load_llm_config()
-    provider = settings.embedder_provider or llm_cfg.embedder.provider
-    model = settings.embedder_model or llm_cfg.embedder.model
-    return {"provider": provider, "config": {"model": model}}
-
-
-def _step_callback(step_output: Any) -> None:
-    _logger.info("[step] %s", str(step_output)[:200])
+def _build_planning_llm() -> LLM:
+    return LLM(model=config_loader.build_planning_llm_model_string())
 
 
 @CrewBase
-class ModernStockAnalysisCrew:
-    """Modern crew for comprehensive stock analysis using configuration-based approach."""
+class StockAnalysisCrew:
+    """Comprehensive stock analysis crew using YAML-configured agents and tasks."""
 
     def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
-        """Initialize the modern stock analysis crew.  None = read from config."""
         self.llm_provider = llm_provider
         self.model = model
+        self._crew_instance: Optional[Crew] = None
         self._initialize_agents()
 
     def _initialize_agents(self) -> None:
-        """Initialize all specialized agents."""
         self.data_collector = DataCollectorAgent(self.llm_provider, self.model)
         self.technical_analyst = TechnicalAnalystAgent(self.llm_provider, self.model)
         self.fundamental_analyst = FundamentalAnalystAgent(self.llm_provider, self.model)
@@ -173,7 +166,6 @@ class ModernStockAnalysisCrew:
 
     @crew
     def crew(self) -> Crew:
-        """Create the crew (used by @CrewBase machinery for self.tasks / self.agents)."""
         return Crew(
             agents=self.agents,
             tasks=self.tasks,
@@ -181,29 +173,41 @@ class ModernStockAnalysisCrew:
             verbose=True,
             memory=True,
             planning=True,
-            step_callback=_step_callback,
-            embedder=_build_embedder_config(),
+            planning_llm=_build_planning_llm(),
+            embedder=config_loader.build_embedder_config(),
+            output_log_file=settings.crew_log_file,
         )
 
     # ── public API ────────────────────────────────────────────────────────────
 
-    def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:
-        """Analyze a single stock symbol."""
-        try:
-            tasks = task_factory.create_all_tasks(self.agents_map, symbol)
-            c = Crew(
+    def _get_crew(self) -> Crew:
+        """Return cached Crew instance (built once per StockAnalysisCrew lifetime).
+
+        Passes "{symbol}" so CrewAI interpolates it from the kickoff inputs dict.
+        """
+        if self._crew_instance is None:
+            tasks = task_factory.create_all_tasks(self.agents_map, "{symbol}")
+            self._crew_instance = Crew(
                 agents=[a.get_agent() for a in self.agents_map.values()],
                 tasks=list(tasks.values()),
                 process=Process.sequential,
                 verbose=True,
                 memory=True,
                 planning=True,
-                step_callback=_step_callback,
+                planning_llm=_build_planning_llm(),
+                embedder=config_loader.build_embedder_config(),
+                output_log_file=settings.crew_log_file,
             )
-            result = c.kickoff(inputs={"symbol": symbol, **kwargs})
+        return self._crew_instance
+
+    def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:
+        """Analyze a single stock symbol."""
+        try:
+            result = self._get_crew().kickoff(inputs={"symbol": symbol, **kwargs})
             return {
                 "symbol": symbol,
                 "analysis_result": result,
+                "token_usage": result.token_usage.model_dump() if result.token_usage else None,
                 "status": "completed",
                 "timestamp": datetime.now().isoformat(),
             }
@@ -233,7 +237,9 @@ class ModernStockAnalysisCrew:
                 verbose=True,
                 memory=True,
                 planning=True,
-                step_callback=_step_callback,
+                planning_llm=_build_planning_llm(),
+                embedder=config_loader.build_embedder_config(),
+                output_log_file=settings.crew_log_file,
             )
             inputs_list = [{"symbol": s, **kwargs} for s in symbols]
             crew_results = await batch_crew.akickoff_for_each(inputs=inputs_list)
@@ -243,6 +249,7 @@ class ModernStockAnalysisCrew:
                 results[symbol] = {
                     "symbol": symbol,
                     "analysis_result": crew_result,
+                    "token_usage": crew_result.token_usage.model_dump() if crew_result.token_usage else None,
                     "status": "completed",
                     "timestamp": datetime.now().isoformat(),
                 }
@@ -261,3 +268,7 @@ class ModernStockAnalysisCrew:
                 "status": "failed",
                 "timestamp": datetime.now().isoformat(),
             }
+
+
+# Backward-compatible alias
+ModernStockAnalysisCrew = StockAnalysisCrew

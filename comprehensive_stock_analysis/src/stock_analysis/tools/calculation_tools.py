@@ -6,15 +6,22 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
-import ta
+try:
+    import ta
+except ImportError:
+    ta = None  # type: ignore[assignment]
+try:
+    from scipy import stats
+    from scipy.optimize import minimize
+except ImportError:
+    stats = None  # type: ignore[assignment]
+    minimize = None  # type: ignore[assignment]
 
 _logger = logging.getLogger(__name__)
-from scipy import stats
-from scipy.optimize import minimize
 import warnings
 warnings.filterwarnings('ignore')
 
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from ..models.stock_data import RiskLevel, RecommendationType

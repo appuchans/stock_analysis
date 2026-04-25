@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 
 
 class PortfolioAnalysisTool(BaseTool):

@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from crewai import Crew, Process, Task
+from crewai import Crew, LLM, Process, Task
 from crewai.flow.flow import Flow, listen, router, start, or_
 from pydantic import BaseModel, Field
 
@@ -24,8 +24,13 @@ from ..agents import (
 from ..config.loader import config_loader
 from ..config.settings import settings
 from ..models.stock_data import InvestmentRecommendation, RiskMetrics, TechnicalIndicators
+from .event_listener import event_listener  # noqa: F401 — registers event handlers on import
 
 _logger = logging.getLogger(__name__)
+
+
+def _build_planning_llm() -> LLM:
+    return LLM(model=config_loader.build_planning_llm_model_string())
 
 
 # ── Typed flow state ──────────────────────────────────────────────────────────
@@ -63,7 +68,9 @@ def _run_crew(agents_list: list, tasks_list: list, inputs: dict) -> Any:
         process=Process.sequential,
         verbose=True,
         memory=True,
-        step_callback=_step_callback,
+        planning=True,
+        planning_llm=_build_planning_llm(),
+        output_log_file=settings.crew_log_file,
     )
     return c.kickoff(inputs=inputs)
 
@@ -313,34 +320,3 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 "timestamp": datetime.now().isoformat(),
             }
 
-
-# ── Convenience subclasses ────────────────────────────────────────────────────
-
-class QuickAnalysisFlowCrew(StockAnalysisFlow):
-    """Quick (technical + fundamental only) analysis flow."""
-
-    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
-        super().__init__(llm_provider=llm_provider, model=model)
-
-    def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:  # type: ignore[override]
-        return super().analyze_stock(symbol, analysis_depth="quick", **kwargs)
-
-
-class StockAnalysisFlowCrew(StockAnalysisFlow):
-    """Standard analysis flow (technical, fundamental, risk, sentiment)."""
-
-    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
-        super().__init__(llm_provider=llm_provider, model=model)
-
-    def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:  # type: ignore[override]
-        return super().analyze_stock(symbol, analysis_depth="standard", **kwargs)
-
-
-class DeepDiveAnalysisFlowCrew(StockAnalysisFlow):
-    """Deep-dive analysis flow (all eight specialist agents)."""
-
-    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
-        super().__init__(llm_provider=llm_provider, model=model)
-
-    def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:  # type: ignore[override]
-        return super().analyze_stock(symbol, analysis_depth="deep", **kwargs)
