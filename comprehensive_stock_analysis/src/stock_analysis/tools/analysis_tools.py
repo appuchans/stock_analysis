@@ -4,16 +4,28 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
-from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
-import ta
-from scipy import stats
-from scipy.optimize import minimize
+try:
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.cluster import KMeans
+    from sklearn.decomposition import PCA
+except ImportError:
+    StandardScaler = None  # type: ignore[assignment,misc]
+    KMeans = None  # type: ignore[assignment,misc]
+    PCA = None  # type: ignore[assignment,misc]
+try:
+    import ta
+except ImportError:
+    ta = None  # type: ignore[assignment]
+try:
+    from scipy import stats
+    from scipy.optimize import minimize
+except ImportError:
+    stats = None  # type: ignore[assignment]
+    minimize = None  # type: ignore[assignment]
 import warnings
 warnings.filterwarnings('ignore')
 
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from ..models.stock_data import (
@@ -927,16 +939,14 @@ class ValuationTool(BaseTool):
             "status": "calculated"
         }
     
-    def _comparable_valuation(self, fundamental_data: Dict[str, Any], market_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _comparable_valuation(self, fundamental_data: Dict[str, Any], market_data: Dict[str, Any], industry_pe: float = 15.0) -> Dict[str, Any]:
         """Comparable valuation analysis."""
         current_price = market_data.get("current_price", 0)
         pe_ratio = fundamental_data.get("pe_ratio", 0)
-        
+
         if pe_ratio <= 0:
             return {"intrinsic_value": None, "method": "Comparable", "status": "insufficient_data"}
-        
-        # Assume industry average PE of 15
-        industry_pe = 15
+
         intrinsic_value = current_price * (industry_pe / pe_ratio)
         
         return {

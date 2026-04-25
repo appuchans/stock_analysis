@@ -10,16 +10,21 @@ __version__ = "0.1.0"
 __author__ = "Stock Analysis Team"
 __email__ = "team@stockanalysis.com"
 
-from .config.settings import Settings
-from .crew.stock_analysis_crew import StockAnalysisCrew
-from .crew.modern_crew import ModernStockAnalysisCrew
-from .crew.flow_crew import StockAnalysisFlowCrew, QuickAnalysisFlowCrew, DeepDiveAnalysisFlowCrew
-
 __all__ = [
     "Settings",
     "StockAnalysisCrew",
-    "ModernStockAnalysisCrew",
-    "StockAnalysisFlowCrew",
-    "QuickAnalysisFlowCrew", 
-    "DeepDiveAnalysisFlowCrew",
+    "StockAnalysisFlow",
 ]
+
+
+def __getattr__(name: str):
+    if name == "Settings":
+        from .config.settings import Settings
+        return Settings
+    if name == "StockAnalysisCrew":
+        from .crew.modern_crew import StockAnalysisCrew
+        return StockAnalysisCrew
+    if name == "StockAnalysisFlow":
+        from .crew.flow_crew import StockAnalysisFlow
+        return StockAnalysisFlow
+    raise AttributeError(f"module 'stock_analysis' has no attribute {name!r}")

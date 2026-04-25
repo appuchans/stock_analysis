@@ -1,16 +1,27 @@
 """Calculation tools for stock analysis."""
 
+import logging
+
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
-import ta
-from scipy import stats
-from scipy.optimize import minimize
+try:
+    import ta
+except ImportError:
+    ta = None  # type: ignore[assignment]
+try:
+    from scipy import stats
+    from scipy.optimize import minimize
+except ImportError:
+    stats = None  # type: ignore[assignment]
+    minimize = None  # type: ignore[assignment]
+
+_logger = logging.getLogger(__name__)
 import warnings
 warnings.filterwarnings('ignore')
 
-from crewai_tools import BaseTool
+from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from ..models.stock_data import RiskLevel, RecommendationType
@@ -106,12 +117,14 @@ class FinancialCalculatorTool(BaseTool):
             pv_earnings.append(pv)
         
         # Terminal value
+        if discount_rate <= terminal_growth_rate:
+            return {"error": "discount_rate must be greater than terminal_growth_rate"}
         terminal_value = projected_earnings[-1] / (discount_rate - terminal_growth_rate)
         pv_terminal = terminal_value / ((1 + discount_rate) ** years)
-        
+
         # Intrinsic value
         intrinsic_value = sum(pv_earnings) + pv_terminal
-        
+
         return {
             "intrinsic_value": intrinsic_value,
             "current_price": current_price,
@@ -340,17 +353,22 @@ class RiskCalculatorTool(BaseTool):
             
             # Basic risk metrics
             risk_metrics = self._calculate_basic_risk_metrics(returns, risk_free_rate)
-            
+
             # Advanced risk metrics
             advanced_metrics = self._calculate_advanced_risk_metrics(returns)
-            
+
+            # Beta against S&P 500 — fetched live and aligned by date
+            beta = self._calculate_beta(returns)
+            if beta is not None:
+                advanced_metrics["beta"] = beta
+
             # Risk assessment
             risk_assessment = self._assess_risk_level(risk_metrics, advanced_metrics)
-            
+
             return {
                 "basic_metrics": risk_metrics,
                 "advanced_metrics": advanced_metrics,
-                "risk_assessment": risk_assessment
+                "risk_assessment": risk_assessment,
             }
             
         except Exception as e:
@@ -396,17 +414,56 @@ class RiskCalculatorTool(BaseTool):
         skewness = returns.skew()
         kurtosis = returns.kurtosis()
         
-        # Beta (if market data available)
-        beta = None  # Would need market returns to calculate
-        
         return {
             "max_drawdown": max_drawdown,
             "var_95": var_95,
             "cvar_95": cvar_95,
             "skewness": skewness,
             "kurtosis": kurtosis,
-            "beta": beta
+            "beta": None,  # populated by _calculate_beta in _run
         }
+
+    def _calculate_beta(self, returns: pd.Series) -> Optional[float]:
+        """Calculate beta vs. S&P 500 using date-aligned returns."""
+        try:
+            import yfinance as yf
+
+            start = returns.index.min()
+            end = returns.index.max()
+            # Strip timezone for yfinance compatibility
+            start_str = pd.Timestamp(start).tz_localize(None).strftime("%Y-%m-%d")
+            end_str = pd.Timestamp(end).tz_localize(None).strftime("%Y-%m-%d")
+
+            market_hist = yf.download(
+                "^GSPC", start=start_str, end=end_str, progress=False, auto_adjust=True
+            )
+            if market_hist.empty:
+                return None
+
+            market_returns = market_hist["Close"].squeeze().pct_change().dropna()
+
+            # Normalise both indexes to timezone-naive dates for alignment
+            r = returns.copy()
+            r.index = pd.DatetimeIndex(r.index).tz_localize(None).normalize()
+            m = market_returns.copy()
+            m.index = pd.DatetimeIndex(m.index).tz_localize(None).normalize()
+
+            common = r.index.intersection(m.index)
+            if len(common) < 5:
+                return None
+
+            r_aligned = r.loc[common]
+            m_aligned = m.loc[common]
+
+            market_var = float(m_aligned.var())
+            if market_var == 0:
+                return None
+
+            return round(float(r_aligned.cov(m_aligned)) / market_var, 4)
+
+        except Exception as exc:
+            _logger.debug("Beta calculation skipped: %s", exc)
+            return None
     
     def _assess_risk_level(self, basic_metrics: Dict, advanced_metrics: Dict) -> Dict[str, Any]:
         """Assess overall risk level."""
@@ -507,12 +564,14 @@ class ValuationCalculatorTool(BaseTool):
             pv_earnings.append(pv)
         
         # Terminal value
+        if discount_rate <= terminal_growth_rate:
+            return {"error": "discount_rate must be greater than terminal_growth_rate"}
         terminal_value = projected_earnings[-1] / (discount_rate - terminal_growth_rate)
         pv_terminal = terminal_value / ((1 + discount_rate) ** years)
-        
+
         # Intrinsic value
         intrinsic_value = sum(pv_earnings) + pv_terminal
-        
+
         return {
             "intrinsic_value": intrinsic_value,
             "projected_earnings": projected_earnings,

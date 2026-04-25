@@ -1,5 +1,6 @@
 """Crew orchestration for stock analysis."""
 
-from .stock_analysis_crew import StockAnalysisCrew
+from .modern_crew import StockAnalysisCrew
+from .flow_crew import StockAnalysisFlow
 
-__all__ = ["StockAnalysisCrew"]
+__all__ = ["StockAnalysisCrew", "StockAnalysisFlow"]

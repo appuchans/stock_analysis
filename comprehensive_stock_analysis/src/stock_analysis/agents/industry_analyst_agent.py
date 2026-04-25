@@ -1,6 +1,6 @@
 """Agent for Industry Analyst."""
 
-from typing import List, Any
+from typing import List, Any, Optional
 
 from .base_agent import BaseAgent
 from ..tools.free_data_collection import (
@@ -14,7 +14,7 @@ from ..config.settings import settings
 class IndustryAnalystAgent(BaseAgent):
     """Agent responsible for industry analyst."""
     
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4"):
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         """Initialize the IndustryAnalystAgent."""
         super().__init__("industry_analyst", llm_provider, model)
     

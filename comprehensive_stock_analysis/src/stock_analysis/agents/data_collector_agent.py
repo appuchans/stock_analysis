@@ -1,12 +1,13 @@
 """Data Collector Agent for comprehensive stock data gathering."""
 
-from typing import List, Any
+from typing import List, Any, Optional
 
 from .base_agent import BaseAgent
 from ..tools.free_data_collection import (
-    YahooFinanceTool, FreeSECFilingTool, FreeFREDTool, 
+    YahooFinanceTool, FreeSECFilingTool, FreeFREDTool,
     FreeNewsTool, FreeEconomicDataTool, FreeWebSearchTool,
-    FreeCompetitorAnalysisTool, FreeIndustryAnalysisTool
+    FreeCompetitorAnalysisTool, FreeIndustryAnalysisTool,
+    ParallelDataCollectionTool,
 )
 from ..config.settings import settings
 
@@ -14,7 +15,7 @@ from ..config.settings import settings
 class DataCollectorAgent(BaseAgent):
     """Agent responsible for collecting comprehensive stock data from multiple sources."""
     
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4"):
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         """Initialize the Data Collector Agent."""
         super().__init__("data_collector", llm_provider, model)
     
@@ -22,7 +23,10 @@ class DataCollectorAgent(BaseAgent):
         """Get data collection tools (all free)."""
         tools = []
         
-        # Yahoo Finance (always available and free)
+        # Parallel collector — fetches all enabled sources concurrently
+        tools.append(ParallelDataCollectionTool())
+
+        # Individual tools kept for targeted queries by the agent
         tools.append(YahooFinanceTool())
         
         # Free SEC filings

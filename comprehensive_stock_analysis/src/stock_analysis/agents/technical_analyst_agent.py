@@ -1,6 +1,6 @@
 """Technical Analyst Agent for technical analysis of stocks."""
 
-from typing import List, Any
+from typing import List, Any, Optional
 
 from .base_agent import BaseAgent
 from ..tools.analysis_tools import TechnicalAnalysisTool
@@ -10,7 +10,7 @@ from ..tools.calculation_tools import TechnicalIndicatorTool, FinancialCalculato
 class TechnicalAnalystAgent(BaseAgent):
     """Agent responsible for technical analysis of stocks."""
     
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4"):
+    def __init__(self, llm_provider: Optional[str] = None, model: Optional[str] = None):
         """Initialize the Technical Analyst Agent."""
         super().__init__("technical_analyst", llm_provider, model)
     

@@ -9,6 +9,7 @@ from .data_collection import (
     NewsTool,
     EconomicDataTool,
 )
+from .free_data_collection import ParallelDataCollectionTool
 from .analysis_tools import (
     TechnicalAnalysisTool,
     FundamentalAnalysisTool,
@@ -23,16 +24,20 @@ from .calculation_tools import (
     RiskCalculatorTool,
     ValuationCalculatorTool,
 )
+from .backtest_tools import BacktestTool
+from .portfolio_tools import PortfolioAnalysisTool
+from .report_tools import ReportGeneratorTool
 
 __all__ = [
     # Data Collection Tools
     "YahooFinanceTool",
-    "AlphaVantageTool", 
+    "AlphaVantageTool",
     "SECFilingTool",
     "FREDTool",
     "QuandlTool",
     "NewsTool",
     "EconomicDataTool",
+    "ParallelDataCollectionTool",
     # Analysis Tools
     "TechnicalAnalysisTool",
     "FundamentalAnalysisTool",
@@ -45,4 +50,8 @@ __all__ = [
     "TechnicalIndicatorTool",
     "RiskCalculatorTool",
     "ValuationCalculatorTool",
+    # New Tools
+    "BacktestTool",
+    "PortfolioAnalysisTool",
+    "ReportGeneratorTool",
 ]

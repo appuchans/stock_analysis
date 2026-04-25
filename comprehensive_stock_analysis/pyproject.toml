@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "comprehensive-stock-analysis"
 version = "0.1.0"
-description = "A comprehensive production-ready agent-based stock analysis solution using CrewAI"
+description = "A production-ready multi-agent stock analysis solution built on CrewAI 1.x with Flow-based orchestration"
 readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
@@ -26,56 +26,48 @@ classifiers = [
 ]
 
 dependencies = [
-    "crewai>=0.80.0",
+    # Agent framework
+    "crewai>=1.14.3",
     "crewai-tools>=0.8.0",
-    "langchain>=0.1.0",
-    "langchain-openai>=0.1.0",
-    "langchain-community>=0.0.20",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    "python-dotenv>=1.0.0",
+    # LLM providers
+    "openai>=1.0.0",
+    "anthropic>=0.7.0",
+    # Data — free sources only
     "yfinance>=0.2.0",
-    "alpha-vantage>=2.3.0",
     "pandas>=2.0.0",
     "numpy>=1.24.0",
     "requests>=2.31.0",
     "beautifulsoup4>=4.12.0",
     "lxml>=4.9.0",
     "html2text>=2020.1.16",
-    "sec-api>=1.0.0",
-    "fredapi>=0.5.0",
-    "quandl>=3.7.0",
+    "feedparser>=6.0.0",
+    "newspaper3k>=0.2.8",
+    "arxiv>=2.0.0",
+    # Configuration and validation
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    # Technical analysis
+    "ta-lib>=0.4.0",
+    "scikit-learn>=1.3.0",
+    "scipy>=1.11.0",
+    # Report generation
+    "jinja2>=3.1.0",
     "plotly>=5.17.0",
     "matplotlib>=3.7.0",
     "seaborn>=0.12.0",
-    "scikit-learn>=1.3.0",
-    "scipy>=1.11.0",
-    "ta-lib>=0.4.0",
-    "openai>=1.0.0",
-    "anthropic>=0.7.0",
-    "tavily-python>=0.3.0",
-    "serpapi>=0.1.0",
-    "brave-search>=0.1.0",
-    "exa-py>=0.1.0",
-    "arxiv>=2.0.0",
-    "newspaper3k>=0.2.8",
-    "feedparser>=6.0.0",
+    # Caching (optional — degrades gracefully without Redis)
+    "redis>=5.0.0",
+    # Task queue (optional)
+    "celery>=5.3.0",
+    # Scheduling
     "schedule>=1.2.0",
+    # Web framework (optional REST API)
     "fastapi>=0.104.0",
     "uvicorn>=0.24.0",
-    "pydantic-settings>=2.0.0",
+    # Database (optional)
     "sqlalchemy>=2.0.0",
     "alembic>=1.12.0",
-    "redis>=5.0.0",
-    "celery>=5.3.0",
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.1.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
-    "mypy>=1.5.0",
-    "pre-commit>=3.4.0",
 ]
 
 [project.optional-dependencies]
