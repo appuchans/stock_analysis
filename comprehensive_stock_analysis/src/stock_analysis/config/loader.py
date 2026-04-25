@@ -68,42 +68,57 @@ class ConfigLoader:
         """Load agent configurations."""
         if self._agents_config is None:
             agents_file = self.config_dir / "agents.yaml"
-            with open(agents_file, 'r', encoding='utf-8') as f:
-                agents_data = yaml.safe_load(f)
-            
+            try:
+                with open(agents_file, 'r', encoding='utf-8') as f:
+                    agents_data = yaml.safe_load(f)
+            except FileNotFoundError:
+                raise FileNotFoundError(
+                    f"Agent configuration file not found: {agents_file}. "
+                    "Ensure the config directory is correctly set."
+                )
             self._agents_config = {
                 name: AgentConfig(**config)
                 for name, config in agents_data.items()
             }
-        
+
         return self._agents_config
-    
+
     def load_tasks_config(self) -> Dict[str, TaskConfig]:
         """Load task configurations."""
         if self._tasks_config is None:
             tasks_file = self.config_dir / "tasks.yaml"
-            with open(tasks_file, 'r', encoding='utf-8') as f:
-                tasks_data = yaml.safe_load(f)
-            
+            try:
+                with open(tasks_file, 'r', encoding='utf-8') as f:
+                    tasks_data = yaml.safe_load(f)
+            except FileNotFoundError:
+                raise FileNotFoundError(
+                    f"Task configuration file not found: {tasks_file}. "
+                    "Ensure the config directory is correctly set."
+                )
             self._tasks_config = {
                 name: TaskConfig(**config)
                 for name, config in tasks_data.items()
             }
-        
+
         return self._tasks_config
-    
+
     def load_flows_config(self) -> Dict[str, FlowConfig]:
         """Load flow configurations."""
         if self._flows_config is None:
             flows_file = self.config_dir / "flows.yaml"
-            with open(flows_file, 'r', encoding='utf-8') as f:
-                flows_data = yaml.safe_load(f)
-            
+            try:
+                with open(flows_file, 'r', encoding='utf-8') as f:
+                    flows_data = yaml.safe_load(f)
+            except FileNotFoundError:
+                raise FileNotFoundError(
+                    f"Flow configuration file not found: {flows_file}. "
+                    "Ensure the config directory is correctly set."
+                )
             self._flows_config = {
                 name: FlowConfig(**config)
                 for name, config in flows_data.items()
             }
-        
+
         return self._flows_config
     
     def get_agent_config(self, agent_name: str) -> AgentConfig:

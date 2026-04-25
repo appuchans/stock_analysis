@@ -59,7 +59,7 @@ class YahooFinanceTool(BaseTool):
                 description=info.get('longBusinessSummary'),
                 employees=info.get('fullTimeEmployees'),
                 founded_year=info.get('founded'),
-                ceo=info.get('companyOfficers', [{}])[0].get('name') if info.get('companyOfficers') else None,
+                ceo=next((o.get('name') for o in info.get('companyOfficers', [])), None),
                 headquarters=info.get('city') + ', ' + info.get('state') if info.get('city') and info.get('state') else None
             )
             

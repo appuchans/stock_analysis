@@ -25,6 +25,10 @@ class BaseAgent:
     def _get_llm(self):
         """Get the appropriate LLM based on provider."""
         if self.llm_provider == "openai":
+            if not settings.openai_api_key:
+                raise ValueError(
+                    "openai_api_key is not set. Set the OPENAI_API_KEY environment variable."
+                )
             return ChatOpenAI(
                 model=self.model,
                 temperature=settings.temperature,
@@ -32,6 +36,10 @@ class BaseAgent:
                 api_key=settings.openai_api_key
             )
         elif self.llm_provider == "anthropic":
+            if not settings.anthropic_api_key:
+                raise ValueError(
+                    "anthropic_api_key is not set. Set the ANTHROPIC_API_KEY environment variable."
+                )
             return ChatAnthropic(
                 model=self.model,
                 temperature=settings.temperature,

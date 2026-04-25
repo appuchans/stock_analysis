@@ -685,7 +685,7 @@ class FreeIndustryAnalysisTool(BaseTool):
         try:
             # Get industry data from web search
             search_tool = FreeWebSearchTool()
-            search_query = f"{industry} sector analysis trends 2024"
+            search_query = f"{industry} sector analysis trends {datetime.now().year}"
             search_results = search_tool._run(search_query, num_results=10)
             
             # Get economic data

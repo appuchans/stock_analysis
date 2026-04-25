@@ -8,8 +8,11 @@ from unittest.mock import Mock, patch
 
 from src.stock_analysis.tools.data_collection import YahooFinanceTool
 from src.stock_analysis.tools.analysis_tools import TechnicalAnalysisTool, FundamentalAnalysisTool
-from src.stock_analysis.tools.calculation_tools import FinancialCalculatorTool
+from src.stock_analysis.tools.calculation_tools import (
+    FinancialCalculatorTool, RiskCalculatorTool, TechnicalIndicatorTool, ValuationCalculatorTool
+)
 from src.stock_analysis.models.stock_data import PriceData, VolumeData, CompanyInfo, MarketData
+from src.stock_analysis.tasks.task_factory import TaskFactory
 
 
 class TestYahooFinanceTool:
@@ -398,6 +401,201 @@ def test_technical_analysis_integration(sample_price_data, sample_volume_data):
     assert "trend_strength" in result
     assert "support_resistance" in result
     assert "analysis_timestamp" in result
+
+
+class TestRiskCalculatorTool:
+    """Tests for RiskCalculatorTool."""
+
+    def _make_price_data(self, n: int = 60):
+        dates = pd.date_range('2024-01-01', periods=n)
+        np.random.seed(0)
+        prices = 100 + np.cumsum(np.random.randn(n) * 0.5)
+        return [{"close": float(prices[i]), "timestamp": dates[i].isoformat()} for i in range(n)]
+
+    def test_initialization(self):
+        tool = RiskCalculatorTool()
+        assert tool.name == "Risk Calculator Tool"
+
+    def test_returns_expected_keys(self):
+        tool = RiskCalculatorTool()
+        result = tool._run(self._make_price_data())
+        assert "basic_metrics" in result
+        assert "advanced_metrics" in result
+        assert "risk_assessment" in result
+
+    def test_basic_metrics_values(self):
+        tool = RiskCalculatorTool()
+        result = tool._run(self._make_price_data())
+        basic = result["basic_metrics"]
+        assert "sharpe_ratio" in basic
+        assert "volatility" in basic
+        assert basic["volatility"] >= 0
+
+    def test_insufficient_data_returns_error(self):
+        tool = RiskCalculatorTool()
+        result = tool._run([{"close": 100.0, "timestamp": "2024-01-01"}])
+        assert "error" in result
+
+
+class TestTechnicalIndicatorTool:
+    """Tests for TechnicalIndicatorTool."""
+
+    def _make_ohlcv(self, n: int = 60):
+        dates = pd.date_range('2024-01-01', periods=n)
+        np.random.seed(1)
+        prices = 100 + np.cumsum(np.random.randn(n) * 0.5)
+        return [
+            {
+                "open": float(prices[i] * 0.99),
+                "high": float(prices[i] * 1.01),
+                "low": float(prices[i] * 0.98),
+                "close": float(prices[i]),
+                "volume": 1_000_000,
+                "timestamp": dates[i].isoformat(),
+            }
+            for i in range(n)
+        ]
+
+    def test_initialization(self):
+        tool = TechnicalIndicatorTool()
+        assert tool.name == "Technical Indicator Tool"
+
+    def test_moving_averages(self):
+        tool = TechnicalIndicatorTool()
+        result = tool._run(self._make_ohlcv(), indicator_type="moving_averages")
+        assert "sma_20" in result
+        assert "ema_20" in result
+
+    def test_momentum_indicators(self):
+        tool = TechnicalIndicatorTool()
+        result = tool._run(self._make_ohlcv(), indicator_type="momentum")
+        assert "rsi" in result
+        assert "macd" in result
+
+    def test_unknown_indicator_returns_error(self):
+        tool = TechnicalIndicatorTool()
+        result = tool._run(self._make_ohlcv(), indicator_type="nonexistent")
+        assert "error" in result
+
+
+class TestValuationCalculatorTool:
+    """Tests for ValuationCalculatorTool."""
+
+    def test_initialization(self):
+        tool = ValuationCalculatorTool()
+        assert tool.name == "Valuation Calculator Tool"
+
+    def test_dcf_valid_inputs(self):
+        tool = ValuationCalculatorTool()
+        result = tool._calculate_dcf(
+            current_earnings=5.0,
+            growth_rate=0.10,
+            discount_rate=0.12,
+            terminal_growth_rate=0.03,
+        )
+        assert "intrinsic_value" in result
+        assert result["intrinsic_value"] > 0
+
+    def test_dcf_rejects_equal_rates(self):
+        """discount_rate == terminal_growth_rate must return an error dict, not divide by zero."""
+        tool = ValuationCalculatorTool()
+        result = tool._calculate_dcf(
+            current_earnings=5.0,
+            growth_rate=0.10,
+            discount_rate=0.03,
+            terminal_growth_rate=0.03,
+        )
+        assert "error" in result
+
+    def test_dcf_rejects_inverted_rates(self):
+        """discount_rate < terminal_growth_rate must also return an error."""
+        tool = ValuationCalculatorTool()
+        result = tool._calculate_dcf(
+            current_earnings=5.0,
+            growth_rate=0.10,
+            discount_rate=0.02,
+            terminal_growth_rate=0.05,
+        )
+        assert "error" in result
+
+    def test_dividend_discount_valid(self):
+        tool = ValuationCalculatorTool()
+        result = tool._calculate_dividend_discount(
+            current_dividend=2.0,
+            dividend_growth_rate=0.04,
+            required_return=0.10,
+        )
+        assert "intrinsic_value" in result
+        assert result["intrinsic_value"] > 0
+
+    def test_dividend_discount_rejects_invalid_rates(self):
+        tool = ValuationCalculatorTool()
+        result = tool._calculate_dividend_discount(
+            current_dividend=2.0,
+            dividend_growth_rate=0.10,
+            required_return=0.05,
+        )
+        assert "error" in result
+
+
+class TestTaskFactory:
+    """Tests for TaskFactory."""
+
+    @patch('src.stock_analysis.tasks.task_factory.config_loader')
+    def test_create_task_unknown_name_raises(self, mock_loader):
+        mock_loader.load_tasks_config.return_value = {}
+        factory = TaskFactory.__new__(TaskFactory)
+        factory.tasks_config = {}
+        with pytest.raises(ValueError, match="not found in configuration"):
+            factory.create_task("nonexistent_task", Mock())
+
+    @patch('src.stock_analysis.tasks.task_factory.config_loader')
+    def test_execution_order_no_cycles(self, mock_loader):
+        from src.stock_analysis.config.loader import TaskConfig
+        task_a = TaskConfig(description="d", expected_output="o", context=[])
+        task_b = TaskConfig(description="d", expected_output="o", context=["task_a"])
+        mock_loader.load_tasks_config.return_value = {"task_a": task_a, "task_b": task_b}
+        factory = TaskFactory.__new__(TaskFactory)
+        factory.tasks_config = {"task_a": task_a, "task_b": task_b}
+        order = factory.get_task_execution_order()
+        assert order.index("task_a") < order.index("task_b")
+
+    @patch('src.stock_analysis.tasks.task_factory.config_loader')
+    def test_execution_order_handles_cycle_without_raising(self, mock_loader):
+        from src.stock_analysis.config.loader import TaskConfig
+        task_a = TaskConfig(description="d", expected_output="o", context=["task_b"])
+        task_b = TaskConfig(description="d", expected_output="o", context=["task_a"])
+        mock_loader.load_tasks_config.return_value = {"task_a": task_a, "task_b": task_b}
+        factory = TaskFactory.__new__(TaskFactory)
+        factory.tasks_config = {"task_a": task_a, "task_b": task_b}
+        # Should not raise; returns empty list for unresolvable cycle
+        order = factory.get_task_execution_order()
+        assert isinstance(order, list)
+
+
+class TestAPIFailureHandling:
+    """Test resilience against API failure and edge-case data scenarios."""
+
+    @patch('yfinance.Ticker')
+    def test_yahoo_finance_handles_empty_history(self, mock_ticker):
+        mock_instance = Mock()
+        mock_ticker.return_value = mock_instance
+        mock_instance.info = {}
+        mock_instance.history.return_value = pd.DataFrame()
+        tool = YahooFinanceTool()
+        result = tool._run("FAKE")
+        assert result.get("market_data", {}).get("current_price", 0) == 0
+
+    @patch('yfinance.Ticker')
+    def test_yahoo_finance_handles_empty_company_officers(self, mock_ticker):
+        """Empty companyOfficers list must not raise IndexError."""
+        mock_instance = Mock()
+        mock_ticker.return_value = mock_instance
+        mock_instance.info = {"companyOfficers": [], "longName": "Test Corp"}
+        mock_instance.history.return_value = pd.DataFrame()
+        tool = YahooFinanceTool()
+        result = tool._run("TEST")
+        assert result.get("company_info", {}).get("ceo") is None
 
 
 if __name__ == "__main__":

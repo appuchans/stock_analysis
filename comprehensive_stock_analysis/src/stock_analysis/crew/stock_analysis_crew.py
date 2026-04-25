@@ -23,6 +23,7 @@ class StockAnalysisCrew:
         self.llm_provider = llm_provider
         self.model = model
         self._initialize_agents()
+        self._crew_instance = None
     
     def _initialize_agents(self):
         """Initialize all specialized agents."""
@@ -409,8 +410,10 @@ class StockAnalysisCrew:
                 **kwargs
             }
             
-            # Run the crew
-            result = self.crew().kickoff(inputs=inputs)
+            # Run the crew (cache to avoid rebuilding on every call)
+            if self._crew_instance is None:
+                self._crew_instance = self.crew()
+            result = self._crew_instance.kickoff(inputs=inputs)
             
             return {
                 "symbol": symbol,

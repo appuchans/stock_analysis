@@ -85,6 +85,26 @@ class Settings(PydanticBaseSettings):
         env="FUNDAMENTAL_METRICS"
     )
     
+    @validator("secret_key")
+    def validate_secret_key(cls, v, values):
+        """Reject placeholder secret key when not in debug mode."""
+        if not values.get("debug", True) and v == "your-secret-key-change-in-production":
+            raise ValueError(
+                "secret_key must be changed from the default placeholder in production. "
+                "Set the SECRET_KEY environment variable."
+            )
+        return v
+
+    @validator("jwt_secret_key")
+    def validate_jwt_secret_key(cls, v, values):
+        """Reject placeholder JWT secret key when not in debug mode."""
+        if not values.get("debug", True) and v == "your-jwt-secret-key-change-in-production":
+            raise ValueError(
+                "jwt_secret_key must be changed from the default placeholder in production. "
+                "Set the JWT_SECRET_KEY environment variable."
+            )
+        return v
+
     @validator("log_level")
     def validate_log_level(cls, v):
         """Validate log level."""

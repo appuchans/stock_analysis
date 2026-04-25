@@ -106,12 +106,14 @@ class FinancialCalculatorTool(BaseTool):
             pv_earnings.append(pv)
         
         # Terminal value
+        if discount_rate <= terminal_growth_rate:
+            return {"error": "discount_rate must be greater than terminal_growth_rate"}
         terminal_value = projected_earnings[-1] / (discount_rate - terminal_growth_rate)
         pv_terminal = terminal_value / ((1 + discount_rate) ** years)
-        
+
         # Intrinsic value
         intrinsic_value = sum(pv_earnings) + pv_terminal
-        
+
         return {
             "intrinsic_value": intrinsic_value,
             "current_price": current_price,
@@ -507,12 +509,14 @@ class ValuationCalculatorTool(BaseTool):
             pv_earnings.append(pv)
         
         # Terminal value
+        if discount_rate <= terminal_growth_rate:
+            return {"error": "discount_rate must be greater than terminal_growth_rate"}
         terminal_value = projected_earnings[-1] / (discount_rate - terminal_growth_rate)
         pv_terminal = terminal_value / ((1 + discount_rate) ** years)
-        
+
         # Intrinsic value
         intrinsic_value = sum(pv_earnings) + pv_terminal
-        
+
         return {
             "intrinsic_value": intrinsic_value,
             "projected_earnings": projected_earnings,

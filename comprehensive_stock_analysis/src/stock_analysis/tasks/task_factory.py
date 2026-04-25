@@ -1,8 +1,11 @@
 """Task factory for creating tasks from configuration."""
 
+import logging
 from typing import Dict, Any, List, Optional
 from crewai import Task
 from crewai.project import task
+
+_logger = logging.getLogger(__name__)
 
 from ..config.loader import config_loader, TaskConfig
 from ..agents.base_agent import BaseAgent
@@ -96,7 +99,10 @@ class TaskFactory:
                     ready_tasks.append(task)
             
             if not ready_tasks:
-                # Circular dependency or error
+                _logger.warning(
+                    "Circular dependency detected; these tasks were skipped: %s",
+                    remaining_tasks,
+                )
                 break
             
             # Add ready tasks to ordered list
