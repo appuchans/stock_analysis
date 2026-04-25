@@ -1,365 +1,283 @@
 # Comprehensive Stock Analysis Solution
 
-A production-ready, agent-based stock analysis solution built using CrewAI framework. This system provides comprehensive analysis of stocks including fundamentals, technical analysis, market sentiment, risk assessment, and investment recommendations.
+A production-ready, multi-agent stock analysis system built on **CrewAI 1.x** with event-driven
+Flow orchestration, Pydantic v2 typed outputs, Redis caching, and free-only data sources.
+
+---
 
 ## Features
 
-### 🏗️ Modern Architecture
-- **Configuration-Based**: Agents and tasks defined in YAML files
-- **CrewAI Flows**: Advanced orchestration with parallel and sequential execution
-- **Multiple Crew Types**: Modern, Flow, Quick, and Deep Dive analysis crews
-- **Separation of Concerns**: Clean architecture with configurable components
-- **Task Factory**: Dynamic task creation with dependency management
+### Multi-Agent Architecture (CrewAI 1.x)
+- **11 specialised agents** — Data Collector, Technical Analyst, Fundamental Analyst, Risk Analyst,
+  Sentiment Analyst, Market Analyst, Industry Analyst, Competitor Analyst, Economic Analyst,
+  Investment Advisor, Report Generator
+- **Native `crewai.LLM`** — no LangChain wrapper; supports OpenAI, Anthropic, and Ollama models
+- **Per-agent reasoning** — Investment Advisor and Report Generator use `reasoning=True` for
+  pre-task reflection (configurable in `config/agents.yaml`)
+- **Crew-level memory** with OpenAI embeddings for cross-task context retention
+- **`step_callback`** on every crew for structured observability logging
 
-### 🤖 Specialized AI Agents
-- **Data Collector Agent**: Gathers data from multiple sources (Yahoo Finance, Alpha Vantage, SEC, FRED, etc.)
-- **Technical Analyst Agent**: Performs technical analysis with indicators, patterns, and signals
-- **Fundamental Analyst Agent**: Analyzes financial statements, valuation, and growth metrics
-- **Risk Analyst Agent**: Assesses market, credit, liquidity, and operational risks
-- **Sentiment Analyst Agent**: Analyzes news, social media, and analyst sentiment
-- **Market Analyst Agent**: Evaluates market conditions and trends
-- **Industry Analyst Agent**: Analyzes industry dynamics and competitive landscape
-- **Competitor Analyst Agent**: Compares against industry peers
-- **Economic Analyst Agent**: Assesses macroeconomic factors
-- **Investment Advisor Agent**: Synthesizes all analysis into investment recommendations
-- **Report Generator Agent**: Creates comprehensive investment reports
+### Flow-Based Orchestration
+- **`StockAnalysisFlow`** (`flow_crew.py`) — event-driven with `@start` / `@listen` / `@router`
+  decorators; routes to `quick`, `standard`, or `deep` analysis based on `analysis_depth`
+- **`ModernStockAnalysisCrew`** (`modern_crew.py`) — YAML-config-driven sequential crew with
+  `akickoff_for_each()` async batch execution across multiple symbols
+- **`StockAnalysisCrew`** (`stock_analysis_crew.py`) — `@CrewBase` decorator pattern with
+  `output_pydantic` typed task outputs and a guardrail on the recommendation task
 
-### 📊 Comprehensive Analysis
-- **Technical Analysis**: 20+ technical indicators, chart patterns, trend analysis
-- **Fundamental Analysis**: Financial ratios, valuation metrics, growth analysis
-- **Risk Assessment**: Market risk, credit risk, liquidity risk, operational risk
-- **Sentiment Analysis**: News sentiment, analyst opinions, market psychology
-- **Market Analysis**: Market conditions, sector trends, volatility analysis
-- **Industry Analysis**: Industry trends, competitive dynamics, regulatory factors
-- **Economic Analysis**: Macroeconomic indicators, monetary policy, economic cycles
+### Typed Outputs & Validation
+- Task outputs typed with **Pydantic v2** models (`TechnicalIndicators`, `RiskMetrics`,
+  `InvestmentRecommendation`) via `output_pydantic=` on Task
+- **Recommendation guardrail** — rejects output missing required fields before it is accepted
+- All models use `@field_validator` / `@model_validator` (Pydantic v2 API)
 
-### 🛠️ Advanced Tools
-- **Data Collection Tools**: Multiple free data sources with fallback mechanisms
-- **Analysis Tools**: Sophisticated analysis algorithms and calculations
-- **Calculation Tools**: Financial calculations, risk metrics, valuation models
-- **Comparison Tools**: Peer comparison, industry benchmarking
+### Analysis Capabilities
+| Domain | What is produced |
+|---|---|
+| Technical | RSI, MACD, Bollinger Bands, SMA/EMA (20/50/200), ADX, ATR, Stochastic, OBV |
+| Fundamental | P/E, P/B, P/S, PEG, EV/EBITDA, ROE/ROA/ROIC, DCF intrinsic value |
+| Risk | Beta (live vs S&P 500), Sharpe, Sortino, VaR 95%, max drawdown, CVaR |
+| Sentiment | News sentiment aggregation, analyst consensus, trend direction |
+| Backtesting | SMA crossover and RSI-reversion strategy simulation (`BacktestTool`) |
+| Portfolio | Correlation matrix, min-variance weights, portfolio Sharpe/VaR (`PortfolioAnalysisTool`) |
+| Reports | Jinja2 HTML report with embedded charts; JSON fallback (`ReportGeneratorTool`) |
 
-### 💰 Free APIs Only
-- **Yahoo Finance**: Free stock data and company information
-- **SEC EDGAR**: Free access to regulatory filings
-- **FRED**: Free economic indicators from Federal Reserve
-- **RSS Feeds**: Free news and market updates
-- **Web Scraping**: Free data from financial websites
-- **DuckDuckGo**: Free web search capabilities
+### Data Sources (Free Only)
+- **Yahoo Finance** — price history, fundamentals, analyst ratings, company info
+- **SEC EDGAR** — 10-K, 10-Q, 8-K filings (no API key required)
+- **FRED** — Federal Reserve economic indicators (`demo` key available)
+- **RSS feeds** — financial news from major outlets
+- **DuckDuckGo** — free web search for industry/competitor context
+- Parallel data collection via `ThreadPoolExecutor` for sub-second multi-source fetches
 
-### 📈 Investment Recommendations
-- **Buy/Hold/Sell Recommendations**: Based on comprehensive analysis
-- **Target Price**: Calculated using multiple valuation methods
-- **Risk Assessment**: Risk level and key risk factors
-- **Time Horizon**: Short, medium, or long-term investment outlook
-- **Portfolio Positioning**: Allocation and diversification advice
+### Caching
+- `@cached_tool()` decorator (`tools/cache.py`) wraps tool `_run` methods with Redis-backed
+  caching; falls back silently to uncached execution when Redis is unavailable
 
-## Installation
+---
 
-### Prerequisites
-- Python 3.8 or higher
-- API keys for data sources (optional but recommended)
+## Quick Start
 
-### Setup
+### 1. Clone and install
 
-1. **Clone the repository**
 ```bash
-git clone <repository-url>
-cd comprehensive_stock_analysis
+git clone https://github.com/appuchans/stock_analysis.git
+cd stock_analysis/comprehensive_stock_analysis
+
+# Minimal install
+pip install -r requirements.txt
+
+# Or editable install with dev extras
+pip install -e ".[dev]"
 ```
 
-2. **Install dependencies**
-```bash
-pip install -e .
-```
+### 2. Configure environment
 
-3. **Set up environment variables**
 ```bash
 cp env.example .env
-# Edit .env with your API keys
+# Edit .env — at minimum set one LLM key
 ```
 
-4. **Configure API keys** (optional)
-```bash
-# Required for full functionality
-OPENAI_API_KEY=your_openai_api_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
-
-# Optional but recommended
-ALPHA_VANTAGE_API_KEY=your_alpha_vantage_api_key
-SEC_API_KEY=your_sec_api_key
-FRED_API_KEY=your_fred_api_key
-QUANDL_API_KEY=your_quandl_api_key
-TAVILY_API_KEY=your_tavily_api_key
-SERPAPI_API_KEY=your_serpapi_api_key
+Required for any analysis:
+```
+OPENAI_API_KEY=sk-...           # or ANTHROPIC_API_KEY
 ```
 
-## Usage
+Optional (free-tier or no-cost alternatives available):
+```
+FRED_API_KEY=demo               # Federal Reserve data; "demo" gives rate-limited access
+LLM_PROVIDER=openai             # or: anthropic, ollama
+LLM_MODEL=gpt-4o                # or: claude-sonnet-4-6, llama3, etc.
+```
 
-### Command Line Interface
+### 3. Run
 
 ```bash
-# Analyze a single stock with modern crew
+# Single stock — standard crew
 python -m stock_analysis.main AAPL
 
-# Analyze with flow-based crew
-python -m stock_analysis.main AAPL --crew-type flow
-
-# Quick analysis
-python -m stock_analysis.main AAPL --crew-type quick
-
-# Deep dive analysis
-python -m stock_analysis.main AAPL --crew-type deep_dive
-
-# Analyze multiple stocks
+# Multiple stocks in parallel (akickoff_for_each)
 python -m stock_analysis.main AAPL MSFT GOOGL
 
-# Specify output file
-python -m stock_analysis.main AAPL --output reports/aapl_analysis.json
+# Choose analysis depth via Flow crew
+python -m stock_analysis.main AAPL --crew-type flow
+python -m stock_analysis.main AAPL --crew-type flow --analysis-depth quick
+python -m stock_analysis.main AAPL --crew-type flow --analysis-depth deep
 
-# Use different LLM provider
-python -m stock_analysis.main AAPL --llm-provider anthropic --model claude-3-sonnet
+# Use Anthropic
+python -m stock_analysis.main AAPL --llm-provider anthropic --model claude-sonnet-4-6
 
-# Specify analysis timeframe
-python -m stock_analysis.main AAPL --timeframe 2y
+# Write output to a specific file
+python -m stock_analysis.main AAPL --output reports/aapl.json
 ```
 
-### Python API
+---
+
+## Python API
 
 ```python
-# Modern configuration-based crew
+# Standard sequential crew (all 11 agents)
+from stock_analysis import StockAnalysisCrew
+
+crew = StockAnalysisCrew(llm_provider="openai", model="gpt-4o")
+result = crew.analyze_stock("AAPL")
+
+# Config-driven crew with async batch analysis
 from stock_analysis import ModernStockAnalysisCrew
 
-crew = ModernStockAnalysisCrew(llm_provider="openai", model="gpt-4")
-result = crew.analyze_stock("AAPL")
+crew = ModernStockAnalysisCrew()
+result = crew.analyze_multiple_stocks(["AAPL", "MSFT", "GOOGL"])
 
-# Flow-based crew
-from stock_analysis import StockAnalysisFlowCrew
+# Flow crew — choose depth at runtime
+from stock_analysis import QuickAnalysisFlowCrew, StockAnalysisFlowCrew, DeepDiveAnalysisFlowCrew
 
-crew = StockAnalysisFlowCrew(llm_provider="openai", model="gpt-4")
-result = crew.analyze_stock("AAPL")
+quick = QuickAnalysisFlowCrew()           # technical + fundamental only
+standard = StockAnalysisFlowCrew()        # + risk + sentiment
+deep = DeepDiveAnalysisFlowCrew()         # all eight specialist agents
 
-# Quick analysis
-from stock_analysis import QuickAnalysisFlowCrew
+result = deep.analyze_stock("NVDA")
 
-crew = QuickAnalysisFlowCrew(llm_provider="openai", model="gpt-4")
-result = crew.analyze_stock("AAPL")
+# Backtesting
+from stock_analysis.tools.backtest_tools import BacktestTool
 
-# Deep dive analysis
-from stock_analysis import DeepDiveAnalysisFlowCrew
+bt = BacktestTool()
+result = bt._run("AAPL", strategy="sma_crossover", period="2y")
 
-crew = DeepDiveAnalysisFlowCrew(llm_provider="openai", model="gpt-4")
-result = crew.analyze_stock("AAPL")
+# Portfolio analysis
+from stock_analysis.tools.portfolio_tools import PortfolioAnalysisTool
+
+pt = PortfolioAnalysisTool()
+result = pt._run(["AAPL", "MSFT", "GOOGL", "AMZN"])
+
+# HTML report generation
+from stock_analysis.tools.report_tools import ReportGeneratorTool
+
+rt = ReportGeneratorTool()
+result = rt._run("AAPL", analysis_data={...})
 ```
 
-### Configuration
+---
 
-Create a configuration file to customize analysis parameters:
+## Crew Types
 
-```json
-{
-    "timeframe": "1y",
-    "technical_indicators": ["SMA", "EMA", "RSI", "MACD", "BB"],
-    "fundamental_metrics": ["PE", "PB", "PS", "PEG", "ROE"],
-    "risk_metrics": ["volatility", "beta", "var", "max_drawdown"],
-    "analysis_depth": "comprehensive"
-}
+| Class | File | Description |
+|---|---|---|
+| `StockAnalysisCrew` | `crew/stock_analysis_crew.py` | `@CrewBase` with typed outputs, guardrail, `step_callback` |
+| `ModernStockAnalysisCrew` | `crew/modern_crew.py` | YAML-config tasks; `akickoff_for_each` batch async |
+| `StockAnalysisFlowCrew` | `crew/flow_crew.py` | Standard depth Flow (technical/fundamental/risk/sentiment) |
+| `QuickAnalysisFlowCrew` | `crew/flow_crew.py` | Quick depth Flow (technical + fundamental only) |
+| `DeepDiveAnalysisFlowCrew` | `crew/flow_crew.py` | Deep depth Flow (all eight analysts) |
+
+---
+
+## Configuration
+
+### Agent configuration (`config/agents.yaml`)
+All 11 agents are defined here. Memory is **crew-level only** (not per-agent, per CrewAI 1.x
+best practices). The `investment_advisor` and `report_generator` have `reasoning: true` enabled
+to trigger pre-task reflection.
+
+### Task configuration (`config/tasks.yaml`)
+Task descriptions, expected outputs, dependencies, and output file paths. All paths accept
+a `{symbol}` placeholder that is substituted at runtime. Tasks are built via `TaskFactory`
+which automatically sets `create_directory=True`.
+
+### Settings (`config/settings.py`)
+All runtime settings are Pydantic `BaseSettings` loaded from environment variables. Key flags:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LLM_PROVIDER` | `openai` | `openai`, `anthropic`, or `ollama` |
+| `LLM_MODEL` | `gpt-4o` | Model identifier |
+| `FRED_API_KEY` | `demo` | FRED economic data |
+| `ENABLE_SEC_EDGAR` | `true` | Toggle SEC filing collection |
+| `ENABLE_RSS_FEEDS` | `true` | Toggle RSS news collection |
+| `ENABLE_WEB_SCRAPING` | `true` | Toggle DuckDuckGo search |
+| `DEBUG` | `false` | Enable debug mode (also bypasses secret key validation) |
+| `SECRET_KEY` | — | Must be set in production (validated at startup) |
+
+---
+
+## Docker
+
+```bash
+# Start full stack (app + Redis + PostgreSQL)
+docker compose up
+
+# App only
+docker compose up app
+
+# Run analysis inside container
+docker compose exec app python -m stock_analysis.main AAPL
 ```
 
-## Data Sources
+Services defined in `docker-compose.yml`:
+- `app` — main analysis service (port 8000)
+- `redis` — caching and Celery broker
+- `db` — PostgreSQL persistence
 
-### Primary Sources
-- **Yahoo Finance**: Price data, fundamentals, company information
-- **Alpha Vantage**: Additional financial data and indicators
-- **SEC Filings**: 10-K, 10-Q, 8-K forms and regulatory data
-- **FRED**: Economic indicators and macroeconomic data
-- **Quandl**: Financial and economic datasets
-
-### News and Sentiment
-- **Tavily**: News search and sentiment analysis
-- **SerpAPI**: Google search results and news
-- **RSS Feeds**: Financial news feeds
-
-### Fallback Mechanisms
-- Multiple data sources with automatic fallback
-- Caching to reduce API calls
-- Error handling and retry logic
-
-## Analysis Components
-
-### Technical Analysis
-- **Moving Averages**: SMA, EMA, WMA
-- **Momentum Indicators**: RSI, MACD, Stochastic, Williams %R
-- **Volatility Indicators**: Bollinger Bands, ATR, Keltner Channels
-- **Trend Indicators**: ADX, CCI, Aroon, Parabolic SAR
-- **Volume Indicators**: OBV, A/D Line, MFI, VPT
-- **Pattern Recognition**: Double tops/bottoms, triangles, flags
-
-### Fundamental Analysis
-- **Valuation Metrics**: P/E, P/B, P/S, PEG, EV/EBITDA
-- **Profitability**: ROE, ROA, ROIC, margins
-- **Financial Health**: Debt ratios, liquidity ratios, coverage ratios
-- **Growth Metrics**: Revenue growth, earnings growth, book value growth
-- **Valuation Models**: DCF, Comparable, Asset-based
-
-### Risk Analysis
-- **Market Risk**: Volatility, beta, VaR, maximum drawdown
-- **Credit Risk**: Debt levels, coverage ratios, credit scores
-- **Liquidity Risk**: Current ratio, quick ratio, cash ratio
-- **Operational Risk**: Growth metrics, efficiency ratios
-
-### Sentiment Analysis
-- **News Sentiment**: Keyword-based sentiment scoring
-- **Analyst Sentiment**: Recommendation analysis
-- **Social Media**: Sentiment from social platforms
-- **Market Sentiment**: Fear/greed indicators
-
-## Output Formats
-
-### JSON Output
-```json
-{
-    "symbol": "AAPL",
-    "analysis_result": {
-        "technical_analysis": {...},
-        "fundamental_analysis": {...},
-        "risk_analysis": {...},
-        "sentiment_analysis": {...},
-        "investment_recommendation": {...}
-    },
-    "status": "completed",
-    "timestamp": "2024-01-01T00:00:00Z"
-}
-```
-
-### PDF Report
-- Executive summary
-- Detailed analysis sections
-- Charts and visualizations
-- Investment recommendation
-- Risk assessment
-- Supporting data
-
-## Performance and Scalability
-
-### Optimization Features
-- **Parallel Processing**: Multiple agents work simultaneously
-- **Caching**: Reduces API calls and improves performance
-- **Rate Limiting**: Respects API rate limits
-- **Error Handling**: Robust error handling and recovery
-
-### Scalability
-- **Horizontal Scaling**: Can be deployed across multiple instances
-- **Database Integration**: Supports SQLite, PostgreSQL, MySQL
-- **Queue System**: Celery integration for background processing
-- **API Endpoints**: RESTful API for integration
-
-## Monitoring and Logging
-
-### Logging
-- **Structured Logging**: JSON-formatted logs
-- **Log Levels**: DEBUG, INFO, WARNING, ERROR, CRITICAL
-- **Log Rotation**: Automatic log file rotation
-- **Centralized Logging**: Support for centralized log aggregation
-
-### Monitoring
-- **Performance Metrics**: Response times, success rates
-- **Error Tracking**: Error rates and types
-- **Resource Usage**: CPU, memory, disk usage
-- **API Usage**: API call counts and costs
+---
 
 ## Testing
 
-### Test Suite
 ```bash
-# Run all tests
-pytest
+# All tests
+pytest tests/ -v
 
-# Run specific test categories
+# By marker
 pytest -m unit
 pytest -m integration
-pytest -m slow
+pytest -m "not slow"
 
-# Run with coverage
-pytest --cov=src/stock_analysis
+# Single test
+pytest tests/test_stock_analysis.py::TestValuationCalculatorTool::test_dcf_valid -v
+
+# With coverage report
+pytest --cov=src/stock_analysis --cov-report=html
 ```
 
-### Test Categories
-- **Unit Tests**: Individual component testing
-- **Integration Tests**: End-to-end workflow testing
-- **Performance Tests**: Load and stress testing
-- **API Tests**: External API integration testing
+Key test classes: `TestYahooFinanceTool`, `TestRiskCalculatorTool`,
+`TestTechnicalIndicatorTool`, `TestValuationCalculatorTool`, `TestTaskFactory`,
+`TestAPIFailureHandling`.
 
-## Deployment
+---
 
-### Docker Deployment
+## Project Structure
+
+```
+comprehensive_stock_analysis/
+├── src/stock_analysis/
+│   ├── agents/          # 11 specialist agents (all extend BaseAgent)
+│   ├── config/          # agents.yaml, tasks.yaml, flows.yaml, settings.py, loader.py
+│   ├── crew/            # stock_analysis_crew.py, modern_crew.py, flow_crew.py
+│   ├── models/          # Pydantic v2 data models (StockData, RiskMetrics, …)
+│   ├── tasks/           # TaskFactory with dependency-ordered execution
+│   └── tools/           # data collection, analysis, calculation, cache, backtest, portfolio, report
+├── tests/
+├── docs/
+├── examples/
+├── docker-compose.yml
+├── pyproject.toml
+├── requirements.txt
+└── env.example
+```
+
+---
+
+## Code Quality
+
 ```bash
-# Build Docker image
-docker build -t stock-analysis .
-
-# Run container
-docker run -p 8000:8000 stock-analysis
+black src/ tests/       # formatting
+isort src/ tests/       # import sorting
+flake8 src/             # linting
+mypy src/               # type checking
+pre-commit install      # install git hooks
 ```
 
-### Production Deployment
-- **Environment Variables**: Secure configuration management
-- **Secrets Management**: API keys and sensitive data
-- **Health Checks**: Application health monitoring
-- **Auto-scaling**: Automatic scaling based on load
-
-## Contributing
-
-### Development Setup
-```bash
-# Install development dependencies
-pip install -e ".[dev]"
-
-# Install pre-commit hooks
-pre-commit install
-
-# Run linting
-black src/
-isort src/
-flake8 src/
-mypy src/
-```
-
-### Code Quality
-- **Black**: Code formatting
-- **isort**: Import sorting
-- **flake8**: Linting
-- **mypy**: Type checking
-- **pytest**: Testing
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For support and questions:
-- Create an issue on GitHub
-- Check the documentation
-- Review the examples
-
-## Roadmap
-
-### Upcoming Features
-- [ ] Real-time analysis updates
-- [ ] Portfolio optimization
-- [ ] Backtesting capabilities
-- [ ] Machine learning integration
-- [ ] Advanced visualization
-- [ ] Mobile application
-- [ ] API rate limiting
-- [ ] Advanced caching strategies
-
-### Version History
-- **v0.1.0**: Initial release with basic functionality
-- **v0.2.0**: Enhanced analysis capabilities
-- **v0.3.0**: Advanced reporting features
-- **v1.0.0**: Production-ready release
+---
 
 ## Disclaimer
 
-This tool is for educational and research purposes only. It does not provide financial advice. Always consult with a qualified financial advisor before making investment decisions. Past performance does not guarantee future results.
+This tool is for educational and research purposes only. It does not constitute financial advice.
+Always consult a qualified financial advisor before making investment decisions. Past performance
+does not guarantee future results.

@@ -2,8 +2,8 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, List, Dict, Any, Union
-from pydantic import BaseModel, Field, validator
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, field_validator, model_validator
 from enum import Enum
 
 
@@ -51,30 +51,29 @@ class PriceData(BaseModel):
     close: Decimal = Field(..., description="Closing price")
     adjusted_close: Optional[Decimal] = Field(None, description="Adjusted closing price")
     timestamp: datetime = Field(..., description="Timestamp of the price data")
-    
-    @validator("open", "high", "low", "close")
-    def validate_positive_prices(cls, v):
-        """Validate that prices are positive."""
+
+    @field_validator("open", "high", "low", "close")
+    @classmethod
+    def validate_positive_prices(cls, v: Decimal) -> Decimal:
         if v <= 0:
             raise ValueError("Prices must be positive")
         return v
-    
-    @validator("high")
-    def validate_high_price(cls, v, values):
-        """Validate that high price is the highest."""
-        if "low" in values and v < values["low"]:
+
+    @model_validator(mode="after")
+    def validate_high_low(self) -> "PriceData":
+        if self.high is not None and self.low is not None and self.high < self.low:
             raise ValueError("High price must be >= low price")
-        return v
+        return self
 
 
 class VolumeData(BaseModel):
     """Volume data model."""
     volume: int = Field(..., description="Trading volume")
     timestamp: datetime = Field(..., description="Timestamp of the volume data")
-    
-    @validator("volume")
-    def validate_positive_volume(cls, v):
-        """Validate that volume is non-negative."""
+
+    @field_validator("volume")
+    @classmethod
+    def validate_positive_volume(cls, v: int) -> int:
         if v < 0:
             raise ValueError("Volume must be non-negative")
         return v
@@ -88,7 +87,7 @@ class TechnicalIndicators(BaseModel):
     sma_200: Optional[Decimal] = Field(None, description="200-day Simple Moving Average")
     ema_12: Optional[Decimal] = Field(None, description="12-day Exponential Moving Average")
     ema_26: Optional[Decimal] = Field(None, description="26-day Exponential Moving Average")
-    
+
     # Momentum Indicators
     rsi: Optional[Decimal] = Field(None, description="Relative Strength Index")
     macd: Optional[Decimal] = Field(None, description="MACD")
@@ -98,24 +97,24 @@ class TechnicalIndicators(BaseModel):
     stochastic_d: Optional[Decimal] = Field(None, description="Stochastic %D")
     williams_r: Optional[Decimal] = Field(None, description="Williams %R")
     momentum: Optional[Decimal] = Field(None, description="Momentum")
-    
+
     # Volatility Indicators
     bollinger_upper: Optional[Decimal] = Field(None, description="Bollinger Bands Upper")
     bollinger_middle: Optional[Decimal] = Field(None, description="Bollinger Bands Middle")
     bollinger_lower: Optional[Decimal] = Field(None, description="Bollinger Bands Lower")
     atr: Optional[Decimal] = Field(None, description="Average True Range")
-    
+
     # Trend Indicators
     adx: Optional[Decimal] = Field(None, description="Average Directional Index")
     cci: Optional[Decimal] = Field(None, description="Commodity Channel Index")
     aroon_up: Optional[Decimal] = Field(None, description="Aroon Up")
     aroon_down: Optional[Decimal] = Field(None, description="Aroon Down")
-    
+
     # Volume Indicators
     obv: Optional[Decimal] = Field(None, description="On-Balance Volume")
     ad_line: Optional[Decimal] = Field(None, description="A/D Line")
     mfi: Optional[Decimal] = Field(None, description="Money Flow Index")
-    
+
     timestamp: datetime = Field(..., description="Timestamp of the indicators")
 
 
@@ -127,7 +126,7 @@ class FundamentalData(BaseModel):
     ps_ratio: Optional[Decimal] = Field(None, description="Price-to-Sales ratio")
     peg_ratio: Optional[Decimal] = Field(None, description="PEG ratio")
     ev_ebitda: Optional[Decimal] = Field(None, description="EV/EBITDA ratio")
-    
+
     # Profitability Metrics
     roe: Optional[Decimal] = Field(None, description="Return on Equity")
     roa: Optional[Decimal] = Field(None, description="Return on Assets")
@@ -135,18 +134,18 @@ class FundamentalData(BaseModel):
     gross_margin: Optional[Decimal] = Field(None, description="Gross Margin")
     operating_margin: Optional[Decimal] = Field(None, description="Operating Margin")
     net_margin: Optional[Decimal] = Field(None, description="Net Margin")
-    
+
     # Financial Health Metrics
     debt_to_equity: Optional[Decimal] = Field(None, description="Debt-to-Equity ratio")
     current_ratio: Optional[Decimal] = Field(None, description="Current Ratio")
     quick_ratio: Optional[Decimal] = Field(None, description="Quick Ratio")
     interest_coverage: Optional[Decimal] = Field(None, description="Interest Coverage ratio")
-    
+
     # Growth Metrics
     revenue_growth: Optional[Decimal] = Field(None, description="Revenue Growth")
     earnings_growth: Optional[Decimal] = Field(None, description="Earnings Growth")
     book_value_growth: Optional[Decimal] = Field(None, description="Book Value Growth")
-    
+
     # Financial Statements Data
     market_cap: Optional[Decimal] = Field(None, description="Market Capitalization")
     enterprise_value: Optional[Decimal] = Field(None, description="Enterprise Value")
@@ -156,12 +155,12 @@ class FundamentalData(BaseModel):
     total_liabilities: Optional[Decimal] = Field(None, description="Total Liabilities")
     total_equity: Optional[Decimal] = Field(None, description="Total Equity")
     free_cash_flow: Optional[Decimal] = Field(None, description="Free Cash Flow")
-    
+
     # Dividend Information
     dividend_yield: Optional[Decimal] = Field(None, description="Dividend Yield")
     dividend_per_share: Optional[Decimal] = Field(None, description="Dividend per Share")
     payout_ratio: Optional[Decimal] = Field(None, description="Payout Ratio")
-    
+
     timestamp: datetime = Field(..., description="Timestamp of the fundamental data")
 
 
@@ -180,11 +179,11 @@ class CompanyInfo(BaseModel):
     founded_year: Optional[int] = Field(None, description="Year founded")
     ceo: Optional[str] = Field(None, description="CEO name")
     headquarters: Optional[str] = Field(None, description="Headquarters location")
-    
-    @validator("symbol")
-    def validate_symbol(cls, v):
-        """Validate stock symbol format."""
-        if not v or len(v) < 1 or len(v) > 10:
+
+    @field_validator("symbol")
+    @classmethod
+    def validate_symbol(cls, v: str) -> str:
+        if not v or not (1 <= len(v) <= 10):
             raise ValueError("Symbol must be 1-10 characters")
         return v.upper()
 
@@ -216,17 +215,17 @@ class NewsData(BaseModel):
     sentiment_score: Optional[float] = Field(None, description="Sentiment score (-1 to 1)")
     relevance_score: Optional[float] = Field(None, description="Relevance score (0 to 1)")
     tags: List[str] = Field(default_factory=list, description="News tags")
-    
-    @validator("sentiment_score")
-    def validate_sentiment_score(cls, v):
-        """Validate sentiment score range."""
+
+    @field_validator("sentiment_score")
+    @classmethod
+    def validate_sentiment_score(cls, v: Optional[float]) -> Optional[float]:
         if v is not None and not -1 <= v <= 1:
             raise ValueError("Sentiment score must be between -1 and 1")
         return v
-    
-    @validator("relevance_score")
-    def validate_relevance_score(cls, v):
-        """Validate relevance score range."""
+
+    @field_validator("relevance_score")
+    @classmethod
+    def validate_relevance_score(cls, v: Optional[float]) -> Optional[float]:
         if v is not None and not 0 <= v <= 1:
             raise ValueError("Relevance score must be between 0 and 1")
         return v
@@ -322,17 +321,17 @@ class AnalysisResult(BaseModel):
     summary: str = Field(..., description="Analysis summary")
     details: Dict[str, Any] = Field(default_factory=dict, description="Analysis details")
     timestamp: datetime = Field(..., description="Timestamp of the analysis")
-    
-    @validator("score")
-    def validate_score(cls, v):
-        """Validate score range."""
+
+    @field_validator("score")
+    @classmethod
+    def validate_score(cls, v: float) -> float:
         if not 0 <= v <= 100:
             raise ValueError("Score must be between 0 and 100")
         return v
-    
-    @validator("confidence")
-    def validate_confidence(cls, v):
-        """Validate confidence range."""
+
+    @field_validator("confidence")
+    @classmethod
+    def validate_confidence(cls, v: float) -> float:
         if not 0 <= v <= 1:
             raise ValueError("Confidence must be between 0 and 1")
         return v
@@ -352,10 +351,10 @@ class InvestmentRecommendation(BaseModel):
     risks: List[str] = Field(default_factory=list, description="Key risks")
     opportunities: List[str] = Field(default_factory=list, description="Key opportunities")
     timestamp: datetime = Field(..., description="Timestamp of the recommendation")
-    
-    @validator("confidence")
-    def validate_confidence(cls, v):
-        """Validate confidence range."""
+
+    @field_validator("confidence")
+    @classmethod
+    def validate_confidence(cls, v: float) -> float:
         if not 0 <= v <= 1:
             raise ValueError("Confidence must be between 0 and 1")
         return v

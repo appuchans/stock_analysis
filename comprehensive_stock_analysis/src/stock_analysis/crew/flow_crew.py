@@ -1,237 +1,339 @@
-"""Modern flow-based crew implementation for stock analysis."""
+"""Flow-based crew implementation using CrewAI 1.x Flow API."""
 
-from typing import Dict, Any, Optional, List
-from crewai import Flow, Crew, Process
-from crewai.flow import FlowExecutor
-from crewai.project import CrewBase, agent, crew, task
+import logging
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from crewai import Crew, Process, Task
+from crewai.flow.flow import Flow, listen, router, start, or_
+from pydantic import BaseModel, Field
 
 from ..agents import (
-    DataCollectorAgent, TechnicalAnalystAgent, FundamentalAnalystAgent,
-    RiskAnalystAgent, SentimentAnalystAgent, MarketAnalystAgent,
-    IndustryAnalystAgent, CompetitorAnalystAgent, EconomicAnalystAgent,
-    InvestmentAdvisorAgent, ReportGeneratorAgent
+    CompetitorAnalystAgent,
+    DataCollectorAgent,
+    EconomicAnalystAgent,
+    FundamentalAnalystAgent,
+    IndustryAnalystAgent,
+    InvestmentAdvisorAgent,
+    MarketAnalystAgent,
+    ReportGeneratorAgent,
+    RiskAnalystAgent,
+    SentimentAnalystAgent,
+    TechnicalAnalystAgent,
 )
-from ..config.loader import config_loader
 from ..config.settings import settings
+from ..models.stock_data import InvestmentRecommendation, RiskMetrics, TechnicalIndicators
+
+_logger = logging.getLogger(__name__)
 
 
-class StockAnalysisFlowCrew:
-    """Modern flow-based crew for comprehensive stock analysis."""
-    
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4", flow_name: str = "stock_analysis_flow"):
-        """Initialize the flow-based crew."""
-        self.llm_provider = llm_provider
-        self.model = model
-        self.flow_name = flow_name
-        self.flow_config = config_loader.get_flow_config(flow_name)
-        self._initialize_agents()
-        self.flow = self._create_flow()
-    
-    def _initialize_agents(self):
-        """Initialize all specialized agents."""
-        self.data_collector = DataCollectorAgent(self.llm_provider, self.model)
-        self.technical_analyst = TechnicalAnalystAgent(self.llm_provider, self.model)
-        self.fundamental_analyst = FundamentalAnalystAgent(self.llm_provider, self.model)
-        self.risk_analyst = RiskAnalystAgent(self.llm_provider, self.model)
-        self.sentiment_analyst = SentimentAnalystAgent(self.llm_provider, self.model)
-        self.market_analyst = MarketAnalystAgent(self.llm_provider, self.model)
-        self.industry_analyst = IndustryAnalystAgent(self.llm_provider, self.model)
-        self.competitor_analyst = CompetitorAnalystAgent(self.llm_provider, self.model)
-        self.economic_analyst = EconomicAnalystAgent(self.llm_provider, self.model)
-        self.investment_advisor = InvestmentAdvisorAgent(self.llm_provider, self.model)
-        self.report_generator = ReportGeneratorAgent(self.llm_provider, self.model)
-    
-    def _create_flow(self) -> Flow:
-        """Create the flow based on configuration."""
-        # Get task configurations
-        tasks_config = config_loader.load_tasks_config()
-        
-        # Create flow definition
-        flow_definition = {
-            "name": self.flow_config.name,
-            "description": self.flow_config.description,
-            "structure": self.flow_config.structure,
-            "execution": self.flow_config.execution,
-            "memory": self.flow_config.memory,
-            "human_input": self.flow_config.human_input
-        }
-        
-        # Create the flow
-        flow = Flow(
-            name=flow_definition["name"],
-            description=flow_definition["description"],
-            structure=flow_definition["structure"],
-            execution=flow_definition["execution"],
-            memory=flow_definition.get("memory", {}),
-            human_input=flow_definition.get("human_input", {})
+# ── Typed flow state ──────────────────────────────────────────────────────────
+
+class StockAnalysisState(BaseModel):
+    """Shared state carried through the analysis flow."""
+    symbol: str = ""
+    analysis_depth: str = "standard"  # "quick" | "standard" | "deep"
+    llm_provider: str = "openai"
+    model: str = "gpt-4o"
+    data: Dict[str, Any] = Field(default_factory=dict)
+    technical: Dict[str, Any] = Field(default_factory=dict)
+    fundamental: Dict[str, Any] = Field(default_factory=dict)
+    risk: Dict[str, Any] = Field(default_factory=dict)
+    sentiment: Dict[str, Any] = Field(default_factory=dict)
+    market: Dict[str, Any] = Field(default_factory=dict)
+    industry: Dict[str, Any] = Field(default_factory=dict)
+    competitor: Dict[str, Any] = Field(default_factory=dict)
+    economic: Dict[str, Any] = Field(default_factory=dict)
+    recommendation: Dict[str, Any] = Field(default_factory=dict)
+    report: str = ""
+    errors: List[str] = Field(default_factory=list)
+
+
+def _step_callback(step_output: Any) -> None:
+    _logger.info("[flow-step] %s", str(step_output)[:200])
+
+
+def _run_crew(agents_list: list, tasks_list: list, inputs: dict) -> Any:
+    """Helper: build and kick off a mini crew, returning the raw result."""
+    c = Crew(
+        agents=agents_list,
+        tasks=tasks_list,
+        process=Process.sequential,
+        verbose=True,
+        memory=True,
+        step_callback=_step_callback,
+    )
+    return c.kickoff(inputs=inputs)
+
+
+# ── Main analysis flow ────────────────────────────────────────────────────────
+
+class StockAnalysisFlow(Flow[StockAnalysisState]):
+    """
+    Event-driven flow for comprehensive stock analysis.
+
+    Stages:
+      collect_data  →  (router)  →  quick / standard / deep  →  synthesize  →  report
+    """
+
+    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4o", **kwargs: Any):
+        super().__init__(**kwargs)
+        self._llm_provider = llm_provider
+        self._model = model
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+
+    def _make_agent(self, cls: type) -> Any:
+        return cls(self._llm_provider, self._model).get_agent()
+
+    def _inputs(self) -> dict:
+        return {"symbol": self.state.symbol}
+
+    # ── stage 1: data collection ──────────────────────────────────────────────
+
+    @start()
+    def collect_data(self) -> None:
+        """Collect raw stock data from all free sources."""
+        agent = self._make_agent(DataCollectorAgent)
+        t = Task(
+            description=f"Collect comprehensive market data, fundamentals, SEC filings, "
+                        f"economic indicators, and news for {self.state.symbol}.",
+            expected_output="Structured data package with price history, fundamentals, "
+                            "news, and economic data.",
+            agent=agent,
+            create_directory=True,
+            output_file=f"reports/{self.state.symbol}_data.json",
         )
-        
-        return flow
-    
-    def _create_tasks(self, symbol: str) -> Dict[str, Any]:
-        """Create tasks based on configuration."""
-        tasks_config = config_loader.load_tasks_config()
-        tasks = {}
-        
-        for task_name, task_config in tasks_config.items():
-            # Get the appropriate agent
-            agent = self._get_agent_for_task(task_name)
-            
-            # Create task
-            task = {
-                "name": task_name,
-                "description": task_config.description.format(symbol=symbol),
-                "expected_output": task_config.expected_output.format(symbol=symbol),
-                "agent": agent,
-                "context": task_config.context,
-                "output_file": task_config.output_file.format(symbol=symbol) if task_config.output_file else None,
-                "async_execution": task_config.async_execution,
-                "timeout": task_config.timeout,
-                "retry_on_failure": task_config.retry_on_failure,
-                "max_retries": task_config.max_retries
-            }
-            
-            tasks[task_name] = task
-        
-        return tasks
-    
-    def _get_agent_for_task(self, task_name: str):
-        """Get the appropriate agent for a task."""
-        agent_mapping = {
-            "data_collection": self.data_collector.get_agent(),
-            "technical_analysis": self.technical_analyst.get_agent(),
-            "fundamental_analysis": self.fundamental_analyst.get_agent(),
-            "risk_analysis": self.risk_analyst.get_agent(),
-            "sentiment_analysis": self.sentiment_analyst.get_agent(),
-            "market_analysis": self.market_analyst.get_agent(),
-            "industry_analysis": self.industry_analyst.get_agent(),
-            "competitor_analysis": self.competitor_analyst.get_agent(),
-            "economic_analysis": self.economic_analyst.get_agent(),
-            "investment_recommendation": self.investment_advisor.get_agent(),
-            "report_generation": self.report_generator.get_agent()
-        }
-        
-        return agent_mapping.get(task_name, self.data_collector.get_agent())
-    
-    def analyze_stock(self, symbol: str, **kwargs) -> Dict[str, Any]:
-        """Analyze a stock using the flow-based crew."""
-        try:
-            # Create tasks
-            tasks = self._create_tasks(symbol)
-            
-            # Create flow executor
-            executor = FlowExecutor(self.flow)
-            
-            # Prepare inputs
-            inputs = {
-                "symbol": symbol,
-                "tasks": tasks,
-                **kwargs
-            }
-            
-            # Execute the flow
-            result = executor.execute(inputs)
-            
-            return {
-                "symbol": symbol,
-                "analysis_result": result,
-                "status": "completed",
-                "flow_name": self.flow_name,
-                "timestamp": self._get_timestamp()
-            }
-            
-        except Exception as e:
-            return {
-                "symbol": symbol,
-                "error": str(e),
-                "status": "failed",
-                "flow_name": self.flow_name,
-                "timestamp": self._get_timestamp()
-            }
-    
-    def analyze_multiple_stocks(self, symbols: List[str], **kwargs) -> Dict[str, Any]:
-        """Analyze multiple stocks using parallel flows."""
-        try:
-            results = {}
-            
-            # Create parallel flow execution
-            for symbol in symbols:
-                result = self.analyze_stock(symbol, **kwargs)
-                results[symbol] = result
-            
-            # Summary
-            completed = sum(1 for r in results.values() if r["status"] == "completed")
-            failed = sum(1 for r in results.values() if r["status"] == "failed")
-            
-            return {
-                "results": results,
-                "summary": {
-                    "total": len(symbols),
-                    "completed": completed,
-                    "failed": failed
-                },
-                "flow_name": self.flow_name,
-                "timestamp": self._get_timestamp()
-            }
-            
-        except Exception as e:
-            return {
-                "error": str(e),
-                "status": "failed",
-                "flow_name": self.flow_name,
-                "timestamp": self._get_timestamp()
-            }
-    
-    def get_flow_status(self) -> Dict[str, Any]:
-        """Get the current flow status."""
-        return {
-            "flow_name": self.flow_name,
-            "flow_config": self.flow_config.dict(),
-            "agents_loaded": len(self._get_agent_list()),
-            "status": "ready"
-        }
-    
-    def _get_agent_list(self) -> List[Any]:
-        """Get list of all agents."""
-        return [
-            self.data_collector,
-            self.technical_analyst,
-            self.fundamental_analyst,
-            self.risk_analyst,
-            self.sentiment_analyst,
-            self.market_analyst,
-            self.industry_analyst,
-            self.competitor_analyst,
-            self.economic_analyst,
-            self.investment_advisor,
-            self.report_generator
+        result = _run_crew([agent], [t], self._inputs())
+        self.state.data = {"raw": str(result)}
+
+    # ── stage 2: route by depth ────────────────────────────────────────────────
+
+    @router(collect_data)
+    def route_by_depth(self) -> str:
+        """Route to quick, standard, or deep analysis based on analysis_depth."""
+        return self.state.analysis_depth  # returns "quick" | "standard" | "deep"
+
+    # ── stage 3a: quick path (technical + fundamental only) ───────────────────
+
+    @listen("quick")
+    def quick_analysis(self) -> None:
+        """Run only technical and fundamental analysis (fast path)."""
+        ta_agent = self._make_agent(TechnicalAnalystAgent)
+        fa_agent = self._make_agent(FundamentalAnalystAgent)
+        inputs = self._inputs()
+
+        ta_task = Task(
+            description=f"Perform technical analysis for {self.state.symbol}: "
+                        "compute RSI, MACD, moving averages, identify trend and signals.",
+            expected_output="Technical indicators and trading signal.",
+            agent=ta_agent,
+            output_pydantic=TechnicalIndicators,
+            create_directory=True,
+            output_file=f"reports/{self.state.symbol}_technical.json",
+        )
+        fa_task = Task(
+            description=f"Perform fundamental analysis for {self.state.symbol}: "
+                        "valuation ratios, profitability, financial health.",
+            expected_output="Fundamental metrics and investment quality score.",
+            agent=fa_agent,
+            create_directory=True,
+            output_file=f"reports/{self.state.symbol}_fundamental.json",
+        )
+
+        tech_result = _run_crew([ta_agent], [ta_task], inputs)
+        fund_result = _run_crew([fa_agent], [fa_task], inputs)
+
+        self.state.technical = {"result": str(tech_result)}
+        self.state.fundamental = {"result": str(fund_result)}
+
+    # ── stage 3b: standard path (+ risk + sentiment) ──────────────────────────
+
+    @listen("standard")
+    def standard_analysis(self) -> None:
+        """Run technical, fundamental, risk, and sentiment analysis."""
+        agents_tasks = [
+            (TechnicalAnalystAgent, f"Technical analysis for {self.state.symbol}.", TechnicalIndicators),
+            (FundamentalAnalystAgent, f"Fundamental analysis for {self.state.symbol}.", None),
+            (RiskAnalystAgent, f"Risk analysis for {self.state.symbol}: beta, VaR, drawdown.", RiskMetrics),
+            (SentimentAnalystAgent, f"Sentiment analysis for {self.state.symbol}.", None),
         ]
-    
-    def _get_timestamp(self) -> str:
-        """Get current timestamp."""
-        from datetime import datetime
-        return datetime.now().isoformat()
+        state_keys = ["technical", "fundamental", "risk", "sentiment"]
+        inputs = self._inputs()
+
+        for (cls, desc, pydantic_model), key in zip(agents_tasks, state_keys):
+            ag = self._make_agent(cls)
+            task_kwargs: dict = dict(
+                description=desc,
+                expected_output=f"Analysis output for {key}.",
+                agent=ag,
+                create_directory=True,
+                output_file=f"reports/{self.state.symbol}_{key}.json",
+            )
+            if pydantic_model:
+                task_kwargs["output_pydantic"] = pydantic_model
+            t = Task(**task_kwargs)
+            result = _run_crew([ag], [t], inputs)
+            setattr(self.state, key, {"result": str(result)})
+
+    # ── stage 3c: deep path (all analysts) ────────────────────────────────────
+
+    @listen("deep")
+    def deep_analysis(self) -> None:
+        """Run all specialist analyses in sequence."""
+        pipeline = [
+            (TechnicalAnalystAgent, "technical", TechnicalIndicators),
+            (FundamentalAnalystAgent, "fundamental", None),
+            (RiskAnalystAgent, "risk", RiskMetrics),
+            (SentimentAnalystAgent, "sentiment", None),
+            (MarketAnalystAgent, "market", None),
+            (IndustryAnalystAgent, "industry", None),
+            (CompetitorAnalystAgent, "competitor", None),
+            (EconomicAnalystAgent, "economic", None),
+        ]
+        inputs = self._inputs()
+
+        for cls, key, pydantic_model in pipeline:
+            ag = self._make_agent(cls)
+            task_kwargs: dict = dict(
+                description=f"Comprehensive {key} analysis for {self.state.symbol}.",
+                expected_output=f"Detailed {key} analysis.",
+                agent=ag,
+                create_directory=True,
+                output_file=f"reports/{self.state.symbol}_{key}.json",
+            )
+            if pydantic_model:
+                task_kwargs["output_pydantic"] = pydantic_model
+            t = Task(**task_kwargs)
+            result = _run_crew([ag], [t], inputs)
+            setattr(self.state, key, {"result": str(result)})
+
+    # ── stage 4: synthesize recommendation ────────────────────────────────────
+
+    @listen(or_(quick_analysis, standard_analysis, deep_analysis))
+    def synthesize_recommendation(self) -> None:
+        """Generate investment recommendation from all completed analyses."""
+        context_summary = "\n".join(
+            f"{k}: {v.get('result', '')[:300]}"
+            for k, v in {
+                "technical": self.state.technical,
+                "fundamental": self.state.fundamental,
+                "risk": self.state.risk,
+                "sentiment": self.state.sentiment,
+                "market": self.state.market,
+                "industry": self.state.industry,
+                "competitor": self.state.competitor,
+                "economic": self.state.economic,
+            }.items()
+            if v
+        )
+
+        agent = self._make_agent(InvestmentAdvisorAgent)
+        t = Task(
+            description=f"Based on the following analyses, produce an investment recommendation "
+                        f"for {self.state.symbol}:\n{context_summary}",
+            expected_output="Investment recommendation: type, target price, stop-loss, "
+                            "time horizon, confidence, reasoning, risks, opportunities.",
+            agent=agent,
+            output_pydantic=InvestmentRecommendation,
+            create_directory=True,
+            output_file=f"reports/{self.state.symbol}_recommendation.json",
+        )
+        result = _run_crew([agent], [t], self._inputs())
+        self.state.recommendation = {"result": str(result)}
+
+    # ── stage 5: generate report ───────────────────────────────────────────────
+
+    @listen(synthesize_recommendation)
+    def generate_report(self) -> None:
+        """Produce the final comprehensive investment report."""
+        agent = self._make_agent(ReportGeneratorAgent)
+        all_analyses = {
+            "data": self.state.data,
+            "technical": self.state.technical,
+            "fundamental": self.state.fundamental,
+            "risk": self.state.risk,
+            "sentiment": self.state.sentiment,
+            "market": self.state.market,
+            "industry": self.state.industry,
+            "competitor": self.state.competitor,
+            "economic": self.state.economic,
+            "recommendation": self.state.recommendation,
+        }
+        summary = "\n".join(
+            f"### {k}\n{v.get('result', 'N/A')[:500]}"
+            for k, v in all_analyses.items() if v
+        )
+
+        t = Task(
+            description=f"Write a professional investment report for {self.state.symbol}. "
+                        f"Use these analyses:\n{summary}",
+            expected_output="Complete investment report with executive summary, "
+                            "analysis sections, recommendation, and risk disclaimer.",
+            agent=agent,
+            create_directory=True,
+            output_file=f"reports/{self.state.symbol}_report.md",
+        )
+        result = _run_crew([agent], [t], self._inputs())
+        self.state.report = str(result)
+
+    # ── public API ─────────────────────────────────────────────────────────────
+
+    def analyze_stock(self, symbol: str, analysis_depth: str = "standard", **kwargs: Any) -> Dict[str, Any]:
+        """Run the full flow for a single stock."""
+        try:
+            result = self.kickoff(inputs={
+                "symbol": symbol,
+                "analysis_depth": analysis_depth,
+                "llm_provider": self._llm_provider,
+                "model": self._model,
+                **kwargs,
+            })
+            return {
+                "symbol": symbol,
+                "analysis_depth": analysis_depth,
+                "report": self.state.report,
+                "recommendation": self.state.recommendation,
+                "status": "completed",
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            _logger.error("Flow analysis failed for %s: %s", symbol, e)
+            return {
+                "symbol": symbol,
+                "error": str(e),
+                "status": "failed",
+                "timestamp": datetime.now().isoformat(),
+            }
 
 
-class QuickAnalysisFlowCrew(StockAnalysisFlowCrew):
-    """Quick analysis flow crew."""
-    
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4"):
-        """Initialize the quick analysis flow crew."""
-        super().__init__(llm_provider, model, "quick_analysis_flow")
+# ── Convenience subclasses ────────────────────────────────────────────────────
+
+class QuickAnalysisFlowCrew(StockAnalysisFlow):
+    """Quick (technical + fundamental only) analysis flow."""
+
+    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4o"):
+        super().__init__(llm_provider=llm_provider, model=model)
+
+    def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:  # type: ignore[override]
+        return super().analyze_stock(symbol, analysis_depth="quick", **kwargs)
 
 
-class DeepDiveAnalysisFlowCrew(StockAnalysisFlowCrew):
-    """Deep dive analysis flow crew."""
-    
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4"):
-        """Initialize the deep dive analysis flow crew."""
-        super().__init__(llm_provider, model, "deep_dive_flow")
+class StockAnalysisFlowCrew(StockAnalysisFlow):
+    """Standard analysis flow (technical, fundamental, risk, sentiment)."""
+
+    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4o"):
+        super().__init__(llm_provider=llm_provider, model=model)
+
+    def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:  # type: ignore[override]
+        return super().analyze_stock(symbol, analysis_depth="standard", **kwargs)
 
 
-class BatchAnalysisFlowCrew(StockAnalysisFlowCrew):
-    """Batch analysis flow crew."""
-    
-    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4"):
-        """Initialize the batch analysis flow crew."""
-        super().__init__(llm_provider, model, "batch_analysis_flow")
+class DeepDiveAnalysisFlowCrew(StockAnalysisFlow):
+    """Deep-dive analysis flow (all eight specialist agents)."""
+
+    def __init__(self, llm_provider: str = "openai", model: str = "gpt-4o"):
+        super().__init__(llm_provider=llm_provider, model=model)
+
+    def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:  # type: ignore[override]
+        return super().analyze_stock(symbol, analysis_depth="deep", **kwargs)

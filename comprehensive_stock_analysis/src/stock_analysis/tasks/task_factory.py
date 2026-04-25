@@ -33,13 +33,19 @@ class TaskFactory:
             description = description.format(symbol=symbol)
             expected_output = expected_output.format(symbol=symbol)
         
+        output_file = (
+            task_config.output_file.format(symbol=symbol)
+            if task_config.output_file and symbol
+            else task_config.output_file
+        )
         # Create task
         task = Task(
             description=description,
             expected_output=expected_output,
             agent=agent.get_agent(),
             context=task_config.context,
-            output_file=task_config.output_file.format(symbol=symbol) if task_config.output_file and symbol else task_config.output_file,
+            output_file=output_file,
+            create_directory=True,
             async_execution=task_config.async_execution,
             **kwargs
         )
@@ -100,9 +106,10 @@ class TaskFactory:
             
             if not ready_tasks:
                 _logger.warning(
-                    "Circular dependency detected; these tasks were skipped: %s",
+                    "Circular dependency detected; appending remaining tasks in original order: %s",
                     remaining_tasks,
                 )
+                ordered_tasks.extend(remaining_tasks)
                 break
             
             # Add ready tasks to ordered list
