@@ -5,8 +5,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from crewai import Crew, LLM, Process, Task
-from crewai.project import CrewBase, agent, crew, task
+from crewai import Crew, LLM, Process
 
 from ..agents import (
     CompetitorAnalystAgent,
@@ -33,7 +32,6 @@ def _build_planning_llm() -> LLM:
     return LLM(model=config_loader.build_planning_llm_model_string())
 
 
-@CrewBase
 class StockAnalysisCrew:
     """Comprehensive stock analysis crew using YAML-configured agents and tasks."""
 
@@ -44,141 +42,21 @@ class StockAnalysisCrew:
         self._initialize_agents()
 
     def _initialize_agents(self) -> None:
-        self.data_collector = DataCollectorAgent(self.llm_provider, self.model)
-        self.technical_analyst = TechnicalAnalystAgent(self.llm_provider, self.model)
-        self.fundamental_analyst = FundamentalAnalystAgent(self.llm_provider, self.model)
-        self.risk_analyst = RiskAnalystAgent(self.llm_provider, self.model)
-        self.sentiment_analyst = SentimentAnalystAgent(self.llm_provider, self.model)
-        self.market_analyst = MarketAnalystAgent(self.llm_provider, self.model)
-        self.industry_analyst = IndustryAnalystAgent(self.llm_provider, self.model)
-        self.competitor_analyst = CompetitorAnalystAgent(self.llm_provider, self.model)
-        self.economic_analyst = EconomicAnalystAgent(self.llm_provider, self.model)
-        self.investment_advisor = InvestmentAdvisorAgent(self.llm_provider, self.model)
-        self.report_generator = ReportGeneratorAgent(self.llm_provider, self.model)
-
         self.agents_map: Dict[str, Any] = {
-            "data_collector": self.data_collector,
-            "technical_analyst": self.technical_analyst,
-            "fundamental_analyst": self.fundamental_analyst,
-            "risk_analyst": self.risk_analyst,
-            "sentiment_analyst": self.sentiment_analyst,
-            "market_analyst": self.market_analyst,
-            "industry_analyst": self.industry_analyst,
-            "competitor_analyst": self.competitor_analyst,
-            "economic_analyst": self.economic_analyst,
-            "investment_advisor": self.investment_advisor,
-            "report_generator": self.report_generator,
+            "data_collector":     DataCollectorAgent(self.llm_provider, self.model),
+            "technical_analyst":  TechnicalAnalystAgent(self.llm_provider, self.model),
+            "fundamental_analyst": FundamentalAnalystAgent(self.llm_provider, self.model),
+            "risk_analyst":       RiskAnalystAgent(self.llm_provider, self.model),
+            "sentiment_analyst":  SentimentAnalystAgent(self.llm_provider, self.model),
+            "market_analyst":     MarketAnalystAgent(self.llm_provider, self.model),
+            "industry_analyst":   IndustryAnalystAgent(self.llm_provider, self.model),
+            "competitor_analyst": CompetitorAnalystAgent(self.llm_provider, self.model),
+            "economic_analyst":   EconomicAnalystAgent(self.llm_provider, self.model),
+            "investment_advisor": InvestmentAdvisorAgent(self.llm_provider, self.model),
+            "report_generator":   ReportGeneratorAgent(self.llm_provider, self.model),
         }
 
-    # ── agents ───────────────────────────────────────────────────────────────
-
-    @agent
-    def data_collector_agent(self) -> Any:
-        return self.data_collector.get_agent()
-
-    @agent
-    def technical_analyst_agent(self) -> Any:
-        return self.technical_analyst.get_agent()
-
-    @agent
-    def fundamental_analyst_agent(self) -> Any:
-        return self.fundamental_analyst.get_agent()
-
-    @agent
-    def risk_analyst_agent(self) -> Any:
-        return self.risk_analyst.get_agent()
-
-    @agent
-    def sentiment_analyst_agent(self) -> Any:
-        return self.sentiment_analyst.get_agent()
-
-    @agent
-    def market_analyst_agent(self) -> Any:
-        return self.market_analyst.get_agent()
-
-    @agent
-    def industry_analyst_agent(self) -> Any:
-        return self.industry_analyst.get_agent()
-
-    @agent
-    def competitor_analyst_agent(self) -> Any:
-        return self.competitor_analyst.get_agent()
-
-    @agent
-    def economic_analyst_agent(self) -> Any:
-        return self.economic_analyst.get_agent()
-
-    @agent
-    def investment_advisor_agent(self) -> Any:
-        return self.investment_advisor.get_agent()
-
-    @agent
-    def report_generator_agent(self) -> Any:
-        return self.report_generator.get_agent()
-
-    # ── tasks ─────────────────────────────────────────────────────────────────
-
-    @task
-    def data_collection_task(self) -> Task:
-        return task_factory.create_task("data_collection", self.data_collector)
-
-    @task
-    def technical_analysis_task(self) -> Task:
-        return task_factory.create_task("technical_analysis", self.technical_analyst)
-
-    @task
-    def fundamental_analysis_task(self) -> Task:
-        return task_factory.create_task("fundamental_analysis", self.fundamental_analyst)
-
-    @task
-    def risk_analysis_task(self) -> Task:
-        return task_factory.create_task("risk_analysis", self.risk_analyst)
-
-    @task
-    def sentiment_analysis_task(self) -> Task:
-        return task_factory.create_task("sentiment_analysis", self.sentiment_analyst)
-
-    @task
-    def market_analysis_task(self) -> Task:
-        return task_factory.create_task("market_analysis", self.market_analyst)
-
-    @task
-    def industry_analysis_task(self) -> Task:
-        return task_factory.create_task("industry_analysis", self.industry_analyst)
-
-    @task
-    def competitor_analysis_task(self) -> Task:
-        return task_factory.create_task("competitor_analysis", self.competitor_analyst)
-
-    @task
-    def economic_analysis_task(self) -> Task:
-        return task_factory.create_task("economic_analysis", self.economic_analyst)
-
-    @task
-    def investment_recommendation_task(self) -> Task:
-        return task_factory.create_task("investment_recommendation", self.investment_advisor)
-
-    @task
-    def report_generation_task(self) -> Task:
-        return task_factory.create_task("report_generation", self.report_generator)
-
-    # ── crew ──────────────────────────────────────────────────────────────────
-
-    @crew
-    def crew(self) -> Crew:
-        return Crew(
-            agents=self.agents,
-            tasks=self.tasks,
-            process=Process.sequential,
-            verbose=True,
-            memory=True,
-            planning=True,
-            planning_llm=_build_planning_llm(),
-            embedder=config_loader.build_embedder_config(),
-            output_log_file=settings.crew_log_file,
-        )
-
-    # ── public API ────────────────────────────────────────────────────────────
+    # ── internal crew builder ─────────────────────────────────────────────────
 
     def _get_crew(self) -> Crew:
         """Return cached Crew instance (built once per StockAnalysisCrew lifetime).
@@ -199,6 +77,8 @@ class StockAnalysisCrew:
                 output_log_file=settings.crew_log_file,
             )
         return self._crew_instance
+
+    # ── public API ────────────────────────────────────────────────────────────
 
     def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:
         """Analyze a single stock symbol."""

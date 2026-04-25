@@ -27,9 +27,11 @@ class BaseAgent:
         self._init_model = model            # may be None → use config
         self.config = config_loader.get_agent_config(agent_name)
         self._resolved = self._resolve_llm_config()
-        self.llm = self._build_llm()
-        self.tools = self._get_tools()
-        self.agent = self._create_agent()
+        # LLM, tools, and Agent are built lazily on first get_agent() call
+        # so the app can be constructed without an API key (e.g. for --help).
+        self._llm: Optional[Any] = None
+        self._tools: Optional[List[Any]] = None
+        self._agent: Optional[Any] = None
 
     # ── LLM resolution ────────────────────────────────────────────────────────
 
@@ -136,8 +138,8 @@ class BaseAgent:
             backstory=self.config.backstory,
             verbose=self.config.verbose,
             allow_delegation=self.config.allow_delegation,
-            tools=self.tools,
-            llm=self.llm,
+            tools=self._tools or [],
+            llm=self._llm,
             max_iter=self.config.max_iter,
             respect_context_window=True,
         )
@@ -151,7 +153,13 @@ class BaseAgent:
     # ── Public helpers ────────────────────────────────────────────────────────
 
     def get_agent(self) -> Agent:
-        return self.agent
+        if self._agent is None:
+            if self._llm is None:
+                self._llm = self._build_llm()
+            if self._tools is None:
+                self._tools = self._get_tools()
+            self._agent = self._create_agent()
+        return self._agent
 
     def get_config(self) -> AgentConfig:
         return self.config
