@@ -35,7 +35,7 @@ mypy src/
 # Run CLI analysis
 python -m stock_analysis.main AAPL
 python -m stock_analysis.main AAPL MSFT GOOGL --output reports/
-python -m stock_analysis.main AAPL --crew-type flow --analysis-depth deep
+python -m stock_analysis.main AAPL --crew-type flow --depth deep
 python -m stock_analysis.main AAPL --llm-provider anthropic --model claude-sonnet-4-6
 
 # Docker (full stack: app + Redis + PostgreSQL)
@@ -59,17 +59,16 @@ Memory is configured **at the Crew level only** — individual agents do not hav
 
 ### Crew Types
 
-Four crew implementations in `crew/`:
+Two crew implementations in `crew/`:
 
-| Class | File | Key feature |
-|---|---|---|
-| `StockAnalysisCrew` | `stock_analysis_crew.py` | `@CrewBase` with `output_pydantic`, guardrail on recommendation task, `step_callback` |
-| `ModernStockAnalysisCrew` | `modern_crew.py` | YAML-config tasks; `akickoff_for_each()` for async parallel batch analysis |
-| `StockAnalysisFlowCrew` | `flow_crew.py` | Standard-depth Flow (technical/fundamental/risk/sentiment) |
-| `QuickAnalysisFlowCrew` | `flow_crew.py` | Quick-depth Flow (technical + fundamental only) |
-| `DeepDiveAnalysisFlowCrew` | `flow_crew.py` | Deep-depth Flow (all eight specialist agents) |
+| Class | File | CLI flag | Key feature |
+|---|---|---|---|
+| `StockAnalysisCrew` | `modern_crew.py` | `--crew-type standard` (default) | `@CrewBase`, YAML-config tasks, `akickoff_for_each()` for async batch, crew-instance caching, `planning_llm`, token usage in results |
+| `StockAnalysisFlow` | `flow_crew.py` | `--crew-type flow --depth quick\|standard\|deep` | Event-driven Flow; depth controls which specialist agents run |
 
-`flow_crew.py` uses the real CrewAI 1.x Flow API: `Flow[StockAnalysisState]` with `@start`, `@listen`, `@router`, and `or_()` decorators. `analysis_depth` is set on `StockAnalysisState` and the `@router` routes to `"quick"` / `"standard"` / `"deep"` listener methods.
+`flow_crew.py` uses the CrewAI 1.x Flow API: `Flow[StockAnalysisState]` with `@start`, `@listen`, `@router`, and `or_()` decorators. `analysis_depth` on `StockAnalysisState` routes to `"quick"` / `"standard"` / `"deep"` listener methods.
+
+`crew/event_listener.py` registers a `BaseEventListener` at import time for structured observability (task complete, agent action, crew complete events).
 
 `main.py` selects the crew type and is the entry point for both CLI and programmatic use.
 
@@ -99,6 +98,7 @@ All runtime settings are in `config/settings.py` as a Pydantic `BaseSettings` cl
 | `LLM_MODEL` | `gpt-4o` | Model name |
 | `FRED_API_KEY` | `demo` | Federal Reserve data (`demo` = rate-limited free access) |
 | `ENABLE_*` flags | `true` | Toggle individual data sources on/off |
+| `CREW_LOG_FILE` | `logs/crew_output.log` | Persistent crew execution log |
 | `DEBUG` | `false` | Bypasses secret key validation when `true` |
 
 ### Docker
