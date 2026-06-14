@@ -8,7 +8,7 @@ from ..tools.free_data_collection import (
     FreeEconomicDataTool, FreeWebSearchTool,
     FreeCompetitorAnalysisTool, FreeIndustryAnalysisTool
 )
-from ..config.settings import settings
+from ..tools.company_intel import ETFPortfolioTool
 
 
 class CompetitorAnalystAgent(BaseAgent):
@@ -25,4 +25,5 @@ class CompetitorAnalystAgent(BaseAgent):
             FreeNewsTool(),
             FreeCompetitorAnalysisTool(),
             FreeWebSearchTool(),
+            ETFPortfolioTool(),
         ]

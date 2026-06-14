@@ -1,30 +1,60 @@
 """Calculation tools for stock analysis."""
 
+import json
 import logging
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any, Tuple
-try:
-    import ta
-except ImportError:
-    ta = None  # type: ignore[assignment]
-try:
-    from scipy import stats
-    from scipy.optimize import minimize
-except ImportError:
-    stats = None  # type: ignore[assignment]
-    minimize = None  # type: ignore[assignment]
-
+from typing import Optional, List, Dict, Any
+from ._indicators import (
+    sma, ema, rsi, macd_line, macd_signal_line, macd_diff,
+    stoch, stoch_signal, williams_r, roc,
+    atr, bollinger_upper, bollinger_middle, bollinger_lower,
+    keltner_upper, keltner_middle, keltner_lower,
+    adx, cci, aroon_up, aroon_down, psar_approx,
+    ichimoku_a, ichimoku_b,
+    obv, acc_dist_index, money_flow_index, volume_price_trend, chaikin_money_flow,
+    _last,
+)
 _logger = logging.getLogger(__name__)
-import warnings
-warnings.filterwarnings('ignore')
 
 from crewai.tools import BaseTool
-from pydantic import BaseModel, Field
 
-from ..models.stock_data import RiskLevel, RecommendationType
+from ..models.stock_data import RiskLevel
+
+
+def _parse_list(value, default=None):
+    """Accept a JSON-array string OR a Python list. Strips whitespace; treats null/empty as default."""
+    if default is None:
+        default = []
+    if value is None:
+        return default
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        v = value.strip()
+        if not v or v == "null":
+            return default
+        result = json.loads(v)
+        return result if isinstance(result, list) else default
+    return default
+
+
+def _parse_dict(value, default=None):
+    """Accept a JSON-object string OR a Python dict. Strips whitespace; treats null/empty as default."""
+    if default is None:
+        default = {}
+    if value is None:
+        return default
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        v = value.strip()
+        if not v or v == "null":
+            return default
+        result = json.loads(v)
+        return result if isinstance(result, dict) else default
+    return default
 
 
 class FinancialCalculatorTool(BaseTool):
@@ -33,9 +63,10 @@ class FinancialCalculatorTool(BaseTool):
     name: str = "Financial Calculator Tool"
     description: str = "Performs various financial calculations including ratios, returns, and valuations"
     
-    def _run(self, calculation_type: str, **kwargs) -> Dict[str, Any]:
-        """Perform financial calculations."""
+    def _run(self, calculation_type: str, params: str = "{}") -> Dict[str, Any]:
+        """Perform financial calculations. params is a JSON object of keyword arguments for the chosen calculation_type."""
         try:
+            kwargs = _parse_dict(params)
             if calculation_type == "ratios":
                 return self._calculate_ratios(**kwargs)
             elif calculation_type == "returns":
@@ -50,8 +81,9 @@ class FinancialCalculatorTool(BaseTool):
         except Exception as e:
             return {"error": f"Calculation failed: {str(e)}"}
     
-    def _calculate_ratios(self, price: float, earnings: float, book_value: float, 
-                         sales: float, market_cap: float, **kwargs) -> Dict[str, Any]:
+    def _calculate_ratios(self, price: float = 0.0, earnings: Optional[float] = None,
+                         book_value: Optional[float] = None, sales: Optional[float] = None,
+                         market_cap: Optional[float] = None, **kwargs) -> Dict[str, Any]:
         """Calculate financial ratios."""
         ratios = {}
         
@@ -61,7 +93,7 @@ class FinancialCalculatorTool(BaseTool):
         if book_value and book_value > 0:
             ratios["pb_ratio"] = price / book_value
         
-        if sales and sales > 0:
+        if sales and sales > 0 and market_cap:
             ratios["ps_ratio"] = market_cap / sales
         
         if earnings and earnings > 0 and kwargs.get("growth_rate"):
@@ -136,25 +168,29 @@ class FinancialCalculatorTool(BaseTool):
         }
     
     def _calculate_risk_metrics(self, returns: List[float], risk_free_rate: float = 0.02) -> Dict[str, Any]:
-        """Calculate risk metrics."""
+        """Calculate risk metrics from daily returns. risk_free_rate is annual."""
         if not returns:
             return {"error": "No returns data provided"}
-        
+
         returns_array = np.array(returns)
-        
-        # Basic risk metrics
+
+        # Basic risk metrics (annualised, assuming daily returns)
         mean_return = np.mean(returns_array)
         volatility = np.std(returns_array)
-        
-        # Sharpe ratio
-        excess_return = mean_return - risk_free_rate
-        sharpe_ratio = excess_return / volatility if volatility > 0 else 0
-        
-        # Sortino ratio (downside deviation)
+        annualized_return = mean_return * 252
+        annualized_volatility = volatility * np.sqrt(252)
+
+        # Sharpe ratio — annual excess return over annual volatility
+        excess_return = annualized_return - risk_free_rate
+        sharpe_ratio = excess_return / annualized_volatility if annualized_volatility > 0 else 0
+
+        # Sortino ratio (annualised downside deviation)
         downside_returns = returns_array[returns_array < 0]
-        downside_deviation = np.std(downside_returns) if len(downside_returns) > 0 else 0
+        downside_deviation = (
+            np.std(downside_returns) * np.sqrt(252) if len(downside_returns) > 0 else 0
+        )
         sortino_ratio = excess_return / downside_deviation if downside_deviation > 0 else 0
-        
+
         # Maximum drawdown
         cumulative_returns = np.cumprod(1 + returns_array)
         running_max = np.maximum.accumulate(cumulative_returns)
@@ -170,16 +206,18 @@ class FinancialCalculatorTool(BaseTool):
         return {
             "mean_return": mean_return,
             "volatility": volatility,
+            "annualized_return": annualized_return,
+            "annualized_volatility": annualized_volatility,
             "sharpe_ratio": sharpe_ratio,
             "sortino_ratio": sortino_ratio,
             "max_drawdown": max_drawdown,
             "var_95": var_95,
             "cvar_95": cvar_95,
-            "risk_level": self._determine_risk_level(volatility, max_drawdown)
+            "risk_level": self._determine_risk_level(annualized_volatility, max_drawdown)
         }
     
     def _determine_risk_level(self, volatility: float, max_drawdown: float) -> str:
-        """Determine risk level based on volatility and drawdown."""
+        """Determine risk level based on annualised volatility and drawdown."""
         if volatility < 0.15 and abs(max_drawdown) < 0.1:
             return RiskLevel.VERY_LOW
         elif volatility < 0.25 and abs(max_drawdown) < 0.2:
@@ -198,13 +236,17 @@ class TechnicalIndicatorTool(BaseTool):
     name: str = "Technical Indicator Tool"
     description: str = "Calculates various technical indicators for stock analysis"
     
-    def _run(self, price_data: List[Dict], indicator_type: str, **kwargs) -> Dict[str, Any]:
-        """Calculate technical indicators."""
+    def _run(self, price_data: str, indicator_type: str, params: str = "{}") -> Dict[str, Any]:
+        """Calculate technical indicators. price_data is a JSON array of OHLCV records; params is an optional JSON object of extra kwargs."""
         try:
-            df = pd.DataFrame(price_data)
+            kwargs = _parse_dict(params)
+            price_list = _parse_list(price_data)
+            if not price_list:
+                return {"error": "price_data is empty or null"}
+            df = pd.DataFrame(price_list)
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             df.set_index('timestamp', inplace=True)
-            
+
             if indicator_type == "moving_averages":
                 return self._calculate_moving_averages(df, **kwargs)
             elif indicator_type == "momentum":
@@ -223,133 +265,98 @@ class TechnicalIndicatorTool(BaseTool):
     
     def _calculate_moving_averages(self, df: pd.DataFrame, periods: List[int] = [20, 50, 200]) -> Dict[str, Any]:
         """Calculate moving averages."""
-        indicators = {}
-        
-        for period in periods:
-            indicators[f"sma_{period}"] = ta.trend.sma_indicator(df['close'], window=period).iloc[-1]
-            indicators[f"ema_{period}"] = ta.trend.ema_indicator(df['close'], window=period).iloc[-1]
-        
-        return indicators
-    
+        c = df['close']
+        return {f"sma_{p}": _last(sma(c, p)) for p in periods} | {f"ema_{p}": _last(ema(c, p)) for p in periods}
+
     def _calculate_momentum_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate momentum indicators."""
-        indicators = {}
-        
-        # RSI
-        indicators["rsi"] = ta.momentum.rsi(df['close'], window=14).iloc[-1]
-        
-        # MACD
-        macd = ta.trend.macd(df['close'])
-        indicators["macd"] = macd.iloc[-1]
-        indicators["macd_signal"] = ta.trend.macd_signal(df['close']).iloc[-1]
-        indicators["macd_histogram"] = ta.trend.macd_diff(df['close']).iloc[-1]
-        
-        # Stochastic
-        stoch = ta.momentum.stoch(df['high'], df['low'], df['close'])
-        indicators["stochastic_k"] = stoch.iloc[-1]
-        indicators["stochastic_d"] = ta.momentum.stoch_signal(df['high'], df['low'], df['close']).iloc[-1]
-        
-        # Williams %R
-        indicators["williams_r"] = ta.momentum.williams_r(df['high'], df['low'], df['close']).iloc[-1]
-        
-        # Rate of Change
-        indicators["roc"] = ta.momentum.roc(df['close'], window=10).iloc[-1]
-        
-        return indicators
-    
+        c, h, l = df['close'], df['high'], df['low']
+        return {
+            "rsi":           _last(rsi(c, 14)),
+            "macd":          _last(macd_line(c)),
+            "macd_signal":   _last(macd_signal_line(c)),
+            "macd_histogram": _last(macd_diff(c)),
+            "stochastic_k":  _last(stoch(h, l, c)),
+            "stochastic_d":  _last(stoch_signal(h, l, c)),
+            "williams_r":    _last(williams_r(h, l, c)),
+            "roc":           _last(roc(c, 10)),
+        }
+
     def _calculate_volatility_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate volatility indicators."""
-        indicators = {}
-        
-        # Bollinger Bands
-        bb_upper = ta.volatility.bollinger_hband(df['close'])
-        bb_middle = ta.volatility.bollinger_mavg(df['close'])
-        bb_lower = ta.volatility.bollinger_lband(df['close'])
-        
-        indicators["bollinger_upper"] = bb_upper.iloc[-1]
-        indicators["bollinger_middle"] = bb_middle.iloc[-1]
-        indicators["bollinger_lower"] = bb_lower.iloc[-1]
-        indicators["bollinger_width"] = (bb_upper.iloc[-1] - bb_lower.iloc[-1]) / bb_middle.iloc[-1]
-        
-        # Average True Range
-        indicators["atr"] = ta.volatility.average_true_range(df['high'], df['low'], df['close']).iloc[-1]
-        
-        # Keltner Channels
-        kc_upper = ta.volatility.keltner_channel_hband(df['high'], df['low'], df['close'])
-        kc_middle = ta.volatility.keltner_channel_mband(df['high'], df['low'], df['close'])
-        kc_lower = ta.volatility.keltner_channel_lband(df['high'], df['low'], df['close'])
-        
-        indicators["keltner_upper"] = kc_upper.iloc[-1]
-        indicators["keltner_middle"] = kc_middle.iloc[-1]
-        indicators["keltner_lower"] = kc_lower.iloc[-1]
-        
-        return indicators
-    
+        c, h, l = df['close'], df['high'], df['low']
+        bb_u = bollinger_upper(c)
+        bb_m = bollinger_middle(c)
+        bb_l = bollinger_lower(c)
+        bb_width = None
+        if bb_u.iloc[-1] == bb_u.iloc[-1] and bb_m.iloc[-1] and bb_m.iloc[-1] != 0:
+            bb_width = round((float(bb_u.iloc[-1]) - float(bb_l.iloc[-1])) / float(bb_m.iloc[-1]), 4)
+        return {
+            "bollinger_upper":  _last(bb_u),
+            "bollinger_middle": _last(bb_m),
+            "bollinger_lower":  _last(bb_l),
+            "bollinger_width":  bb_width,
+            "atr":              _last(atr(h, l, c)),
+            "keltner_upper":    _last(keltner_upper(h, l, c)),
+            "keltner_middle":   _last(keltner_middle(c)),
+            "keltner_lower":    _last(keltner_lower(h, l, c)),
+        }
+
     def _calculate_volume_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate volume indicators."""
-        indicators = {}
-        
-        # On-Balance Volume
-        indicators["obv"] = ta.volume.on_balance_volume(df['close'], df['volume']).iloc[-1]
-        
-        # Accumulation/Distribution Line
-        indicators["ad_line"] = ta.volume.acc_dist_index(df['high'], df['low'], df['close'], df['volume']).iloc[-1]
-        
-        # Money Flow Index
-        indicators["mfi"] = ta.volume.money_flow_index(df['high'], df['low'], df['close'], df['volume']).iloc[-1]
-        
-        # Volume Price Trend
-        indicators["vpt"] = ta.volume.volume_price_trend(df['close'], df['volume']).iloc[-1]
-        
-        # Chaikin Money Flow
-        indicators["cmf"] = ta.volume.chaikin_money_flow(df['high'], df['low'], df['close'], df['volume']).iloc[-1]
-        
-        return indicators
-    
+        c, h, l, v = df['close'], df['high'], df['low'], df['volume']
+        return {
+            "obv":     _last(obv(c, v)),
+            "ad_line": _last(acc_dist_index(h, l, c, v)),
+            "mfi":     _last(money_flow_index(h, l, c, v)),
+            "vpt":     _last(volume_price_trend(c, v)),
+            "cmf":     _last(chaikin_money_flow(h, l, c, v)),
+        }
+
     def _calculate_trend_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate trend indicators."""
-        indicators = {}
-        
-        # Average Directional Index
-        indicators["adx"] = ta.trend.adx(df['high'], df['low'], df['close']).iloc[-1]
-        
-        # Commodity Channel Index
-        indicators["cci"] = ta.trend.cci(df['high'], df['low'], df['close']).iloc[-1]
-        
-        # Aroon
-        aroon = ta.trend.aroon(df['high'], df['low'])
-        indicators["aroon_up"] = aroon['aroon_up'].iloc[-1]
-        indicators["aroon_down"] = aroon['aroon_down'].iloc[-1]
-        
-        # Parabolic SAR
-        indicators["psar"] = ta.trend.psar_up(df['high'], df['low'], df['close']).iloc[-1]
-        
-        # Ichimoku Cloud
-        ichimoku = ta.trend.ichimoku_a(df['high'], df['low'])
-        indicators["ichimoku_a"] = ichimoku.iloc[-1]
-        indicators["ichimoku_b"] = ta.trend.ichimoku_b(df['high'], df['low']).iloc[-1]
-        
-        return indicators
+        c, h, l = df['close'], df['high'], df['low']
+        return {
+            "adx":        _last(adx(h, l, c)),
+            "cci":        _last(cci(h, l, c)),
+            "aroon_up":   _last(aroon_up(h)),
+            "aroon_down": _last(aroon_down(l)),
+            "psar":       _last(psar_approx(h, l, c)),
+            "ichimoku_a": _last(ichimoku_a(h, l)),
+            "ichimoku_b": _last(ichimoku_b(h, l)),
+        }
 
 
 class RiskCalculatorTool(BaseTool):
     """Tool for risk calculations."""
     
     name: str = "Risk Calculator Tool"
-    description: str = "Calculates various risk metrics and assessments"
-    
-    def _run(self, price_data: List[Dict], risk_free_rate: float = 0.02) -> Dict[str, Any]:
-        """Calculate risk metrics."""
+    description: str = (
+        "Calculates risk metrics (annualised volatility, Sharpe, Sortino, VaR 95%, "
+        "CVaR, max drawdown, beta vs S&P 500). Preferred usage: pass symbol='TICKER' "
+        "and the tool fetches 1 year of daily prices itself. Alternatively pass "
+        "price_data as a JSON array of OHLCV records."
+    )
+
+    def _run(self, price_data: str = "", risk_free_rate: float = 0.02,
+             symbol: str = "") -> Dict[str, Any]:
+        """Calculate risk metrics from price_data (JSON OHLCV array) or a symbol."""
         try:
-            df = pd.DataFrame(price_data)
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df.set_index('timestamp', inplace=True)
-            
-            # Calculate returns
-            returns = df['close'].pct_change().dropna()
-            
-            if len(returns) < 2:
-                return {"error": "Insufficient data for risk calculation"}
+            returns: Optional[pd.Series] = None
+            price_list = _parse_list(price_data)
+            if price_list:
+                df = pd.DataFrame(price_list)
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df.set_index('timestamp', inplace=True)
+                returns = df['close'].pct_change().dropna()
+            elif symbol:
+                import yfinance as yf
+                hist = yf.Ticker(symbol.strip().upper()).history(period="1y")
+                if hist is not None and not hist.empty:
+                    returns = hist['Close'].pct_change().dropna()
+
+            if returns is None or len(returns) < 2:
+                return {"error": "Provide price_data (JSON OHLCV array) or a valid symbol"}
             
             # Basic risk metrics
             risk_metrics = self._calculate_basic_risk_metrics(returns, risk_free_rate)
@@ -375,22 +382,28 @@ class RiskCalculatorTool(BaseTool):
             return {"error": f"Risk calculation failed: {str(e)}"}
     
     def _calculate_basic_risk_metrics(self, returns: pd.Series, risk_free_rate: float) -> Dict[str, Any]:
-        """Calculate basic risk metrics."""
+        """Calculate basic risk metrics from daily returns. risk_free_rate is annual."""
         mean_return = returns.mean()
         volatility = returns.std()
-        excess_return = mean_return - risk_free_rate
-        
-        # Sharpe ratio
-        sharpe_ratio = excess_return / volatility if volatility > 0 else 0
-        
-        # Sortino ratio
+        annualized_return = mean_return * 252
+        annualized_volatility = volatility * np.sqrt(252)
+        excess_return = annualized_return - risk_free_rate
+
+        # Sharpe ratio — annual excess return over annual volatility
+        sharpe_ratio = excess_return / annualized_volatility if annualized_volatility > 0 else 0
+
+        # Sortino ratio (annualised downside deviation)
         downside_returns = returns[returns < 0]
-        downside_deviation = downside_returns.std() if len(downside_returns) > 0 else 0
+        downside_deviation = (
+            downside_returns.std() * np.sqrt(252) if len(downside_returns) > 0 else 0
+        )
         sortino_ratio = excess_return / downside_deviation if downside_deviation > 0 else 0
-        
+
         return {
             "mean_return": mean_return,
             "volatility": volatility,
+            "annualized_return": annualized_return,
+            "annualized_volatility": annualized_volatility,
             "sharpe_ratio": sharpe_ratio,
             "sortino_ratio": sortino_ratio,
             "excess_return": excess_return
@@ -466,8 +479,8 @@ class RiskCalculatorTool(BaseTool):
             return None
     
     def _assess_risk_level(self, basic_metrics: Dict, advanced_metrics: Dict) -> Dict[str, Any]:
-        """Assess overall risk level."""
-        volatility = basic_metrics["volatility"]
+        """Assess overall risk level (volatility thresholds are annualised)."""
+        volatility = basic_metrics.get("annualized_volatility", basic_metrics["volatility"])
         max_drawdown = abs(advanced_metrics["max_drawdown"])
         sharpe_ratio = basic_metrics["sharpe_ratio"]
         
@@ -529,9 +542,10 @@ class ValuationCalculatorTool(BaseTool):
     name: str = "Valuation Calculator Tool"
     description: str = "Calculates various valuation metrics and models"
     
-    def _run(self, valuation_type: str, **kwargs) -> Dict[str, Any]:
-        """Calculate valuation metrics."""
+    def _run(self, valuation_type: str, params: str = "{}") -> Dict[str, Any]:
+        """Calculate valuation metrics. params is a JSON object of keyword arguments for the chosen valuation_type."""
         try:
+            kwargs = _parse_dict(params)
             if valuation_type == "dcf":
                 return self._calculate_dcf(**kwargs)
             elif valuation_type == "comparable":

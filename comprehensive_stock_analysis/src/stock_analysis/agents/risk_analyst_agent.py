@@ -5,6 +5,7 @@ from typing import List, Any, Optional
 from .base_agent import BaseAgent
 from ..tools.analysis_tools import RiskAnalysisTool
 from ..tools.calculation_tools import FinancialCalculatorTool, RiskCalculatorTool
+from ..tools.company_intel import FinancialStatementsTool, OptionsSentimentTool, OwnershipTool
 
 
 class RiskAnalystAgent(BaseAgent):
@@ -20,4 +21,7 @@ class RiskAnalystAgent(BaseAgent):
             RiskAnalysisTool(),
             RiskCalculatorTool(),
             FinancialCalculatorTool(),
+            FinancialStatementsTool(),
+            OwnershipTool(),
+            OptionsSentimentTool(),
         ]

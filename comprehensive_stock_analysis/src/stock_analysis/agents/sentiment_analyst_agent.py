@@ -3,12 +3,9 @@
 from typing import List, Any, Optional
 
 from .base_agent import BaseAgent
-from ..tools.free_data_collection import (
-    YahooFinanceTool, FreeNewsTool, FreeFREDTool, 
-    FreeEconomicDataTool, FreeWebSearchTool,
-    FreeCompetitorAnalysisTool, FreeIndustryAnalysisTool
-)
-from ..config.settings import settings
+from ..tools.free_data_collection import FreeNewsTool, FreeWebSearchTool, YahooFinanceTool
+from ..tools.company_intel import AnalystDataTool, OptionsSentimentTool
+from ..tools.social_sentiment import SocialSentimentTool
 
 
 class SentimentAnalystAgent(BaseAgent):
@@ -21,5 +18,11 @@ class SentimentAnalystAgent(BaseAgent):
     def _get_tools(self) -> List[Any]:
         """Get sentiment analyst tools."""
         return [
+            SocialSentimentTool(),
+            AnalystDataTool(),
             FreeNewsTool(),
+            OptionsSentimentTool(),
+            YahooFinanceTool(),
+            # Fallback: fills qualitative gaps when a platform source is unavailable
+            FreeWebSearchTool(),
         ]

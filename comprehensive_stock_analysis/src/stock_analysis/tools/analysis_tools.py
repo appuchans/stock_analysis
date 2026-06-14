@@ -1,37 +1,60 @@
 """Analysis tools for stock analysis."""
 
+import json
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any, Tuple
-try:
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.cluster import KMeans
-    from sklearn.decomposition import PCA
-except ImportError:
-    StandardScaler = None  # type: ignore[assignment,misc]
-    KMeans = None  # type: ignore[assignment,misc]
-    PCA = None  # type: ignore[assignment,misc]
-try:
-    import ta
-except ImportError:
-    ta = None  # type: ignore[assignment]
+from datetime import datetime
+from typing import List, Dict, Any
+from ._indicators import (
+    sma, ema, rsi, macd_line, macd_signal_line, macd_diff,
+    stoch, stoch_signal, williams_r, roc,
+    atr, bollinger_upper, bollinger_middle, bollinger_lower,
+    adx, cci, aroon_up, aroon_down,
+    obv, acc_dist_index, money_flow_index,
+    _last,
+)
 try:
     from scipy import stats
-    from scipy.optimize import minimize
 except ImportError:
     stats = None  # type: ignore[assignment]
-    minimize = None  # type: ignore[assignment]
-import warnings
-warnings.filterwarnings('ignore')
 
 from crewai.tools import BaseTool
-from pydantic import BaseModel, Field
 
-from ..models.stock_data import (
-    TechnicalIndicators, FundamentalData, RiskMetrics, 
-    AnalysisResult, InvestmentRecommendation, RecommendationType, RiskLevel
-)
+from ..models.stock_data import RiskLevel
+
+
+def _parse_list(value, default=None):
+    """Accept a JSON-array string OR a Python list. Strips whitespace; treats null/empty as default."""
+    if default is None:
+        default = []
+    if value is None:
+        return default
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        v = value.strip()
+        if not v or v == "null":
+            return default
+        result = json.loads(v)
+        return result if isinstance(result, list) else default
+    return default
+
+
+def _parse_dict(value, default=None):
+    """Accept a JSON-object string OR a Python dict. Strips whitespace; treats null/empty as default."""
+    if default is None:
+        default = {}
+    if value is None:
+        return default
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        v = value.strip()
+        if not v or v == "null":
+            return default
+        result = json.loads(v)
+        return result if isinstance(result, dict) else default
+    return default
 
 
 class TechnicalAnalysisTool(BaseTool):
@@ -40,20 +63,27 @@ class TechnicalAnalysisTool(BaseTool):
     name: str = "Technical Analysis Tool"
     description: str = "Performs comprehensive technical analysis including indicators, patterns, and signals"
     
-    def _run(self, price_data: List[Dict], volume_data: List[Dict]) -> Dict[str, Any]:
-        """Perform technical analysis."""
+    def _run(self, price_data: str, volume_data: str) -> Dict[str, Any]:
+        """Perform technical analysis. price_data and volume_data are JSON arrays of OHLCV records."""
         try:
+            price_list = _parse_list(price_data)
+            vol_list = _parse_list(volume_data)
+            if not price_list:
+                return {"error": "price_data is empty or null — pass a JSON array of OHLCV records"}
             # Convert to DataFrame
-            df = pd.DataFrame(price_data)
+            df = pd.DataFrame(price_list)
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             df.set_index('timestamp', inplace=True)
-            
-            vol_df = pd.DataFrame(volume_data)
-            vol_df['timestamp'] = pd.to_datetime(vol_df['timestamp'])
-            vol_df.set_index('timestamp', inplace=True)
-            
-            # Merge data
-            df = df.join(vol_df, how='left')
+
+            if vol_list:
+                vol_df = pd.DataFrame(vol_list)
+                vol_df['timestamp'] = pd.to_datetime(vol_df['timestamp'])
+                vol_df.set_index('timestamp', inplace=True)
+                # Drop columns already present in the price frame to avoid join collisions
+                vol_df = vol_df[[c for c in vol_df.columns if c not in df.columns]]
+                df = df.join(vol_df, how='left')
+            if 'volume' not in df.columns:
+                df['volume'] = float('nan')
             
             # Calculate technical indicators
             indicators = self._calculate_indicators(df)
@@ -84,48 +114,38 @@ class TechnicalAnalysisTool(BaseTool):
     
     def _calculate_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate technical indicators."""
-        indicators = {}
-        
-        # Moving Averages
-        indicators['sma_20'] = ta.trend.sma_indicator(df['close'], window=20).iloc[-1]
-        indicators['sma_50'] = ta.trend.sma_indicator(df['close'], window=50).iloc[-1]
-        indicators['sma_200'] = ta.trend.sma_indicator(df['close'], window=200).iloc[-1]
-        indicators['ema_12'] = ta.trend.ema_indicator(df['close'], window=12).iloc[-1]
-        indicators['ema_26'] = ta.trend.ema_indicator(df['close'], window=26).iloc[-1]
-        
-        # Momentum Indicators
-        indicators['rsi'] = ta.momentum.rsi(df['close'], window=14).iloc[-1]
-        macd_data = ta.trend.macd(df['close'])
-        indicators['macd'] = macd_data.iloc[-1]
-        indicators['macd_signal'] = ta.trend.macd_signal(df['close']).iloc[-1]
-        indicators['macd_histogram'] = ta.trend.macd_diff(df['close']).iloc[-1]
-        
-        stoch = ta.momentum.stoch(df['high'], df['low'], df['close'])
-        indicators['stochastic_k'] = stoch.iloc[-1]
-        indicators['stochastic_d'] = ta.momentum.stoch_signal(df['high'], df['low'], df['close']).iloc[-1]
-        indicators['williams_r'] = ta.momentum.williams_r(df['high'], df['low'], df['close']).iloc[-1]
-        indicators['momentum'] = ta.momentum.roc(df['close'], window=10).iloc[-1]
-        
-        # Volatility Indicators
-        bb = ta.volatility.bollinger_hband(df['close'])
-        indicators['bollinger_upper'] = bb.iloc[-1]
-        indicators['bollinger_middle'] = ta.volatility.bollinger_mavg(df['close']).iloc[-1]
-        indicators['bollinger_lower'] = ta.volatility.bollinger_lband(df['close']).iloc[-1]
-        indicators['atr'] = ta.volatility.average_true_range(df['high'], df['low'], df['close']).iloc[-1]
-        
-        # Trend Indicators
-        indicators['adx'] = ta.trend.adx(df['high'], df['low'], df['close']).iloc[-1]
-        indicators['cci'] = ta.trend.cci(df['high'], df['low'], df['close']).iloc[-1]
-        aroon = ta.trend.aroon(df['high'], df['low'])
-        indicators['aroon_up'] = aroon['aroon_up'].iloc[-1]
-        indicators['aroon_down'] = aroon['aroon_down'].iloc[-1]
-        
-        # Volume Indicators
-        indicators['obv'] = ta.volume.on_balance_volume(df['close'], df['volume']).iloc[-1]
-        indicators['ad_line'] = ta.volume.acc_dist_index(df['high'], df['low'], df['close'], df['volume']).iloc[-1]
-        indicators['mfi'] = ta.volume.money_flow_index(df['high'], df['low'], df['close'], df['volume']).iloc[-1]
-        
-        return indicators
+        c, h, l, v = df['close'], df['high'], df['low'], df['volume']
+        return {
+            # Moving averages
+            'sma_20':          _last(sma(c, 20)),
+            'sma_50':          _last(sma(c, 50)),
+            'sma_200':         _last(sma(c, 200)),
+            'ema_12':          _last(ema(c, 12)),
+            'ema_26':          _last(ema(c, 26)),
+            # Momentum
+            'rsi':             _last(rsi(c, 14)),
+            'macd':            _last(macd_line(c)),
+            'macd_signal':     _last(macd_signal_line(c)),
+            'macd_histogram':  _last(macd_diff(c)),
+            'stochastic_k':    _last(stoch(h, l, c)),
+            'stochastic_d':    _last(stoch_signal(h, l, c)),
+            'williams_r':      _last(williams_r(h, l, c)),
+            'momentum':        _last(roc(c, 10)),
+            # Volatility
+            'bollinger_upper': _last(bollinger_upper(c)),
+            'bollinger_middle': _last(bollinger_middle(c)),
+            'bollinger_lower': _last(bollinger_lower(c)),
+            'atr':             _last(atr(h, l, c)),
+            # Trend
+            'adx':             _last(adx(h, l, c)),
+            'cci':             _last(cci(h, l, c)),
+            'aroon_up':        _last(aroon_up(h)),
+            'aroon_down':      _last(aroon_down(l)),
+            # Volume
+            'obv':             _last(obv(c, v)),
+            'ad_line':         _last(acc_dist_index(h, l, c, v)),
+            'mfi':             _last(money_flow_index(h, l, c, v)),
+        }
     
     def _identify_patterns(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
         """Identify chart patterns."""
@@ -227,7 +247,9 @@ class TechnicalAnalysisTool(BaseTool):
         """Calculate trend strength."""
         if len(df) < 20:
             return {"trend": "insufficient_data", "strength": 0.0}
-        
+        if stats is None:
+            return {"trend": "unknown", "strength": 0.0, "note": "scipy not installed"}
+
         # Calculate linear regression slope
         x = np.arange(len(df))
         y = df['close'].values
@@ -282,19 +304,21 @@ class FundamentalAnalysisTool(BaseTool):
     name: str = "Fundamental Analysis Tool"
     description: str = "Performs comprehensive fundamental analysis including valuation, profitability, and financial health"
     
-    def _run(self, fundamental_data: Dict[str, Any], market_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform fundamental analysis."""
+    def _run(self, fundamental_data: str, market_data: str) -> Dict[str, Any]:
+        """Perform fundamental analysis. fundamental_data and market_data are JSON objects."""
         try:
+            fundamental_data = _parse_dict(fundamental_data)
+            market_data = _parse_dict(market_data)
             analysis = {}
-            
+
             # Valuation Analysis
             valuation = self._analyze_valuation(fundamental_data, market_data)
             analysis["valuation"] = valuation
-            
+
             # Profitability Analysis
             profitability = self._analyze_profitability(fundamental_data)
             analysis["profitability"] = profitability
-            
+
             # Financial Health Analysis
             financial_health = self._analyze_financial_health(fundamental_data)
             analysis["financial_health"] = financial_health
@@ -555,10 +579,14 @@ class RiskAnalysisTool(BaseTool):
     name: str = "Risk Analysis Tool"
     description: str = "Performs comprehensive risk analysis including market risk, credit risk, and operational risk"
     
-    def _run(self, price_data: List[Dict], fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform risk analysis."""
+    def _run(self, price_data: str, fundamental_data: str) -> Dict[str, Any]:
+        """Perform risk analysis. price_data is a JSON array of OHLCV records; fundamental_data is a JSON object."""
         try:
-            df = pd.DataFrame(price_data)
+            fundamental_data = _parse_dict(fundamental_data)
+            price_list = _parse_list(price_data)
+            if not price_list:
+                return {"error": "price_data is empty or null"}
+            df = pd.DataFrame(price_list)
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             df.set_index('timestamp', inplace=True)
             
@@ -621,9 +649,9 @@ class RiskAnalysisTool(BaseTool):
     
     def _analyze_credit_risk(self, fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze credit risk."""
-        debt_to_equity = fundamental_data.get("debt_to_equity", 0)
-        interest_coverage = fundamental_data.get("interest_coverage", 0)
-        current_ratio = fundamental_data.get("current_ratio", 0)
+        debt_to_equity = fundamental_data.get("debt_to_equity") or 0
+        interest_coverage = fundamental_data.get("interest_coverage") or 0
+        current_ratio = fundamental_data.get("current_ratio") or 0
         
         # Credit risk score
         credit_score = 0
@@ -654,9 +682,9 @@ class RiskAnalysisTool(BaseTool):
     
     def _analyze_liquidity_risk(self, fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze liquidity risk."""
-        current_ratio = fundamental_data.get("current_ratio", 0)
-        quick_ratio = fundamental_data.get("quick_ratio", 0)
-        cash_ratio = fundamental_data.get("cash_ratio", 0)
+        current_ratio = fundamental_data.get("current_ratio") or 0
+        quick_ratio = fundamental_data.get("quick_ratio") or 0
+        cash_ratio = fundamental_data.get("cash_ratio") or 0
         
         # Liquidity risk score
         liquidity_score = 0
@@ -685,9 +713,9 @@ class RiskAnalysisTool(BaseTool):
         # This is a simplified operational risk analysis
         # In practice, this would involve more complex metrics
         
-        revenue_growth = fundamental_data.get("revenue_growth", 0)
-        earnings_growth = fundamental_data.get("earnings_growth", 0)
-        roe = fundamental_data.get("roe", 0)
+        revenue_growth = fundamental_data.get("revenue_growth") or 0
+        earnings_growth = fundamental_data.get("earnings_growth") or 0
+        roe = fundamental_data.get("roe") or 0
         
         # Operational risk score
         operational_score = 0
@@ -750,146 +778,18 @@ class RiskAnalysisTool(BaseTool):
         }
 
 
-class SentimentAnalysisTool(BaseTool):
-    """Tool for sentiment analysis of stocks."""
-    
-    name: str = "Sentiment Analysis Tool"
-    description: str = "Performs sentiment analysis on news, social media, and analyst opinions"
-    
-    def _run(self, news_data: List[Dict], analyst_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform sentiment analysis."""
-        try:
-            # News sentiment analysis
-            news_sentiment = self._analyze_news_sentiment(news_data)
-            
-            # Analyst sentiment analysis
-            analyst_sentiment = self._analyze_analyst_sentiment(analyst_data)
-            
-            # Overall sentiment
-            overall_sentiment = self._calculate_overall_sentiment(news_sentiment, analyst_sentiment)
-            
-            return {
-                "news_sentiment": news_sentiment,
-                "analyst_sentiment": analyst_sentiment,
-                "overall_sentiment": overall_sentiment,
-                "analysis_timestamp": datetime.now().isoformat()
-            }
-            
-        except Exception as e:
-            return {"error": f"Sentiment analysis failed: {str(e)}"}
-    
-    def _analyze_news_sentiment(self, news_data: List[Dict]) -> Dict[str, Any]:
-        """Analyze news sentiment."""
-        if not news_data:
-            return {"sentiment_score": 0.0, "sentiment": "neutral", "confidence": 0.0}
-        
-        # Simple sentiment analysis based on keywords
-        positive_keywords = ["positive", "growth", "strong", "beat", "exceed", "outperform", "bullish", "upgrade"]
-        negative_keywords = ["negative", "decline", "weak", "miss", "underperform", "bearish", "downgrade", "concern"]
-        
-        total_score = 0
-        total_articles = len(news_data)
-        
-        for article in news_data:
-            title = article.get("title", "").lower()
-            summary = article.get("summary", "").lower()
-            content = title + " " + summary
-            
-            positive_count = sum(1 for keyword in positive_keywords if keyword in content)
-            negative_count = sum(1 for keyword in negative_keywords if keyword in content)
-            
-            article_score = (positive_count - negative_count) / max(positive_count + negative_count, 1)
-            total_score += article_score
-        
-        avg_sentiment_score = total_score / total_articles if total_articles > 0 else 0
-        
-        if avg_sentiment_score > 0.1:
-            sentiment = "positive"
-        elif avg_sentiment_score < -0.1:
-            sentiment = "negative"
-        else:
-            sentiment = "neutral"
-        
-        return {
-            "sentiment_score": avg_sentiment_score,
-            "sentiment": sentiment,
-            "confidence": min(abs(avg_sentiment_score) * 2, 1.0),
-            "total_articles": total_articles
-        }
-    
-    def _analyze_analyst_sentiment(self, analyst_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze analyst sentiment."""
-        if not analyst_data:
-            return {"sentiment_score": 0.0, "sentiment": "neutral", "confidence": 0.0}
-        
-        # Analyze analyst recommendations
-        strong_buy = analyst_data.get("strong_buy", 0)
-        buy = analyst_data.get("buy", 0)
-        hold = analyst_data.get("hold", 0)
-        sell = analyst_data.get("sell", 0)
-        strong_sell = analyst_data.get("strong_sell", 0)
-        
-        total_analysts = strong_buy + buy + hold + sell + strong_sell
-        
-        if total_analysts == 0:
-            return {"sentiment_score": 0.0, "sentiment": "neutral", "confidence": 0.0}
-        
-        # Calculate weighted sentiment score
-        sentiment_score = (strong_buy * 2 + buy * 1 + hold * 0 + sell * -1 + strong_sell * -2) / total_analysts
-        
-        if sentiment_score > 0.5:
-            sentiment = "positive"
-        elif sentiment_score < -0.5:
-            sentiment = "negative"
-        else:
-            sentiment = "neutral"
-        
-        return {
-            "sentiment_score": sentiment_score,
-            "sentiment": sentiment,
-            "confidence": min(abs(sentiment_score), 1.0),
-            "total_analysts": total_analysts,
-            "recommendations": {
-                "strong_buy": strong_buy,
-                "buy": buy,
-                "hold": hold,
-                "sell": sell,
-                "strong_sell": strong_sell
-            }
-        }
-    
-    def _calculate_overall_sentiment(self, news_sentiment: Dict, analyst_sentiment: Dict) -> Dict[str, Any]:
-        """Calculate overall sentiment."""
-        news_score = news_sentiment.get("sentiment_score", 0)
-        analyst_score = analyst_sentiment.get("sentiment_score", 0)
-        
-        # Weighted average (news and analyst sentiment equally weighted)
-        overall_score = (news_score + analyst_score) / 2
-        
-        if overall_score > 0.2:
-            sentiment = "positive"
-        elif overall_score < -0.2:
-            sentiment = "negative"
-        else:
-            sentiment = "neutral"
-        
-        return {
-            "sentiment_score": overall_score,
-            "sentiment": sentiment,
-            "confidence": (news_sentiment.get("confidence", 0) + analyst_sentiment.get("confidence", 0)) / 2
-        }
-
-
 class ValuationTool(BaseTool):
     """Tool for valuation analysis."""
     
     name: str = "Valuation Tool"
     description: str = "Performs comprehensive valuation analysis using multiple methodologies"
     
-    def _run(self, fundamental_data: Dict[str, Any], market_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform valuation analysis."""
+    def _run(self, fundamental_data: str, market_data: str) -> Dict[str, Any]:
+        """Perform valuation analysis. fundamental_data and market_data are JSON objects."""
         try:
-            current_price = market_data.get("current_price", 0)
+            fundamental_data = _parse_dict(fundamental_data)
+            market_data = _parse_dict(market_data)
+            current_price = market_data.get("current_price") or 0
             
             # DCF Valuation
             dcf_valuation = self._dcf_valuation(fundamental_data)
@@ -919,13 +819,22 @@ class ValuationTool(BaseTool):
     def _dcf_valuation(self, fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
         """DCF valuation analysis."""
         # Simplified DCF calculation
-        current_earnings = fundamental_data.get("net_income", 0)
-        growth_rate = fundamental_data.get("earnings_growth", 0.05)  # Default 5%
+        current_earnings = fundamental_data.get("net_income") or 0
+        growth_rate = fundamental_data.get("earnings_growth") or 0.05  # Default 5%
         discount_rate = 0.10  # Default 10%
-        
+
         if current_earnings <= 0:
             return {"intrinsic_value": None, "method": "DCF", "status": "insufficient_data"}
-        
+
+        # The Gordon growth model breaks down when growth >= discount rate
+        if growth_rate >= discount_rate:
+            return {
+                "intrinsic_value": None,
+                "method": "DCF",
+                "status": "not_applicable",
+                "note": "Earnings growth exceeds discount rate; perpetuity model not valid",
+            }
+
         # Simple perpetuity growth model
         intrinsic_value = current_earnings * (1 + growth_rate) / (discount_rate - growth_rate)
         
@@ -941,8 +850,8 @@ class ValuationTool(BaseTool):
     
     def _comparable_valuation(self, fundamental_data: Dict[str, Any], market_data: Dict[str, Any], industry_pe: float = 15.0) -> Dict[str, Any]:
         """Comparable valuation analysis."""
-        current_price = market_data.get("current_price", 0)
-        pe_ratio = fundamental_data.get("pe_ratio", 0)
+        current_price = market_data.get("current_price") or 0
+        pe_ratio = fundamental_data.get("pe_ratio") or 0
 
         if pe_ratio <= 0:
             return {"intrinsic_value": None, "method": "Comparable", "status": "insufficient_data"}
@@ -961,9 +870,9 @@ class ValuationTool(BaseTool):
     
     def _asset_based_valuation(self, fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
         """Asset-based valuation analysis."""
-        total_assets = fundamental_data.get("total_assets", 0)
-        total_liabilities = fundamental_data.get("total_liabilities", 0)
-        
+        total_assets = fundamental_data.get("total_assets") or 0
+        total_liabilities = fundamental_data.get("total_liabilities") or 0
+
         if total_assets <= 0:
             return {"intrinsic_value": None, "method": "Asset-based", "status": "insufficient_data"}
         
@@ -997,8 +906,10 @@ class ValuationTool(BaseTool):
         
         intrinsic_value = sum(valuations) / len(valuations)
         upside_potential = (intrinsic_value - current_price) / current_price * 100 if current_price > 0 else None
-        
-        if upside_potential > 20:
+
+        if upside_potential is None:
+            assessment = "unknown"
+        elif upside_potential > 20:
             assessment = "undervalued"
         elif upside_potential < -20:
             assessment = "overvalued"
@@ -1020,15 +931,17 @@ class ComparisonTool(BaseTool):
     name: str = "Comparison Tool"
     description: str = "Compares stocks against industry peers and market benchmarks"
     
-    def _run(self, stock_data: Dict[str, Any], industry_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform comparison analysis."""
+    def _run(self, stock_data: str, industry_data: str) -> Dict[str, Any]:
+        """Perform comparison analysis. stock_data and industry_data are JSON objects."""
         try:
+            stock_data = _parse_dict(stock_data)
+            industry_data = _parse_dict(industry_data)
             # Industry comparison
             industry_comparison = self._compare_industry(stock_data, industry_data)
-            
+
             # Peer comparison (simplified)
             peer_comparison = self._compare_peers(stock_data)
-            
+
             # Market comparison
             market_comparison = self._compare_market(stock_data)
             
@@ -1044,8 +957,8 @@ class ComparisonTool(BaseTool):
     
     def _compare_industry(self, stock_data: Dict[str, Any], industry_data: Dict[str, Any]) -> Dict[str, Any]:
         """Compare against industry averages."""
-        stock_pe = stock_data.get("pe_ratio", 0)
-        industry_pe = industry_data.get("pe_ratio_avg", 0)
+        stock_pe = stock_data.get("pe_ratio") or 0
+        industry_pe = industry_data.get("pe_ratio_avg") or 0
         
         pe_comparison = "above" if stock_pe > industry_pe else "below" if stock_pe < industry_pe else "equal"
         

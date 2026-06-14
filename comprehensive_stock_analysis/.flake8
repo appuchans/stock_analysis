@@ -1,0 +1,10 @@
+[flake8]
+# Match black's line length and ignore the rules black intentionally violates.
+max-line-length = 88
+extend-ignore = E203, W503
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    build,
+    dist

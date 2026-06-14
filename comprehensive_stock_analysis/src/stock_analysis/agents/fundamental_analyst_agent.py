@@ -5,6 +5,7 @@ from typing import List, Any, Optional
 from .base_agent import BaseAgent
 from ..tools.analysis_tools import FundamentalAnalysisTool
 from ..tools.calculation_tools import FinancialCalculatorTool, ValuationCalculatorTool
+from ..tools.company_intel import AnalystDataTool, FinancialStatementsTool, OwnershipTool
 
 
 class FundamentalAnalystAgent(BaseAgent):
@@ -17,6 +18,9 @@ class FundamentalAnalystAgent(BaseAgent):
     def _get_tools(self) -> List[Any]:
         """Get fundamental analyst tools."""
         return [
+            FinancialStatementsTool(),
+            AnalystDataTool(),
+            OwnershipTool(),
             FundamentalAnalysisTool(),
             FinancialCalculatorTool(),
             ValuationCalculatorTool(),

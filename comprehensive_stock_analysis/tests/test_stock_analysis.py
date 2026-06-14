@@ -6,22 +6,12 @@ import numpy as np
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 
-# Optional heavy dependencies — tests that need them are skipped if unavailable
-try:
-    import ta as _ta_check
-    _TA_AVAILABLE = True
-except ImportError:
-    _TA_AVAILABLE = False
-
-requires_ta = pytest.mark.skipif(not _TA_AVAILABLE, reason="'ta' package not installed")
-
-from src.stock_analysis.tools.data_collection import YahooFinanceTool
+from src.stock_analysis.tools.free_data_collection import YahooFinanceTool
 from src.stock_analysis.tools.analysis_tools import TechnicalAnalysisTool, FundamentalAnalysisTool
 from src.stock_analysis.tools.calculation_tools import (
     FinancialCalculatorTool, RiskCalculatorTool, TechnicalIndicatorTool, ValuationCalculatorTool
 )
-from src.stock_analysis.models.stock_data import PriceData, VolumeData, CompanyInfo, MarketData
-from src.stock_analysis.tasks.task_factory import TaskFactory
+from src.stock_analysis.models.stock_data import CompanyInfo, MarketData
 
 
 class TestYahooFinanceTool:
@@ -33,8 +23,9 @@ class TestYahooFinanceTool:
         assert tool.name == "Yahoo Finance Data Collector"
         assert tool.description is not None
     
+    @patch('src.stock_analysis.tools.cache._get_redis', return_value=None)
     @patch('yfinance.Ticker')
-    def test_collect_data_success(self, mock_ticker):
+    def test_collect_data_success(self, mock_ticker, _mock_redis):
         """Test successful data collection."""
         # Mock the ticker and its methods
         mock_ticker_instance = Mock()
@@ -105,26 +96,27 @@ class TestYahooFinanceTool:
         # Assertions
         assert "company_info" in result
         assert "market_data" in result
-        assert "price_history" in result
-        assert "volume_history" in result
+        assert "technical_summary" in result
         assert "fundamental_data" in result
-        
+        assert result["asset_type"] == "stock"
+
         # Check company info
         company_info = result["company_info"]
         assert company_info["symbol"] == "AAPL"
         assert company_info["name"] == "Apple Inc."
         assert company_info["sector"] == "Technology"
-        
+        assert company_info["ceo"] == "Tim Cook"
+
         # Check market data
         market_data = result["market_data"]
         assert market_data["symbol"] == "AAPL"
         assert market_data["current_price"] == 156.0
-        
-        # Check price history
-        price_history = result["price_history"]
-        assert len(price_history) == 3
-        assert price_history[0]["open"] == 150.0
-        assert price_history[0]["close"] == 154.0
+
+        # Check technical summary derived from the price history
+        tech = result["technical_summary"]
+        assert tech["current_price"] == 156.0
+        assert tech["prev_close"] == 155.0
+        assert tech["volume_latest"] == 52000000
 
 
 class TestTechnicalAnalysisTool:
@@ -136,7 +128,6 @@ class TestTechnicalAnalysisTool:
         assert tool.name == "Technical Analysis Tool"
         assert tool.description is not None
     
-    @requires_ta
     def test_calculate_indicators(self):
         """Test technical indicator calculations."""
         # Create sample data
@@ -165,7 +156,6 @@ class TestTechnicalAnalysisTool:
         assert indicators['sma_20'] is not None
         assert 0 <= indicators['rsi'] <= 100 if indicators['rsi'] is not None else True
     
-    @requires_ta
     def test_generate_signals(self):
         """Test signal generation."""
         # Create sample data
@@ -318,22 +308,6 @@ class TestFinancialCalculatorTool:
 class TestDataModels:
     """Test data models."""
     
-    def test_price_data_model(self):
-        """Test PriceData model."""
-        price_data = PriceData(
-            open=150.0,
-            high=155.0,
-            low=149.0,
-            close=154.0,
-            timestamp=datetime.now()
-        )
-        
-        assert price_data.open == 150.0
-        assert price_data.high == 155.0
-        assert price_data.low == 149.0
-        assert price_data.close == 154.0
-        assert isinstance(price_data.timestamp, datetime)
-    
     def test_company_info_model(self):
         """Test CompanyInfo model."""
         company_info = CompanyInfo(
@@ -401,7 +375,6 @@ def sample_volume_data():
     ]
 
 
-@requires_ta
 def test_technical_analysis_integration(sample_price_data, sample_volume_data):
     """Test technical analysis with sample data."""
     tool = TechnicalAnalysisTool()
@@ -417,6 +390,12 @@ def test_technical_analysis_integration(sample_price_data, sample_volume_data):
 
 class TestRiskCalculatorTool:
     """Tests for RiskCalculatorTool."""
+
+    @pytest.fixture(autouse=True)
+    def _no_network(self, monkeypatch):
+        """Keep the beta calculation (live S&P 500 download) off the network."""
+        import yfinance as yf
+        monkeypatch.setattr(yf, "download", lambda *a, **k: pd.DataFrame())
 
     def _make_price_data(self, n: int = 60):
         dates = pd.date_range('2024-01-01', periods=n)
@@ -448,6 +427,43 @@ class TestRiskCalculatorTool:
         result = tool._run([{"close": 100.0, "timestamp": "2024-01-01"}])
         assert "error" in result
 
+    def test_symbol_mode_fetches_history_itself(self, monkeypatch):
+        """Passing symbol= must work without a price_data array."""
+        import yfinance as yf
+
+        dates = pd.date_range('2025-06-01', periods=60)
+        np.random.seed(3)
+        closes = 100 + np.cumsum(np.random.randn(60) * 0.5)
+        hist = pd.DataFrame({"Close": closes}, index=dates)
+
+        class _T:
+            def __init__(self, sym): pass
+            def history(self, period="1y"): return hist
+
+        monkeypatch.setattr(yf, "Ticker", _T)
+        result = RiskCalculatorTool()._run(symbol="NVDA")
+        assert "basic_metrics" in result
+        assert result["basic_metrics"]["annualized_volatility"] > 0
+
+    def test_no_inputs_returns_error(self):
+        result = RiskCalculatorTool()._run()
+        assert "error" in result
+
+    def test_sharpe_uses_annualised_returns(self):
+        """A steadily rising stock must show a positive Sharpe ratio.
+
+        Regression test: the daily mean return used to be compared against the
+        *annual* risk-free rate, which made nearly every stock look negative.
+        """
+        dates = pd.date_range('2024-01-01', periods=80)
+        prices = [100 * (1.001 ** i) * (1 + 0.0002 * (-1) ** i) for i in range(80)]
+        data = [{"close": float(prices[i]), "timestamp": dates[i].isoformat()} for i in range(80)]
+        tool = RiskCalculatorTool()
+        result = tool._run(data)
+        basic = result["basic_metrics"]
+        assert basic["sharpe_ratio"] > 0
+        assert basic["annualized_volatility"] > basic["volatility"]
+
 
 class TestTechnicalIndicatorTool:
     """Tests for TechnicalIndicatorTool."""
@@ -472,14 +488,12 @@ class TestTechnicalIndicatorTool:
         tool = TechnicalIndicatorTool()
         assert tool.name == "Technical Indicator Tool"
 
-    @requires_ta
     def test_moving_averages(self):
         tool = TechnicalIndicatorTool()
         result = tool._run(self._make_ohlcv(), indicator_type="moving_averages")
         assert "sma_20" in result
         assert "ema_20" in result
 
-    @requires_ta
     def test_momentum_indicators(self):
         tool = TechnicalIndicatorTool()
         result = tool._run(self._make_ohlcv(), indicator_type="momentum")
@@ -552,46 +566,12 @@ class TestValuationCalculatorTool:
         assert "error" in result
 
 
-class TestTaskFactory:
-    """Tests for TaskFactory."""
-
-    @patch('src.stock_analysis.tasks.task_factory.config_loader')
-    def test_create_task_unknown_name_raises(self, mock_loader):
-        mock_loader.load_tasks_config.return_value = {}
-        factory = TaskFactory.__new__(TaskFactory)
-        factory.tasks_config = {}
-        with pytest.raises(ValueError, match="not found in configuration"):
-            factory.create_task("nonexistent_task", Mock())
-
-    @patch('src.stock_analysis.tasks.task_factory.config_loader')
-    def test_execution_order_no_cycles(self, mock_loader):
-        from src.stock_analysis.config.loader import TaskConfig
-        task_a = TaskConfig(description="d", expected_output="o", context=[])
-        task_b = TaskConfig(description="d", expected_output="o", context=["task_a"])
-        mock_loader.load_tasks_config.return_value = {"task_a": task_a, "task_b": task_b}
-        factory = TaskFactory.__new__(TaskFactory)
-        factory.tasks_config = {"task_a": task_a, "task_b": task_b}
-        order = factory.get_task_execution_order()
-        assert order.index("task_a") < order.index("task_b")
-
-    @patch('src.stock_analysis.tasks.task_factory.config_loader')
-    def test_execution_order_handles_cycle_without_raising(self, mock_loader):
-        from src.stock_analysis.config.loader import TaskConfig
-        task_a = TaskConfig(description="d", expected_output="o", context=["task_b"])
-        task_b = TaskConfig(description="d", expected_output="o", context=["task_a"])
-        mock_loader.load_tasks_config.return_value = {"task_a": task_a, "task_b": task_b}
-        factory = TaskFactory.__new__(TaskFactory)
-        factory.tasks_config = {"task_a": task_a, "task_b": task_b}
-        # Should not raise; returns empty list for unresolvable cycle
-        order = factory.get_task_execution_order()
-        assert isinstance(order, list)
-
-
 class TestAPIFailureHandling:
     """Test resilience against API failure and edge-case data scenarios."""
 
+    @patch('src.stock_analysis.tools.cache._get_redis', return_value=None)
     @patch('yfinance.Ticker')
-    def test_yahoo_finance_handles_empty_history(self, mock_ticker):
+    def test_yahoo_finance_handles_empty_history(self, mock_ticker, _mock_redis):
         mock_instance = Mock()
         mock_ticker.return_value = mock_instance
         mock_instance.info = {}
@@ -600,8 +580,9 @@ class TestAPIFailureHandling:
         result = tool._run("FAKE")
         assert result.get("market_data", {}).get("current_price", 0) == 0
 
+    @patch('src.stock_analysis.tools.cache._get_redis', return_value=None)
     @patch('yfinance.Ticker')
-    def test_yahoo_finance_handles_empty_company_officers(self, mock_ticker):
+    def test_yahoo_finance_handles_empty_company_officers(self, mock_ticker, _mock_redis):
         """Empty companyOfficers list must not raise IndexError."""
         mock_instance = Mock()
         mock_ticker.return_value = mock_instance

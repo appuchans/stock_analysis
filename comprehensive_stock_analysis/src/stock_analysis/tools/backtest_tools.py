@@ -29,6 +29,8 @@ class BacktestTool(BaseTool):
         rsi_overbought: float = 70.0,
     ) -> Dict[str, Any]:
         try:
+            from .free_data_collection import _normalize_period
+            period = _normalize_period(period, default="2y")
             hist = yf.download(symbol, period=period, progress=False, auto_adjust=True)
             if hist.empty:
                 return {"error": f"No historical data for {symbol}"}

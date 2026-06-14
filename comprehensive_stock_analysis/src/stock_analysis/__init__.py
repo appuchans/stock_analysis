@@ -12,7 +12,6 @@ __email__ = "team@stockanalysis.com"
 
 __all__ = [
     "Settings",
-    "StockAnalysisCrew",
     "StockAnalysisFlow",
 ]
 
@@ -21,9 +20,6 @@ def __getattr__(name: str):
     if name == "Settings":
         from .config.settings import Settings
         return Settings
-    if name == "StockAnalysisCrew":
-        from .crew.modern_crew import StockAnalysisCrew
-        return StockAnalysisCrew
     if name == "StockAnalysisFlow":
         from .crew.flow_crew import StockAnalysisFlow
         return StockAnalysisFlow

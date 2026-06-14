@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+defaults:
+  run:
+    working-directory: comprehensive_stock_analysis
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests (network-free)
+        run: pytest -m "not slow" -q
+        env:
+          # The suite is fully mocked; a dummy key keeps any preflight/config
+          # path from short-circuiting.
+          OPENAI_API_KEY: ci-not-a-real-key
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install lint tools
+        run: pip install black isort flake8 mypy
+      # Style/type checks are advisory for now — promote to required by removing
+      # continue-on-error once the tree is verified clean.
+      - name: black
+        continue-on-error: true
+        run: black --check src/ tests/
+      - name: isort
+        continue-on-error: true
+        run: isort --check-only src/ tests/
+      - name: flake8
+        continue-on-error: true
+        run: flake8 src/
+      - name: mypy
+        continue-on-error: true
+        run: mypy src/

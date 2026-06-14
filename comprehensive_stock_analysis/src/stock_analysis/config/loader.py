@@ -1,4 +1,4 @@
-"""Configuration loader for agents, tasks, flows, and LLM settings."""
+"""Configuration loader for agents, tasks, and LLM settings."""
 
 import yaml
 from pathlib import Path
@@ -16,42 +16,21 @@ class AgentConfig(BaseModel):
     verbose: bool = True
     allow_delegation: bool = False
     max_iter: int = 3
+    # Hard cap per task execution — prevents a hung LLM call from stalling
+    # the whole pipeline (CrewAI Agent.max_execution_time)
+    max_execution_time: int = 300
+    # Requests-per-minute throttle — second brake on runaway loops and a
+    # politeness cap toward the provider (CrewAI Agent.max_rpm)
+    max_rpm: int = 10
+    # Retries after an agent execution error (CrewAI default is 2; one is
+    # enough — multiplicative retry layers caused call storms)
+    max_retry_limit: int = 1
+    # Inject the current date into task context so 'as of' statements are right
+    inject_date: bool = True
     tools: Optional[List[str]] = None
     # Per-agent LLM overrides (provider, model, temperature, max_tokens,
     # reasoning, max_reasoning_attempts)
     llm_config: Optional[Dict[str, Any]] = None
-
-
-class TaskConfig(BaseModel):
-    """Task configuration model."""
-    description: str
-    expected_output: str
-    context: List[str] = Field(default_factory=list)
-    output_file: Optional[str] = None
-    async_execution: bool = False
-    timeout: Optional[int] = None
-    retry_on_failure: bool = True
-    max_retries: int = 2
-
-
-class FlowPhaseConfig(BaseModel):
-    """Flow phase configuration model."""
-    name: str
-    type: str
-    tasks: List[str]
-    max_concurrent: Optional[int] = None
-    depends_on: Optional[List[str]] = None
-    validation: Optional[Dict[str, Any]] = None
-
-
-class FlowConfig(BaseModel):
-    """Flow configuration model."""
-    name: str
-    description: str
-    structure: Dict[str, Any]
-    execution: Dict[str, Any]
-    memory: Optional[Dict[str, Any]] = None
-    human_input: Optional[Dict[str, Any]] = None
 
 
 # ── LLM config models ─────────────────────────────────────────────────────────
@@ -66,18 +45,10 @@ class LLMGlobalConfig(BaseModel):
     max_retries: int = 3
 
 
-class LLMEmbedderConfig(BaseModel):
-    """Embedder configuration for Crew-level memory."""
-    provider: str = "openai"
-    model: str = "text-embedding-3-small"
-
-
 class LLMConfig(BaseModel):
     """Root LLM configuration loaded from llm_config.yaml."""
     global_defaults: LLMGlobalConfig = Field(default_factory=LLMGlobalConfig, alias="global")
     agents: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    planning: LLMGlobalConfig = Field(default_factory=lambda: LLMGlobalConfig(model="gpt-4o-mini", max_tokens=2000))
-    embedder: LLMEmbedderConfig = Field(default_factory=LLMEmbedderConfig)
     provider_prefixes: Dict[str, str] = Field(default_factory=lambda: {
         "openai": "openai/",
         "anthropic": "anthropic/",
@@ -97,15 +68,14 @@ class LLMConfig(BaseModel):
 # ── Loader ────────────────────────────────────────────────────────────────────
 
 class ConfigLoader:
-    """Configuration loader for agents, tasks, flows, and LLM settings."""
+    """Configuration loader for agents, tasks, and LLM settings."""
 
     def __init__(self, config_dir: Optional[Path] = None):
         if config_dir is None:
             config_dir = Path(__file__).parent
         self.config_dir = Path(config_dir)
         self._agents_config: Optional[Dict[str, AgentConfig]] = None
-        self._tasks_config: Optional[Dict[str, TaskConfig]] = None
-        self._flows_config: Optional[Dict[str, FlowConfig]] = None
+        self._flow_tasks_config: Optional[Dict[str, Any]] = None
         self._llm_config: Optional[LLMConfig] = None
 
     # ── agents ────────────────────────────────────────────────────────────────
@@ -129,47 +99,23 @@ class ConfigLoader:
             }
         return self._agents_config
 
-    # ── tasks ─────────────────────────────────────────────────────────────────
+    # ── flow stage prompts ────────────────────────────────────────────────────
 
-    def load_tasks_config(self) -> Dict[str, TaskConfig]:
-        if self._tasks_config is None:
-            tasks_file = self.config_dir / "tasks.yaml"
+    def load_flow_tasks_config(self) -> Dict[str, Any]:
+        """Load Flow-pipeline stage prompts from flow_tasks.yaml."""
+        if self._flow_tasks_config is None:
+            flow_file = self.config_dir / "flow_tasks.yaml"
             try:
-                with open(tasks_file, "r", encoding="utf-8") as f:
-                    tasks_data = yaml.safe_load(f)
+                with open(flow_file, "r", encoding="utf-8") as f:
+                    self._flow_tasks_config = yaml.safe_load(f) or {}
             except FileNotFoundError:
                 raise FileNotFoundError(
-                    f"Task configuration file not found: {tasks_file}. "
+                    f"Flow task configuration file not found: {flow_file}. "
                     "Ensure the config directory is correctly set."
                 )
             except yaml.YAMLError as e:
-                raise ValueError(f"Invalid YAML in {tasks_file}: {e}")
-            self._tasks_config = {
-                name: TaskConfig(**config)
-                for name, config in tasks_data.items()
-            }
-        return self._tasks_config
-
-    # ── flows ─────────────────────────────────────────────────────────────────
-
-    def load_flows_config(self) -> Dict[str, FlowConfig]:
-        if self._flows_config is None:
-            flows_file = self.config_dir / "flows.yaml"
-            try:
-                with open(flows_file, "r", encoding="utf-8") as f:
-                    flows_data = yaml.safe_load(f)
-            except FileNotFoundError:
-                raise FileNotFoundError(
-                    f"Flow configuration file not found: {flows_file}. "
-                    "Ensure the config directory is correctly set."
-                )
-            except yaml.YAMLError as e:
-                raise ValueError(f"Invalid YAML in {flows_file}: {e}")
-            self._flows_config = {
-                name: FlowConfig(**config)
-                for name, config in flows_data.items()
-            }
-        return self._flows_config
+                raise ValueError(f"Invalid YAML in {flow_file}: {e}")
+        return self._flow_tasks_config
 
     # ── LLM config ────────────────────────────────────────────────────────────
 
@@ -196,41 +142,10 @@ class ConfigLoader:
             raise ValueError(f"Agent '{agent_name}' not found in configuration")
         return agents_config[agent_name]
 
-    def get_task_config(self, task_name: str) -> TaskConfig:
-        tasks_config = self.load_tasks_config()
-        if task_name not in tasks_config:
-            raise ValueError(f"Task '{task_name}' not found in configuration")
-        return tasks_config[task_name]
-
-    def get_flow_config(self, flow_name: str) -> FlowConfig:
-        flows_config = self.load_flows_config()
-        if flow_name not in flows_config:
-            raise ValueError(f"Flow '{flow_name}' not found in configuration")
-        return flows_config[flow_name]
-
-    def build_embedder_config(self) -> Dict[str, Any]:
-        """Return the embedder dict for Crew memory, honouring settings overrides."""
-        from .settings import settings  # local import to avoid circular dep at module load
-        llm_cfg = self.load_llm_config()
-        provider = settings.embedder_provider or llm_cfg.embedder.provider
-        model = settings.embedder_model or llm_cfg.embedder.model
-        return {"provider": provider, "config": {"model": model}}
-
-    def build_planning_llm_model_string(self) -> str:
-        """Return the LiteLLM model string for the planning LLM."""
-        llm_cfg = self.load_llm_config()
-        p = llm_cfg.planning
-        prefix = llm_cfg.provider_prefixes.get(p.provider, f"{p.provider}/")
-        model = p.model
-        if "/" in model:
-            return model
-        return f"{prefix}{model}"
-
     def reload_configs(self) -> None:
         """Invalidate all cached configs so they are reloaded on next access."""
         self._agents_config = None
-        self._tasks_config = None
-        self._flows_config = None
+        self._flow_tasks_config = None
         self._llm_config = None
 
 

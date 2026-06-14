@@ -1,17 +1,14 @@
 """Free data collection tools for stock analysis using only open source and free APIs."""
 
+import logging
 import os
-import asyncio
-try:
-    import aiohttp
-except ImportError:
-    aiohttp = None  # type: ignore[assignment]
+
+_logger = logging.getLogger(__name__)
 import yfinance as yf
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any, Union
-import requests
+from typing import Optional, List, Dict, Any
+from . import _http
 try:
     from bs4 import BeautifulSoup
 except ImportError:
@@ -20,26 +17,166 @@ try:
     import feedparser
 except ImportError:
     feedparser = None  # type: ignore[assignment]
-try:
-    from newspaper import Article
-except ImportError:
-    Article = None  # type: ignore[assignment,misc]
 import json
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 import xml.etree.ElementTree as ET
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from crewai.tools import BaseTool
-from pydantic import BaseModel, Field
 
 from .cache import cached_tool
 from ..models.stock_data import (
-    StockData, PriceData, VolumeData, CompanyInfo, MarketData,
-    NewsData, EarningsData, AnalystData, FundamentalData as FundamentalDataModel,
-    TechnicalIndicators, RiskMetrics, IndustryData, CompetitorData, EconomicData
+    CompanyInfo, MarketData, NewsData,
+    FundamentalData as FundamentalDataModel, EconomicData,
 )
+
+
+_VALID_PERIODS = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"}
+_PERIOD_ALIASES = {
+    "1-year": "1y", "1 year": "1y", "1yr": "1y", "12mo": "1y", "12m": "1y", "annual": "1y",
+    "2-year": "2y", "2 years": "2y", "2yr": "2y",
+    "5-year": "5y", "5 years": "5y", "5yr": "5y",
+    "10-year": "10y", "10 years": "10y",
+    "6-month": "6mo", "6 months": "6mo", "6m": "6mo", "half-year": "6mo",
+    "3-month": "3mo", "3 months": "3mo", "3m": "3mo", "quarter": "3mo",
+    "1-month": "1mo", "1 month": "1mo", "1m": "1mo", "month": "1mo",
+    "1-day": "1d", "1 day": "1d", "day": "1d",
+    "5-day": "5d", "5 days": "5d", "week": "5d",
+}
+
+
+def _normalize_period(period: str, default: str = "1y") -> str:
+    """Coerce LLM-invented period strings ('1-year', '12 months') to valid
+    yfinance periods; fall back to a sane default rather than erroring."""
+    v = str(period or "").strip().lower()
+    if v in _VALID_PERIODS:
+        return v
+    if v in _PERIOD_ALIASES:
+        return _PERIOD_ALIASES[v]
+    compact = v.replace("-", "").replace(" ", "")
+    for alias, norm in _PERIOD_ALIASES.items():
+        if compact == alias.replace("-", "").replace(" ", ""):
+            return norm
+    _logger.warning("Invalid period %r — defaulting to %r", period, default)
+    return default
+
+
+def _detect_asset_type(symbol: str) -> str:
+    """Return 'etf' or 'stock' based on yfinance quoteType."""
+    try:
+        qt = yf.Ticker(symbol).info.get("quoteType", "").upper()
+        return "etf" if qt == "ETF" else "stock"
+    except Exception:
+        return "stock"
+
+
+def _fetch_top_holdings(ticker: "yf.Ticker") -> list:
+    """Return list of top-10 holdings dicts or [] on failure."""
+    try:
+        df = ticker.funds_data.top_holdings
+        return df.head(10).reset_index().to_dict("records")
+    except Exception:
+        return []
+
+
+def _compute_technical_summary(hist: "pd.DataFrame") -> Dict[str, Any]:
+    """Pre-compute key technical indicators from raw OHLCV history.
+
+    Returns a compact dict (~300 tokens) that gives the technical analyst
+    everything it needs without raw row arrays (~4,500 tokens).
+    """
+    if hist is None or hist.empty:
+        return {}
+
+    close = hist["Close"]
+    volume = hist["Volume"]
+    high = hist["High"]
+    low = hist["Low"]
+
+    def _safe(val):
+        try:
+            v = float(val)
+            return None if (v != v) else round(v, 4)  # NaN check
+        except Exception:
+            return None
+
+    # SMAs
+    sma_20 = _safe(close.rolling(20).mean().iloc[-1]) if len(close) >= 20 else None
+    sma_50 = _safe(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else None
+    sma_90 = _safe(close.rolling(90).mean().iloc[-1]) if len(close) >= 90 else None
+
+    # RSI(14)
+    rsi = None
+    if len(close) >= 15:
+        delta = close.diff()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        rs = gain / loss.replace(0, float("nan"))
+        rsi_series = 100 - (100 / (1 + rs))
+        rsi = _safe(rsi_series.iloc[-1])
+
+    # MACD (12/26/9)
+    macd_val = macd_signal = macd_hist = None
+    if len(close) >= 26:
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=9, adjust=False).mean()
+        macd_val = _safe(macd_line.iloc[-1])
+        macd_signal = _safe(signal_line.iloc[-1])
+        macd_hist = _safe((macd_line - signal_line).iloc[-1])
+
+    # Bollinger Bands (20, 2σ)
+    bb_upper = bb_lower = None
+    if len(close) >= 20:
+        sma20 = close.rolling(20).mean()
+        std20 = close.rolling(20).std()
+        bb_upper = _safe((sma20 + 2 * std20).iloc[-1])
+        bb_lower = _safe((sma20 - 2 * std20).iloc[-1])
+
+    # ATR(14)
+    atr = None
+    if len(close) >= 15:
+        prev_close = close.shift(1)
+        tr = pd.concat([
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        atr = _safe(tr.rolling(14).mean().iloc[-1])
+
+    # Volume stats
+    vol_avg = float(volume.mean()) if len(volume) > 0 else 0
+    vol_latest = float(volume.iloc[-1]) if len(volume) > 0 else 0
+    vol_vs_avg_pct = round(vol_latest / vol_avg * 100, 1) if vol_avg > 0 else None
+
+    # Price context
+    current = _safe(close.iloc[-1])
+    prev = _safe(close.iloc[-2]) if len(close) >= 2 else None
+    period_high = _safe(close.max())
+    period_low = _safe(close.min())
+
+    return {
+        "current_price": current,
+        "prev_close": prev,
+        "period_high_90d": period_high,
+        "period_low_90d": period_low,
+        "sma_20": sma_20,
+        "sma_50": sma_50,
+        "sma_90": sma_90,
+        "rsi_14": rsi,
+        "macd": macd_val,
+        "macd_signal": macd_signal,
+        "macd_histogram": macd_hist,
+        "bb_upper_20": bb_upper,
+        "bb_lower_20": bb_lower,
+        "atr_14": atr,
+        "volume_latest": int(vol_latest),
+        "volume_avg_90d": int(vol_avg),
+        "volume_vs_avg_pct": vol_vs_avg_pct,
+    }
 
 
 class YahooFinanceTool(BaseTool):
@@ -50,8 +187,9 @@ class YahooFinanceTool(BaseTool):
     
     @cached_tool()
     def _run(self, symbol: str, period: str = "1y", interval: str = "1d") -> Dict[str, Any]:
-        """Collect data from Yahoo Finance."""
+        """Collect data from Yahoo Finance. period accepts 1d/5d/1mo/3mo/6mo/1y/2y/5y/10y/ytd/max."""
         try:
+            period = _normalize_period(period)
             ticker = yf.Ticker(symbol)
             
             # Get basic info
@@ -98,26 +236,6 @@ class YahooFinanceTool(BaseTool):
                 timestamp=datetime.now()
             )
             
-            # Get price history
-            price_history = []
-            for idx, row in hist.iterrows():
-                price_history.append(PriceData(
-                    open=row['Open'],
-                    high=row['High'],
-                    low=row['Low'],
-                    close=row['Close'],
-                    adjusted_close=row.get('Adj Close'),
-                    timestamp=idx.to_pydatetime()
-                ))
-            
-            # Get volume history
-            volume_history = []
-            for idx, row in hist.iterrows():
-                volume_history.append(VolumeData(
-                    volume=int(row['Volume']),
-                    timestamp=idx.to_pydatetime()
-                ))
-            
             # Get fundamental data
             fundamental_data = FundamentalDataModel(
                 pe_ratio=info.get('trailingPE'),
@@ -147,137 +265,351 @@ class YahooFinanceTool(BaseTool):
                 timestamp=datetime.now()
             )
             
-            return {
+            asset_type = "etf" if info.get("quoteType", "").upper() == "ETF" else "stock"
+
+            # Short interest — institutional positioning signal, free from the
+            # same info payload (no extra API call)
+            short_interest = {}
+            if info.get("sharesShort"):
+                spf = info.get("shortPercentOfFloat")
+                prior = info.get("sharesShortPriorMonth")
+                current_short = info.get("sharesShort")
+                short_interest = {
+                    "short_ratio_days_to_cover": info.get("shortRatio"),
+                    "short_pct_of_float": round(spf * 100, 2) if spf else None,
+                    "shares_short": current_short,
+                    "shares_short_prior_month": prior,
+                    "mom_change_pct": (
+                        round((current_short - prior) / prior * 100, 1)
+                        if current_short and prior else None
+                    ),
+                }
+
+            result: Dict[str, Any] = {
+                "asset_type": asset_type,
                 "company_info": company_info.dict(),
                 "market_data": market_data.dict(),
-                "price_history": [p.dict() for p in price_history],
-                "volume_history": [v.dict() for v in volume_history],
+                "technical_summary": _compute_technical_summary(hist),
+                "short_interest": short_interest,
                 "fundamental_data": fundamental_data.dict(),
-                "raw_info": info
             }
-            
+
+            if asset_type == "etf":
+                result["etf_profile"] = {
+                    "fund_family":         info.get("fundFamily"),
+                    "category":            info.get("category"),
+                    "total_assets_bn":     round(info.get("totalAssets", 0) / 1e9, 2) if info.get("totalAssets") else None,
+                    "expense_ratio":       info.get("annualReportExpenseRatio") or info.get("totalExpenseRatio"),
+                    "distribution_yield":  info.get("yield"),
+                    "ytd_return":          info.get("ytdReturn"),
+                    "three_year_return":   info.get("threeYearAverageReturn"),
+                    "five_year_return":    info.get("fiveYearAverageReturn"),
+                    "turnover_ratio":      info.get("annualHoldingsTurnover"),
+                    "inception_date":      info.get("fundInceptionDate"),
+                    "index_tracked":       info.get("underlyingSymbol") or info.get("category"),
+                    "top_holdings":        _fetch_top_holdings(ticker),
+                }
+
+            # ── Quarterly income statement (revenue + margins history) ──────────
+            try:
+                qis = ticker.quarterly_income_stmt
+                if qis is not None and not qis.empty:
+                    qtrs = {}
+                    for col in list(qis.columns)[:5]:  # last 5 quarters
+                        row: Dict[str, Any] = {}
+                        for metric in ["Total Revenue", "Gross Profit", "Operating Income", "Net Income", "EBITDA"]:
+                            if metric in qis.index:
+                                v = qis.loc[metric, col]
+                                row[metric.lower().replace(" ", "_")] = (
+                                    None if (v is None or (isinstance(v, float) and v != v)) else int(v)
+                                )
+                        label = col.date().isoformat() if hasattr(col, "date") else str(col)[:10]
+                        qtrs[label] = row
+                    result["quarterly_income"] = qtrs
+            except Exception as _exc:
+                _logger.debug("quarterly_income_stmt failed: %s", _exc)
+
+            # ── Earnings beat/miss track record ───────────────────────────────
+            try:
+                ed = ticker.get_earnings_dates(limit=8)
+                if ed is not None and not ed.empty:
+                    earnings_hist = []
+                    for idx, row in ed.iterrows():
+                        eps_est = row.get("EPS Estimate")
+                        eps_act = row.get("Reported EPS")
+                        surprise = row.get("Surprise(%)")
+                        date_str = idx.date().isoformat() if hasattr(idx, "date") else str(idx)[:10]
+                        # Only include rows where we have at least one real value
+                        if eps_est is not None or eps_act is not None:
+                            earnings_hist.append({
+                                "date": date_str,
+                                "eps_estimate": None if (eps_est is None or (isinstance(eps_est, float) and eps_est != eps_est)) else round(float(eps_est), 4),
+                                "eps_actual":   None if (eps_act is None or (isinstance(eps_act, float) and eps_act != eps_act)) else round(float(eps_act), 4),
+                                "surprise_pct": None if (surprise is None or (isinstance(surprise, float) and surprise != surprise)) else round(float(surprise), 2),
+                            })
+                    if earnings_hist:
+                        result["earnings_history"] = earnings_hist
+            except Exception as _exc:
+                _logger.debug("earnings_dates failed: %s", _exc)
+
+            # ── Recent news headlines ──────────────────────────────────────────
+            try:
+                raw_news = ticker.news or []
+                news_items = []
+                for n in raw_news[:12]:
+                    if not isinstance(n, dict):
+                        continue
+                    # yfinance wraps newer news in a "content" sub-dict
+                    content = n.get("content", n)
+                    if isinstance(content, dict):
+                        title = content.get("title", "")
+                        provider = content.get("provider", {})
+                        publisher = provider.get("displayName", "") if isinstance(provider, dict) else ""
+                        pub_date = content.get("pubDate", "")
+                        summary = (content.get("summary") or content.get("description") or "")[:200]
+                    else:
+                        title = n.get("title", "")
+                        publisher = n.get("publisher", "")
+                        pub_date = str(n.get("providerPublishTime", ""))
+                        summary = ""
+                    if title:
+                        news_items.append({
+                            "title": title,
+                            "publisher": publisher,
+                            "published": str(pub_date)[:20],
+                            "summary": summary,
+                        })
+                if news_items:
+                    result["recent_news"] = news_items
+            except Exception as _exc:
+                _logger.debug("ticker.news failed: %s", _exc)
+
+            return result
+
         except Exception as e:
             return {"error": f"Failed to collect Yahoo Finance data: {str(e)}"}
 
 
+def _sec_extract_section(plain_text: str, markers: List[str], max_chars: int = 4000) -> str:
+    """Locate a named section in plain text from an SEC filing and return up to max_chars.
+
+    Searches for every occurrence of the marker strings (case-insensitive) and picks
+    the first one that has substantial body content (>= 500 chars before the next
+    section header).  This skips table-of-contents entries, which are short stubs.
+    """
+    text_upper = plain_text.upper()
+
+    # Collect ALL occurrence positions for all markers
+    positions: List[int] = []
+    for marker in markers:
+        m_upper = marker.upper()
+        start = 0
+        while True:
+            idx = text_upper.find(m_upper, start)
+            if idx < 0:
+                break
+            positions.append(idx)
+            start = idx + 1
+
+    positions.sort()
+
+    for pos in positions:
+        # Read a large window to measure how much content exists before the next section
+        window = plain_text[pos: pos + max_chars + 2000]
+        # Trim at the next "ITEM N" / "ITEM NA" pattern after the first 400 chars
+        # (400 char buffer ensures we don't clip the header line itself)
+        next_item = re.search(r'\bITEM\s+\d+[A-Z]?\b', window[400:], re.IGNORECASE)
+        body = window[:400 + next_item.start()] if next_item else window[:max_chars]
+        stripped = body.strip()
+        # Skip TOC stubs and boilerplate forward-looking-statement disclaimers.
+        # Real section bodies (MD&A, Risk Factors) have at least 2000 substantive chars.
+        if len(stripped) < 2000:
+            continue
+        return stripped[:max_chars]
+
+    return ""
+
+
+def _sec_unwrap_ixbrl(href: str) -> str:
+    """Strip the EDGAR iXBRL viewer prefix from a document href.
+
+    EDGAR wraps inline XBRL documents in /ix?doc=/Archives/... viewer URLs.
+    We need the bare /Archives/... path to fetch the actual HTML content.
+    """
+    # e.g. /ix?doc=/Archives/edgar/data/.../tsla-20260331.htm
+    #   or https://www.sec.gov/ix?doc=/Archives/...
+    m = re.search(r'[?&]doc=(/Archives/[^\s&"]+)', href)
+    if m:
+        return "https://www.sec.gov" + m.group(1)
+    return href
+
+
+def _sec_find_primary_doc_url(index_html: str, index_url: str, form_type: str) -> Optional[str]:
+    """Parse an EDGAR filing index page and return the URL of the primary filing document.
+
+    EDGAR index pages have a table with columns: Seq | Description | Document | Type | Size.
+    We find the row whose Type cell matches form_type.  iXBRL viewer wrappers are stripped.
+    """
+    if BeautifulSoup is None:
+        return None
+    soup = BeautifulSoup(index_html, "html.parser")
+
+    # Primary method: look for the tableFile table and match the Type column
+    for table in soup.find_all("table"):
+        rows = table.find_all("tr")
+        for row in rows[1:]:  # skip header
+            cells = row.find_all("td")
+            if len(cells) < 4:
+                continue
+            type_text = cells[3].get_text(strip=True).strip().upper()
+            if type_text == form_type.upper():
+                # Document href is in cells[2]
+                a_tag = cells[2].find("a")
+                if a_tag and a_tag.get("href"):
+                    raw = a_tag["href"]
+                    full = urljoin("https://www.sec.gov", raw)
+                    return _sec_unwrap_ixbrl(full)
+
+    # Fallback: find any .htm link that looks like the main filing (not an exhibit)
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        href_lower = href.lower()
+        if not (href_lower.endswith(".htm") or ".htm" in href_lower):
+            continue
+        # Exclude obvious exhibits and auxiliary files
+        if any(x in href_lower for x in ["ex", "exhibit", "xsd", "cal", "def", "lab", "pre"]):
+            continue
+        full = urljoin("https://www.sec.gov", href)
+        return _sec_unwrap_ixbrl(full)
+
+    return None
+
+
 class FreeSECFilingTool(BaseTool):
     """Tool for collecting SEC filing data using free EDGAR access."""
-    
+
     name: str = "Free SEC Filing Data Collector"
-    description: str = "Collects SEC filing data using free EDGAR database access"
-    
+    description: str = (
+        "Collects SEC filing data using free EDGAR access. "
+        "Returns the MD&A section (management discussion and analysis), "
+        "risk factors, and filing metadata."
+    )
+
+    @cached_tool(ttl=86400)
     def _run(self, symbol: str, form_type: str = "10-K", limit: int = 1) -> Dict[str, Any]:
-        """Collect SEC filing data using free EDGAR access."""
+        """Collect SEC filing data: MD&A, Risk Factors, and key metadata."""
+        headers = {
+            "User-Agent": "Stock Analysis Tool (contact@example.com)",
+            "Accept-Encoding": "gzip, deflate",
+            "Host": "www.sec.gov",
+        }
+
         try:
-            # EDGAR search URL
+            # ── Step 1: get list of filings via EDGAR Atom feed ───────────────
             search_url = "https://www.sec.gov/cgi-bin/browse-edgar"
-            
             params = {
                 "action": "getcompany",
-                "CIK": symbol,  # This will work for some symbols, for others we need to search
+                "CIK": symbol,
                 "type": form_type,
                 "dateb": "",
                 "owner": "exclude",
                 "start": "0",
                 "count": str(limit),
-                "output": "atom"
+                "output": "atom",
             }
-            
-            headers = {
-                "User-Agent": "Stock Analysis Tool (contact@example.com)",
-                "Accept-Encoding": "gzip, deflate",
-                "Host": "www.sec.gov"
-            }
-            
-            response = requests.get(search_url, params=params, headers=headers)
+            response = _http.get(search_url, params=params, headers=headers, timeout=20)
             response.raise_for_status()
-            
-            # Parse XML response
+
             root = ET.fromstring(response.content)
-            
-            filings = []
+            filings: List[Dict[str, Any]] = []
             for entry in root.findall(".//{http://www.w3.org/2005/Atom}entry"):
-                filing = {}
-                
-                # Get title
-                title_elem = entry.find(".//{http://www.w3.org/2005/Atom}title")
-                if title_elem is not None:
-                    filing['title'] = title_elem.text
-                
-                # Get link
-                link_elem = entry.find(".//{http://www.w3.org/2005/Atom}link")
-                if link_elem is not None:
-                    filing['link'] = link_elem.get('href')
-                
-                # Get updated date
-                updated_elem = entry.find(".//{http://www.w3.org/2005/Atom}updated")
-                if updated_elem is not None:
-                    filing['updated'] = updated_elem.text
-                
-                # Get summary
-                summary_elem = entry.find(".//{http://www.w3.org/2005/Atom}summary")
-                if summary_elem is not None:
-                    filing['summary'] = summary_elem.text
-                
-                filings.append(filing)
-            
+                f: Dict[str, Any] = {}
+                t = entry.find(".//{http://www.w3.org/2005/Atom}title")
+                if t is not None:
+                    f["title"] = t.text
+                lk = entry.find(".//{http://www.w3.org/2005/Atom}link")
+                if lk is not None:
+                    f["link"] = lk.get("href")
+                u = entry.find(".//{http://www.w3.org/2005/Atom}updated")
+                if u is not None:
+                    f["updated"] = u.text
+                filings.append(f)
+
             if not filings:
                 return {"error": f"No {form_type} filings found for {symbol}"}
-            
-            # Get the most recent filing content
-            filing_url = filings[0].get('link')
-            if filing_url:
-                # Get the actual filing document
-                filing_response = requests.get(filing_url, headers=headers)
-                filing_response.raise_for_status()
-                
-                # Parse the filing page to find the actual document
-                soup = BeautifulSoup(filing_response.content, 'html.parser')
-                
-                # Look for the actual filing document link
-                doc_links = soup.find_all('a', href=True)
-                filing_doc_url = None
-                
-                for link in doc_links:
-                    href = link.get('href')
-                    if href and (form_type.lower() in href.lower() or 'txt' in href.lower()):
-                        filing_doc_url = urljoin(filing_url, href)
-                        break
-                
-                if filing_doc_url:
-                    # Get the actual filing document
-                    doc_response = requests.get(filing_doc_url, headers=headers)
-                    doc_response.raise_for_status()
-                    
-                    filing_content = doc_response.text
-                else:
-                    filing_content = filing_response.text
-            else:
-                filing_content = ""
-            
+
+            index_url = filings[0].get("link", "")
+            mdna_text = ""
+            risk_text = ""
+            doc_url = ""
+
+            if index_url:
+                # ── Step 2: fetch the filing index page ───────────────────────
+                idx_resp = _http.get(index_url, headers=headers, timeout=20)
+                idx_resp.raise_for_status()
+
+                # ── Step 3: find the URL of the primary filing document ────────
+                doc_url = _sec_find_primary_doc_url(idx_resp.text, index_url, form_type) or ""
+
+                if doc_url:
+                    # ── Step 4: fetch the actual 10-K / 10-Q document ──────────
+                    # Stream response and read up to 600 KB to limit memory usage
+                    doc_resp = _http.get(doc_url, headers=headers, timeout=30, stream=True)
+                    doc_resp.raise_for_status()
+                    raw_html = b""
+                    for chunk in doc_resp.iter_content(chunk_size=32_768):
+                        raw_html += chunk
+                        if len(raw_html) >= 600_000:
+                            break
+
+                    # Convert HTML → plain text once
+                    if BeautifulSoup is not None:
+                        plain = BeautifulSoup(raw_html, "html.parser").get_text(separator="\n")
+                    else:
+                        plain = raw_html.decode("utf-8", errors="ignore")
+
+                    # ── Step 5: extract MD&A section ──────────────────────────
+                    # 10-K: Item 7  |  10-Q: Item 2
+                    mdna_markers = [
+                        "MANAGEMENT'S DISCUSSION AND ANALYSIS",
+                        "MANAGEMENT S DISCUSSION AND ANALYSIS",
+                        "ITEM 7.", "ITEM 7 ", "ITEM 2.", "ITEM 2 ",
+                    ]
+                    mdna_text = _sec_extract_section(plain, mdna_markers, max_chars=5000)
+
+                    # ── Step 6: extract Risk Factors section ──────────────────
+                    risk_markers = [
+                        "RISK FACTORS",
+                        "ITEM 1A.", "ITEM 1A ",
+                    ]
+                    risk_text = _sec_extract_section(plain, risk_markers, max_chars=3500)
+
             return {
                 "filings": filings,
-                "content": filing_content,
-                "url": filing_url
+                "form_type": form_type,
+                "doc_url": doc_url,
+                "mdna": mdna_text,
+                "risk_factors": risk_text,
+                "sections_found": {
+                    "mdna": bool(mdna_text),
+                    "risk_factors": bool(risk_text),
+                },
             }
-            
-        except Exception as e:
-            return {"error": f"Failed to collect SEC filing data: {str(e)}"}
+
+        except Exception as exc:
+            return {"error": f"Failed to collect SEC filing data: {exc}"}
 
 
 class FreeFREDTool(BaseTool):
     """Tool for collecting economic data from FRED (FREE)."""
-    
+
     name: str = "Free FRED Economic Data Collector"
     description: str = "Collects economic indicators from Federal Reserve Economic Data (FRED) - FREE"
-    
-    def __init__(self, api_key: Optional[str] = None):
-        super().__init__()
-        # FRED API key is free, but we'll make it optional
-        self.api_key = api_key or os.getenv('FRED_API_KEY')
-        if not self.api_key:
-            # Use a demo key or direct web scraping
-            self.api_key = "demo"  # FRED allows demo access
+    api_key: str = "demo"
+
+    def __init__(self, api_key: Optional[str] = None, **kwargs):
+        resolved = api_key or os.getenv('FRED_API_KEY') or "demo"
+        super().__init__(api_key=resolved, **kwargs)
     
     @cached_tool(ttl=86400)  # FRED macro data is stable; cache for 24 h
     def _run(self, series_id: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
@@ -301,7 +633,7 @@ class FreeFREDTool(BaseTool):
                 "observation_end": end_date
             }
             
-            response = requests.get(data_url, params=data_params)
+            response = _http.get(data_url, params=data_params, timeout=20)
             response.raise_for_status()
             
             data = response.json()
@@ -314,7 +646,7 @@ class FreeFREDTool(BaseTool):
                 "file_type": "json"
             }
             
-            info_response = requests.get(info_url, params=info_params)
+            info_response = _http.get(info_url, params=info_params, timeout=20)
             info_response.raise_for_status()
             
             series_info = info_response.json()
@@ -333,26 +665,90 @@ class FreeNewsTool(BaseTool):
     """Tool for collecting news data using free sources."""
     
     name: str = "Free News Data Collector"
-    description: str = "Collects news articles and sentiment data using free RSS feeds and web scraping"
-    
+    description: str = "Collects news articles and sentiment data using free RSS feeds (Google News and others) and web scraping"
+
+    @cached_tool(ttl=1800)
     def _run(self, symbol: str, query: Optional[str] = None, limit: int = 10) -> Dict[str, Any]:
         """Collect news data for a stock using free sources."""
+        from urllib.parse import quote as _url_quote
         try:
+            symbol = symbol.strip().upper()
+            if not symbol or ' ' in symbol or len(symbol) > 15:
+                return {"error": f"'{symbol}' is not a valid ticker symbol", "news_data": [], "total_count": 0}
+
+            encoded_symbol = _url_quote(symbol)
+
             if not query:
                 query = f"{symbol} stock news"
-            
+
             news_data = []
-            
-            # Free RSS feeds
+
+            # ── Primary: Google News RSS (keyless, rich coverage, scoped by the
+            # query so no symbol-mention filter is needed) ─────────────────────
+            if feedparser is not None:
+                try:
+                    gn_url = (
+                        "https://news.google.com/rss/search?q="
+                        + _url_quote(f"{symbol} stock")
+                        + "&hl=en-US&gl=US&ceid=US:en"
+                    )
+                    feed = feedparser.parse(gn_url)
+                    for entry in feed.entries[:limit]:
+                        published_at = datetime.now()
+                        if getattr(entry, "published_parsed", None):
+                            published_at = datetime(*entry.published_parsed[:6])
+                        news_data.append(NewsData(
+                            title=entry.get("title", ""),
+                            summary=entry.get("summary", "")[:300],
+                            url=entry.get("link", ""),
+                            source=(entry.get("source") or {}).get("title", "Google News"),
+                            published_at=published_at,
+                            sentiment_score=None,
+                            relevance_score=0.9,
+                            tags=[],
+                        ))
+                except Exception as e:
+                    _logger.debug("Google News RSS failed: %s", e)
+
+            # ── Fallback chain: query-scoped feeds tried in order until one
+            # yields items (no symbol-mention filter needed for these) ─────────
+            fallback_feeds = [
+                ("Bing News",
+                 "https://www.bing.com/news/search?q="
+                 + _url_quote(f"{symbol} stock") + "&format=rss"),
+                ("Yahoo Finance",
+                 f"https://feeds.finance.yahoo.com/rss/2.0/headline"
+                 f"?s={encoded_symbol}&region=US&lang=en-US"),
+            ]
+            for source_name, feed_url in fallback_feeds if feedparser is not None else []:
+                if news_data:
+                    break
+                try:
+                    feed = feedparser.parse(feed_url)
+                    for entry in feed.entries[:limit]:
+                        published_at = datetime.now()
+                        if getattr(entry, "published_parsed", None):
+                            published_at = datetime(*entry.published_parsed[:6])
+                        news_data.append(NewsData(
+                            title=entry.get("title", ""),
+                            summary=entry.get("summary", "")[:300],
+                            url=entry.get("link", ""),
+                            source=source_name,
+                            published_at=published_at,
+                            sentiment_score=None,
+                            relevance_score=0.85,
+                            tags=[],
+                        ))
+                except Exception as e:
+                    _logger.debug("%s RSS failed: %s", source_name, e)
+
+            # Tertiary: broad market feeds (symbol-mention filtered)
             rss_feeds = [
-                f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={symbol}&region=US&lang=en-US",
                 "https://feeds.marketwatch.com/marketwatch/marketpulse/",
                 "https://feeds.bloomberg.com/markets/news.rss",
-                "https://feeds.reuters.com/news/wealth",
-                "https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC&region=US&lang=en-US",  # S&P 500
             ]
             
-            for feed_url in rss_feeds:
+            for feed_url in rss_feeds if feedparser is not None else []:
                 try:
                     feed = feedparser.parse(feed_url)
                     for entry in feed.entries[:limit//len(rss_feeds)]:
@@ -380,23 +776,23 @@ class FreeNewsTool(BaseTool):
                                 tags=[]
                             ))
                 except Exception as e:
-                    print(f"RSS feed {feed_url} failed: {e}")
+                    _logger.debug("RSS feed %s failed: %s", feed_url, e)
                     continue
             
             # Web scraping from financial news sites
             news_sites = [
-                f"https://finance.yahoo.com/quote/{symbol}/news",
-                f"https://www.marketwatch.com/investing/stock/{symbol}",
-                f"https://seekingalpha.com/symbol/{symbol}/news",
+                f"https://finance.yahoo.com/quote/{encoded_symbol}/news",
+                f"https://www.marketwatch.com/investing/stock/{encoded_symbol}",
+                f"https://seekingalpha.com/symbol/{encoded_symbol}/news",
             ]
             
-            for site_url in news_sites:
+            for site_url in news_sites if BeautifulSoup is not None else []:
                 try:
                     headers = {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
                     }
                     
-                    response = requests.get(site_url, headers=headers)
+                    response = _http.get(site_url, headers=headers, timeout=15)
                     response.raise_for_status()
                     
                     soup = BeautifulSoup(response.content, 'html.parser')
@@ -424,7 +820,7 @@ class FreeNewsTool(BaseTool):
                                 ))
                     
                 except Exception as e:
-                    print(f"Web scraping {site_url} failed: {e}")
+                    _logger.debug("Web scraping %s failed: %s", site_url, e)
                     continue
             
             # Remove duplicates based on URL
@@ -444,21 +840,57 @@ class FreeNewsTool(BaseTool):
             return {"error": f"Failed to collect news data: {str(e)}"}
 
 
+def _market_macro_snapshot() -> Dict[str, Any]:
+    """Market-traded macro proxies via yfinance — works even when FRED is
+    rate-limited or down. Returns latest value and 1-month change per proxy."""
+    proxies = [
+        ("^VIX", "vix_volatility_index"),
+        ("^TNX", "treasury_10y_yield_pct"),
+        ("^GSPC", "sp500_index"),
+        ("CL=F", "wti_crude_usd"),
+        ("DX-Y.NYB", "dollar_index"),
+    ]
+    out: Dict[str, Any] = {}
+    for ticker_sym, label in proxies:
+        try:
+            hist = yf.Ticker(ticker_sym).history(period="1mo")
+            if hist is None or hist.empty:
+                continue
+            latest = float(hist["Close"].iloc[-1])
+            first = float(hist["Close"].iloc[0])
+            out[label] = {
+                "latest": round(latest, 2),
+                "change_1m_pct": round((latest - first) / first * 100, 1) if first else None,
+            }
+        except Exception as exc:
+            _logger.debug("macro proxy %s failed: %s", ticker_sym, exc)
+    return out
+
+
 class FreeEconomicDataTool(BaseTool):
     """Tool for collecting economic data from free sources."""
-    
+
     name: str = "Free Economic Data Collector"
-    description: str = "Collects comprehensive economic data from free sources including FRED and web scraping"
+    description: str = (
+        "Collects economic data from FRED (GDP, CPI, Fed funds, unemployment, "
+        "sentiment, payrolls) plus market-traded macro proxies (VIX, 10Y Treasury "
+        "yield, S&P 500, WTI crude, dollar index) that work even when FRED is "
+        "rate-limited. Free, no paid key required."
+    )
+    fred_api_key: str = "demo"
+
+    def __init__(self, fred_api_key: Optional[str] = None, **kwargs):
+        if fred_api_key is None:
+            from ..config.settings import settings as _settings
+            fred_api_key = _settings.fred_api_key or os.getenv('FRED_API_KEY') or 'demo'
+        super().__init__(fred_api_key=fred_api_key, **kwargs)
     
-    def __init__(self, fred_api_key: Optional[str] = None):
-        super().__init__()
-        self.fred_api_key = fred_api_key or os.getenv('FRED_API_KEY', 'demo')
-    
-    def _run(self, country: str = "US", indicators: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Collect economic data from free sources."""
+    @cached_tool(ttl=86400)
+    def _run(self, country: str = "US", indicators: Optional[str] = None) -> Dict[str, Any]:
+        """Collect economic data. indicators is an optional JSON array of FRED series IDs e.g. '["GDPC1","UNRATE"]'."""
         try:
-            if indicators is None:
-                indicators = [
+            if indicators is None or not str(indicators).strip():
+                indicator_list = [
                     "GDPC1",  # Real GDP
                     "CPIAUCSL",  # Consumer Price Index
                     "FEDFUNDS",  # Federal Funds Rate
@@ -466,11 +898,17 @@ class FreeEconomicDataTool(BaseTool):
                     "UMCSENT",  # Consumer Sentiment
                     "PAYEMS",  # Nonfarm Payrolls
                 ]
+            elif isinstance(indicators, list):
+                indicator_list = indicators
+            else:
+                import json as _json
+                indicator_list = _json.loads(str(indicators).strip())
+            indicators = indicator_list
             
             economic_data = {}
             
-            # Use FRED API (free)
-            for indicator in indicators:
+            # Helper to fetch observations + info in parallel per indicator
+            def _fetch_single_indicator(indicator):
                 try:
                     base_url = "https://api.stlouisfed.org/fred"
                     
@@ -484,9 +922,8 @@ class FreeEconomicDataTool(BaseTool):
                         "observation_end": datetime.now().strftime('%Y-%m-%d')
                     }
                     
-                    response = requests.get(data_url, params=data_params)
+                    response = _http.get(data_url, params=data_params, timeout=20)
                     response.raise_for_status()
-                    
                     data = response.json()
                     
                     # Get series info
@@ -497,18 +934,26 @@ class FreeEconomicDataTool(BaseTool):
                         "file_type": "json"
                     }
                     
-                    info_response = requests.get(info_url, params=info_params)
+                    info_response = _http.get(info_url, params=info_params, timeout=20)
                     info_response.raise_for_status()
-                    
                     series_info = info_response.json()
                     
-                    economic_data[indicator] = {
-                        "data": data,
-                        "info": series_info
-                    }
+                    return indicator, {"data": data, "info": series_info}
                 except Exception as e:
-                    print(f"Failed to get {indicator}: {e}")
-                    continue
+                    _logger.debug("Failed to get FRED series %s: %s", indicator, e)
+                    return indicator, None
+
+            # Concurrently fetch all FRED series
+            with ThreadPoolExecutor(max_workers=min(len(indicators), 6)) as executor:
+                futures = {executor.submit(_fetch_single_indicator, ind): ind for ind in indicators}
+                for future in as_completed(futures):
+                    ind = futures[future]
+                    try:
+                        res = future.result()
+                        if res and res[1] is not None:
+                            economic_data[res[0]] = res[1]
+                    except Exception as e:
+                        _logger.debug("Future failed for FRED series %s: %s", ind, e)
             
             # Create EconomicData model
             gdp_data = economic_data.get("GDPC1", {}).get("data", {}).get("observations", [])
@@ -552,13 +997,57 @@ class FreeEconomicDataTool(BaseTool):
                 country=country,
                 timestamp=datetime.now()
             )
-            
-            return {
-                "economic_data": economic_data_model.dict(),
-                "raw_data": economic_data
+
+            # Build a compact per-indicator summary — richer context, no raw arrays
+            def _indicator_summary(obs_list, name):
+                vals = [float(o["value"]) for o in obs_list if o.get("value") not in (".", None, "")]
+                if not vals:
+                    return {"latest": None, "trend": "unknown"}
+                latest = vals[-1]
+                qoq = round((latest - vals[-4]) / abs(vals[-4]) * 100, 2) if len(vals) >= 4 else None
+                yoy = round((latest - vals[-12]) / abs(vals[-12]) * 100, 2) if len(vals) >= 12 else None
+                if qoq is None:
+                    trend = "unknown"
+                elif qoq > 0.2:
+                    trend = "rising"
+                elif qoq < -0.2:
+                    trend = "falling"
+                else:
+                    trend = "stable"
+                return {"latest": round(latest, 4), "qoq_change_pct": qoq, "yoy_change_pct": yoy, "trend": trend}
+
+            indicator_summaries = {
+                "GDPC1_real_gdp":       _indicator_summary(gdp_data, "GDPC1"),
+                "CPIAUCSL_inflation":   _indicator_summary(cpi_data, "CPIAUCSL"),
+                "FEDFUNDS_rate":        _indicator_summary(fed_funds_data, "FEDFUNDS"),
+                "UNRATE_unemployment":  _indicator_summary(unemployment_data, "UNRATE"),
+                "UMCSENT_sentiment":    _indicator_summary(
+                    economic_data.get("UMCSENT", {}).get("data", {}).get("observations", []), "UMCSENT"),
+                "PAYEMS_payrolls":      _indicator_summary(
+                    economic_data.get("PAYEMS", {}).get("data", {}).get("observations", []), "PAYEMS"),
             }
-            
+
+            result = {
+                "economic_data": economic_data_model.dict(),
+                "indicator_summaries": indicator_summaries,
+                # Market-traded proxies double as a fallback when FRED is
+                # rate-limited (demo key) or unreachable
+                "market_indicators": _market_macro_snapshot(),
+            }
+            if not economic_data and not result["market_indicators"]:
+                return {"error": "No economic data available from FRED or market proxies"}
+            return result
+
         except Exception as e:
+            # FRED path crashed — market proxies may still serve macro context
+            fallback = _market_macro_snapshot()
+            if fallback:
+                return {
+                    "economic_data": {},
+                    "indicator_summaries": {},
+                    "market_indicators": fallback,
+                    "note": "FRED data unavailable; market-traded proxies provided instead",
+                }
             return {"error": f"Failed to collect economic data: {str(e)}"}
 
 
@@ -582,7 +1071,7 @@ class FreeWebSearchTool(BaseTool):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             }
             
-            response = requests.get(search_url, params=params, headers=headers)
+            response = _http.get(search_url, params=params, headers=headers, timeout=15)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.content, 'html.parser')
@@ -622,6 +1111,7 @@ class FreeCompetitorAnalysisTool(BaseTool):
     name: str = "Free Competitor Analysis Tool"
     description: str = "Analyzes competitors using free data sources like Yahoo Finance and web scraping"
     
+    @cached_tool(ttl=43200)
     def _run(self, symbol: str, industry: Optional[str] = None) -> Dict[str, Any]:
         """Analyze competitors using free sources."""
         try:
@@ -641,41 +1131,71 @@ class FreeCompetitorAnalysisTool(BaseTool):
             search_query = f"{symbol} competitors {industry} {sector}"
             search_results = search_tool._run(search_query, num_results=10)
             
-            competitors = []
-            
-            # Look for competitor mentions in search results
+            # Common stop words/non-ticker capitalized words
+            exclude_words = {
+                "AND", "OR", "BUT", "FOR", "THE", "A", "AN", "IN", "ON", "AT", "BY", "TO", "OF",
+                "US", "UK", "EU", "USA", "SEC", "CEO", "CFO", "ETF", "PE", "EPS", "GDP", "CPI",
+                "NYSE", "NASDAQ", "AMEX", "OTC", "FTSE", "DAX", "CAC", "ASX", "TSX", "S&P", "SPY",
+                "INDEX", "STOCK", "SHARE", "BOND", "DEBT", "CASH", "ASSET", "FUND", "TRUST",
+                "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+                "FY", "Q1", "Q2", "Q3", "Q4", "TTM", "YTD", "CAGR", "IPO", "M&A", "R&D", "FCF",
+                "REIT", "NAV", "AUM", "ESG", "P/E", "P/B", "P/S", "PEG", "EV", "EBIT", "EBITDA",
+                "COMP", "INC", "CORP", "LTD", "LLC", "PLC", "CO", "SA", "AG", "NV", "BV", "GMBH",
+                "NEW", "YORK", "CITY", "STREET", "WALL", "BANK", "MARKET", "GROWTH", "VAL", "DIV",
+                "NEWS", "INFO", "DATA", "WEB", "SITE", "URL", "HTML", "JSON", "XML", "PDF", "API"
+            }
+
+            # Collect candidate symbols
+            candidates_raw = []
             for result in search_results.get("results", []):
                 title = result.get("title", "")
                 snippet = result.get("snippet", "")
-                
-                # Extract potential competitor symbols (simple heuristic)
                 text = f"{title} {snippet}"
                 potential_symbols = re.findall(r'\b[A-Z]{1,5}\b', text)
-                
-                for symbol_candidate in potential_symbols:
-                    if (symbol_candidate != symbol and 
-                        len(symbol_candidate) >= 2 and 
-                        len(symbol_candidate) <= 5):
-                        
-                        # Verify it's a real stock by checking Yahoo Finance
-                        try:
-                            competitor_data = yahoo_tool._run(symbol_candidate)
-                            if "error" not in competitor_data:
-                                competitors.append({
-                                    "symbol": symbol_candidate,
-                                    "name": competitor_data.get("company_info", {}).get("name", symbol_candidate),
-                                    "sector": competitor_data.get("company_info", {}).get("sector"),
-                                    "industry": competitor_data.get("company_info", {}).get("industry"),
-                                    "market_cap": competitor_data.get("market_data", {}).get("market_cap"),
-                                    "current_price": competitor_data.get("market_data", {}).get("current_price")
-                                })
-                        except:
-                            continue
+                for c in potential_symbols:
+                    c_upper = c.upper()
+                    if (c_upper != symbol.upper() and 
+                        len(c_upper) >= 2 and 
+                        len(c_upper) <= 5 and 
+                        c_upper not in exclude_words):
+                        candidates_raw.append(c_upper)
+
+            # Deduplicate and limit candidates to check (max 8) to avoid yfinance spam
+            candidates = list(dict.fromkeys(candidates_raw))[:8]
             
-            # Remove duplicates
+            # Helper to validate a competitor symbol with ONE cheap info call —
+            # candidates come from scraped web text and are mostly junk, so a
+            # full data collection per candidate would waste 5-6 API calls each
+            def _validate_competitor(candidate):
+                try:
+                    info = yf.Ticker(candidate).info or {}
+                    if not info.get("marketCap"):
+                        return None
+                    return {
+                        "symbol": candidate,
+                        "name": info.get("shortName") or info.get("longName") or candidate,
+                        "sector": info.get("sector"),
+                        "industry": info.get("industry"),
+                        "market_cap": info.get("marketCap"),
+                        "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
+                    }
+                except Exception:
+                    pass
+                return None
+
+            # Concurrently validate competitor candidates
+            competitors_list = []
+            with ThreadPoolExecutor(max_workers=min(len(candidates), 4)) as executor:
+                futures = {executor.submit(_validate_competitor, c): c for c in candidates}
+                for future in as_completed(futures):
+                    res = future.result()
+                    if res:
+                        competitors_list.append(res)
+            
+            # Sort/deduplicate list
             seen_symbols = set()
             unique_competitors = []
-            for comp in competitors:
+            for comp in competitors_list:
                 if comp["symbol"] not in seen_symbols:
                     seen_symbols.add(comp["symbol"])
                     unique_competitors.append(comp)
@@ -697,28 +1217,45 @@ class FreeIndustryAnalysisTool(BaseTool):
     name: str = "Free Industry Analysis Tool"
     description: str = "Analyzes industry trends using free data sources"
     
+    @cached_tool(ttl=43200)
     def _run(self, industry: str, sector: Optional[str] = None) -> Dict[str, Any]:
         """Analyze industry using free sources."""
         try:
-            # Get industry data from web search
+            # Instantiate tools
             search_tool = FreeWebSearchTool()
-            search_query = f"{industry} sector analysis trends {datetime.now().year}"
-            search_results = search_tool._run(search_query, num_results=10)
-            
-            # Get economic data
             economic_tool = FreeEconomicDataTool()
-            economic_data = economic_tool._run()
-            
-            # Get news about the industry
             news_tool = FreeNewsTool()
-            news_data = news_tool._run(industry, query=f"{industry} industry news")
+            
+            search_query = f"{industry} sector analysis trends {datetime.now().year}"
+            
+            # Fetch sub-sources concurrently
+            results = {}
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                future_search = executor.submit(search_tool._run, search_query, num_results=10)
+                future_economic = executor.submit(economic_tool._run)
+                future_news = executor.submit(news_tool._run, industry, query=f"{industry} industry news")
+                
+                try:
+                    results["search"] = future_search.result(timeout=30)
+                except Exception as e:
+                    results["search"] = {"error": str(e)}
+                    
+                try:
+                    results["economic"] = future_economic.result(timeout=30)
+                except Exception as e:
+                    results["economic"] = {"error": str(e)}
+                    
+                try:
+                    results["news"] = future_news.result(timeout=30)
+                except Exception as e:
+                    results["news"] = {"error": str(e)}
             
             return {
                 "industry": industry,
                 "sector": sector,
-                "search_results": search_results.get("results", []),
-                "economic_context": economic_data.get("economic_data", {}),
-                "news_sentiment": news_data.get("news_data", []),
+                "search_results": results["search"].get("results", []),
+                "economic_context": results["economic"].get("economic_data", {}),
+                "news_sentiment": results["news"].get("news_data", []),
                 "analysis_timestamp": datetime.now().isoformat()
             }
             
@@ -737,8 +1274,18 @@ class ParallelDataCollectionTool(BaseTool):
 
     def _run(self, symbol: str, period: str = "1y") -> Dict[str, Any]:
         from ..config.settings import settings
+        from .company_intel import (
+            AnalystDataTool, FinancialStatementsTool, OwnershipTool,
+        )
+        from .social_sentiment import SocialSentimentTool
 
-        tasks = [("yahoo_finance", YahooFinanceTool()._run, {"symbol": symbol, "period": period})]
+        tasks = [
+            ("yahoo_finance", YahooFinanceTool()._run, {"symbol": symbol, "period": period}),
+            ("analyst_data", AnalystDataTool()._run, {"symbol": symbol}),
+            ("financial_statements", FinancialStatementsTool()._run, {"symbol": symbol}),
+            ("ownership", OwnershipTool()._run, {"symbol": symbol}),
+            ("social_sentiment", SocialSentimentTool()._run, {"symbol": symbol}),
+        ]
 
         if settings.sec_edgar_enabled:
             tasks.append(("sec_filings", FreeSECFilingTool()._run, {"symbol": symbol}))
@@ -750,7 +1297,7 @@ class ParallelDataCollectionTool(BaseTool):
             tasks.append(("news", FreeNewsTool()._run, {"symbol": symbol}))
 
         results: Dict[str, Any] = {}
-        with ThreadPoolExecutor(max_workers=min(len(tasks), 4)) as executor:
+        with ThreadPoolExecutor(max_workers=min(len(tasks), 6)) as executor:
             futures = {executor.submit(fn, **kwargs): name for name, fn, kwargs in tasks}
             for future in as_completed(futures):
                 name = futures[future]

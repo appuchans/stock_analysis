@@ -15,9 +15,9 @@
 # ── Global defaults ────────────────────────────────────────────────────────────
 global:
   provider: openai
-  model: gpt-4o
+  model: gpt-5.4-nano
   temperature: 0.1
-  max_tokens: 4000
+  max_tokens: 16000
   timeout: 120        # seconds before LLM call is aborted
   max_retries: 3      # retry attempts on transient errors
 
@@ -35,21 +35,13 @@ global:
 #   technical_analyst:
 #     provider: anthropic
 #     model: claude-haiku-4-5-20251001
-agents: {}
+agents:
+  investment_advisor:
+    model: gpt-5.4-mini          # or: provider: anthropic / model: claude-sonnet-4-6
+    temperature: 0.0             # deterministic output for the buy/sell/hold call
+  report_generator:
+    model: gpt-5.4-mini          # or: provider: anthropic / model: claude-sonnet-4-6
 
-# ── Planning LLM (used when Crew planning=True) ───────────────────────────────
-# A lighter/cheaper model is usually sufficient for the planning phase.
-# Leave blank to inherit from the global defaults above.
-planning:
-  provider: openai
-  model: gpt-4o-mini
-  temperature: 0.1
-  max_tokens: 2000
-
-# ── Embedder configuration (used for Crew-level memory) ───────────────────────
-embedder:
-  provider: openai
-  model: text-embedding-3-small
 
 # ── Provider → LiteLLM model-string prefix mapping ────────────────────────────
 # LiteLLM expects  "<prefix><model-name>"  e.g. "openai/gpt-4o".

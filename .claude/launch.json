@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "stock-web",
+      "runtimeExecutable": "/Users/home/code/stock_analysis/comprehensive_stock_analysis/.venv/bin/python",
+      "runtimeArgs": ["-m", "stock_analysis.web", "--port", "8732"],
+      "port": 8732
+    }
+  ]
+}

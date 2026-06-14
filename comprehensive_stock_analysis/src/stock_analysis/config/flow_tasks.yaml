@@ -1,0 +1,269 @@
+# Stage prompt configuration for the Flow pipeline (crew/flow_crew.py).
+#
+# Placeholders like {symbol}, {collected_data}, {technical_data}, {analyst_data},
+# {financials_data}, {ownership_data}, {sentiment_data}, {analyses_summary} and
+# {analysis_key} are interpolated by CrewAI at kickoff from the inputs dict —
+# they must stay verbatim in this file.
+
+shared:
+  # Appended to every analysis stage description (after the collected-data block)
+  rigor_footer: |
+    RIGOR REQUIREMENTS:
+    - Cite every quantitative claim with its value, period/date, and source label,
+      e.g. 'Revenue $130,497M (FY ending 2025-01, Yahoo Finance statements)'.
+    - Never invent a number. If a value is unavailable, write 'not available' —
+      do not refuse the whole task because one input is missing.
+    - State the methodology behind any derived metric (e.g. 'VaR: 95% confidence,
+      1-day horizon, 1-year daily returns'; 'beta vs ^GSPC, 1-year daily window';
+      DCF assumptions must be disclosed).
+    - NEVER reproduce raw error messages, HTTP status codes (403, 404, 429),
+      stack traces, or words like 'failed'/'error' in the report body. This is a
+      client-facing document. Describe unavailable data in neutral language
+      ('Reddit activity data was unavailable at the time of writing').
+    - When a quantitative source is unavailable, FILL THE GAP qualitatively: use
+      your web search tool (if available) or well-established general knowledge,
+      and qualify such statements explicitly (e.g. 'based on recent press coverage'
+      or 'based on general industry knowledge, not platform data'). A missing API
+      must result in a qualified qualitative paragraph, never an empty section.
+    - End the report with a '## Data Sources & Gaps' section listing each source
+      used (with as-of date) and each data item that was unavailable or
+      qualitatively substituted.
+
+  # Collected-data context appended to every analysis stage description
+  with_data_suffix: |
+    Use the following pre-collected data as your primary source:
+    {collected_data}
+
+    IMPORTANT: Write your entire response in clean, human-readable markdown.
+    Do NOT output raw JSON or code blocks — use prose, bullet points, and tables.
+
+  # Expected output for the parallel analysis stages
+  stage_expected_output: >-
+    Clear, citation-backed markdown report covering the {analysis_key} analysis
+    of {symbol}, ending with a Data Sources & Gaps section.
+
+collect_data:
+  description: |
+    Collect comprehensive data for {symbol}. You MUST include ALL of the following:
+    1. Business description: what the company makes/sells, its core segments,
+       key customers, and why someone would choose its product over an alternative.
+    2. Strategy: what management says it is building toward — new products,
+       new markets, cost structure goals, margin targets.
+    3. Forward guidance and recent promises: what has management guided for
+       revenue, margins, and growth in the next 1-3 years?
+    4. Track record: did the company meet its own targets in the last 2-4 quarters?
+       What did it promise and what did it actually deliver?
+    5. Key risks the company itself flags in its most recent 10-K/10-Q.
+    6. Current market data: price, market cap, key valuation multiples, margins.
+    7. Macro context: relevant economic indicators (rates, GDP, sector conditions).
+    Pull from SEC EDGAR filings (focus on MD&A), recent earnings commentary, and news.
+  expected_output: >-
+    A structured data package covering: business description, product/service
+    strategy, management guidance and promises, execution track record,
+    company-stated risks, current financials and valuation metrics, and macro
+    context.
+
+technical:
+  brief: >-
+    Write a brief technical summary for {symbol} (maximum 2 short paragraphs).
+    State the current trend (bullish/bearish/neutral) and the one or two most
+    meaningful signals. Do NOT list every indicator. Frame it as a short-term
+    timing note, not an investment thesis.
+  comprehensive: >-
+    Comprehensive technical analysis for {symbol}: RSI, MACD, moving averages,
+    Bollinger Bands, trend, support/resistance, and key signals.
+  indicators_source: >-
+    Use the pre-computed indicators in {technical_data}. If those are missing,
+    call the 'Yahoo Finance Data Collector' tool with symbol='{symbol}'.
+  backtest_addendum: >-
+    Validate your primary signal with the 'Backtest Tool' (strategy='sma_crossover'
+    and 'rsi_reversion', symbol='{symbol}', period='2y') and report how each
+    strategy compared to buy-and-hold.
+
+fundamental:
+  stock: |
+    Write a business-first fundamental analysis of {symbol}:
+    1. Business Overview — what the company sells, its main segments, why customers choose it.
+    2. Strategy & Management Promises — what is management building toward?
+    3. Execution Track Record — use the earnings beat/miss history in {collected_data}.
+    4. Financial Performance — use the 3-year statements in {financials_data}:
+       revenue trajectory and YoY growth, margins, free cash flow, buybacks,
+       balance-sheet strength.
+    5. Valuation — current multiples vs the growth outlook; compare your view with
+       the street consensus in {analyst_data} (price targets, EPS estimates, revisions).
+    Lead with narrative; cite the fiscal period of every figure.
+  etf: >-
+    Analyze the ETF profile of {symbol}: expense ratio, AUM, NAV, 1Y/3Y/5Y
+    returns, distribution yield, turnover, and top holdings. Fund data is in
+    {collected_data} and {financials_data}. Conclude with a cost-efficiency
+    and track-record verdict.
+
+ownership:
+  description: |
+    Write an ownership and capital-allocation analysis of {symbol} — the
+    investor's view of who owns the company and how management treats
+    shareholder capital:
+    1. Ownership structure — insider vs institutional percentages and what the
+       top institutional holders signal (from {ownership_data}).
+    2. Insider activity — recent insider buys/sells: who, how much, and whether
+       the pattern looks like routine diversification or conviction.
+    3. Capital allocation — from {financials_data}: buybacks, dividends paid,
+       capex vs free cash flow. Is management returning capital, reinvesting,
+       or diluting? Quantify the shareholder yield where possible.
+    4. Verdict — does ownership behaviour support or contradict the
+       investment case?
+    This is for a long-term investor: focus on multi-quarter patterns, not
+    day-to-day moves.
+
+risk:
+  description: >-
+    Write a risk assessment for {symbol}. Focus on BUSINESS risks first:
+    (1) key risks the company itself flags, (2) competitive threats,
+    (3) execution risk, (4) macro/regulatory risks specific to this business.
+    Then quantify: use {financials_data} for leverage and liquidity (debt vs
+    cash, FCF coverage), {ownership_data} for insider-selling pressure, and the
+    options positioning inside {sentiment_data} (put/call ratio, implied
+    volatility) for market-implied risk. For beta, VaR, Sharpe, and max drawdown
+    call the 'Risk Calculator Tool' with symbol='{symbol}' — it fetches the
+    price history itself. Quantitative metrics close the report as context.
+
+sentiment:
+  description: |
+    Write a sentiment and positioning analysis for {symbol}, written for a
+    long-term INVESTOR. Weight professional signals above retail chatter.
+    Your inputs:
+    - {analyst_data} contains: Wall Street price targets with implied upside,
+      the buy/hold/sell recommendation trend over the last 3 months, recent
+      upgrades/downgrades by firm, and 30-day EPS estimate revisions (up vs down).
+    - {sentiment_data} contains: aggregate Stocktwits bullish/bearish counts and
+      ratio with watcher count, Reddit post volume, options positioning
+      (put/call ratios — below 0.7 is bullish, above 1.0 bearish), short
+      interest (% of float, days to cover, month-over-month change), the
+      market-wide CNN Fear & Greed index under social.market_mood, and recent
+      news headlines.
+    Structure, in order of weight:
+    (1) Professional view — consensus rating mix, target vs price, revision
+        momentum, and notable rating changes with firm names and dates. This is
+        the headline of the section.
+    (2) Positioning — short interest level and month-over-month trend, options
+        put/call. These reveal what professionals do, not just say.
+    (3) News tone — themes from the headlines (paraphrase themes; do not list
+        every headline), set against the market-wide Fear & Greed backdrop.
+    (4) Retail gauge — aggregate ratios and volume trends ONLY (e.g. 'X% of
+        labeled Stocktwits messages bullish across a sample of N; Reddit post
+        volume of M in the past week'). NEVER quote, paraphrase, or reference
+        individual social-media posts or messages — retail chatter is anecdotal
+        and subjective. One short paragraph maximum.
+    (5) Synthesis — do professional signals and retail mood agree or diverge,
+        and what does that mean for an investor?
+    If any source appears under sources_failed, do NOT mention errors or status
+    codes — cover that angle qualitatively instead, using the 'Free Web Search
+    Tool' or general knowledge, explicitly qualified as such, and list the
+    substitution in Data Sources & Gaps.
+
+market:
+  description: >-
+    Comprehensive market analysis for {symbol}: index trend, sector rotation,
+    volatility regime, and how they affect {symbol}.
+
+industry:
+  stock: >-
+    Comprehensive industry analysis for {symbol}: growth, competitive landscape,
+    regulation, disruption.
+  etf: >-
+    Analyze ETF {symbol} portfolio: top holdings, sector/geography breakdown,
+    concentration risk (Herfindahl over top-10 weights), factor tilts, mandate
+    alignment. Use the 'ETF Portfolio Composition' tool for sector weightings.
+
+competitor:
+  stock: >-
+    Comprehensive competitor analysis for {symbol}: named peers with comparable
+    metrics.
+  etf: >-
+    Compare ETF {symbol} vs 2-3 direct alternatives: expense ratio, 3Y return,
+    AUM, tracking approach; recommend when each alternative is preferable.
+
+economic:
+  description: >-
+    Comprehensive macroeconomic analysis relevant to {symbol}: rates, inflation,
+    GDP, and sector exposure to the cycle.
+
+recommendation:
+  description: |
+    Write a clear investment recommendation memo for {symbol}. Your memo must
+    follow this structure:
+    1. What the business does (2-3 sentences — assume the reader has never heard of it).
+    2. What management is building toward — their stated strategy and key promises.
+    3. Track record — have they delivered on past guidance? Be specific.
+    4. Your view — Buy / Hold / Sell, and the core reason in plain English.
+    5. What would change your mind (upside and downside scenarios).
+    6. Key risks (max 3, stated as business risks not beta values).
+    7. Suggested target price and time horizon, with brief rationale.
+       Sanity-check your target against the street consensus in {analyst_data}
+       (low/mean/high targets) and explicitly state whether you are above,
+       below, or in line with consensus and why.
+
+    Write in plain, direct prose. Do not lead with ratios or indicator values.
+    A smart reader who knows nothing about this stock should finish your memo
+    understanding the business and your investment thesis.
+
+    Analyses to draw from:
+    {analyses_summary}
+  expected_output: >-
+    Investment recommendation: type, target price, stop-loss, time horizon,
+    confidence, reasoning, risks, opportunities.
+
+report:
+  description: |
+    Write the final research narrative for {symbol} — ONE coherent argument,
+    not a collection of section summaries. This is the main body of a
+    client-facing research report for a long-term investor.
+
+    Open with '## Investment Thesis': state the rating and target price, then
+    the 2-3 pillars of the argument in plain English, and one sentence on what
+    would change your mind. Everything that follows must SERVE this thesis.
+
+    Then these sections, in order (heading lines contain ONLY the section name):
+    1. '## Business Overview' — what the company sells, its segments, why customers choose it.
+    2. '## Strategy & Management Track Record' — stated goals, guidance, delivery record.
+    3. '## Financial Performance' — revenue, margins, cash flow trends with cited figures.
+    4. '## Ownership & Capital Allocation' — insider/institutional ownership, insider
+       activity, buybacks and dividends (only if ownership analysis is in the source
+       material; otherwise omit this section).
+    5. '## Risks' — what could break the thesis, in order of severity; quantified context last.
+    6. '## Sentiment & Positioning' — professional view first (analyst consensus,
+       revisions, short interest, options positioning), then aggregate retail gauges in
+       one sentence. Never quote individual social-media posts.
+    7. '## Valuation & Recommendation' — close the argument: tie valuation back to the
+       thesis pillars and restate the rating and target with the key trade-off.
+    8. '## Market Timing Note' — ONLY if technical analysis appears in the source
+       material: one short paragraph, clearly framed as short-term context with limited
+       weight for a long-term investor. Omit the section entirely otherwise.
+
+    Connective-tissue rules (this is what makes it ONE document, not sections):
+    - Use ONLY the section headings listed above and NO OTHERS. No '###' sub-headings
+      anywhere; for sub-points use a bold lead-in phrase ('**Margins.** Operating
+      margin expanded to…'), never a heading. No numbered sub-sections (no '4.1').
+    - Do NOT create a section per specialist ('Fundamental Analyst View', 'Risk
+      Analyst View') and do NOT add an Appendix/Supporting Data/Charts section —
+      weave specialist findings into the thematic sections; the report assembles
+      appendices and charts automatically.
+    - Each section must explicitly reference the thesis or evidence from another
+      section at least once (e.g. 'consistent with the capital-return pattern noted
+      above', 'this is the margin durability the thesis depends on').
+    - State each fact ONCE, in the section where it belongs — never repeat
+      price/market cap boilerplate across sections.
+    - Vary section lengths by importance to the thesis; do not pad.
+
+    Other rules: cite numbers (value, period, source) as in the source material.
+    Do NOT include a 'Data Sources & Gaps' section (the report appendix consolidates
+    those). Never mention errors, unavailability mechanics, or tools.
+
+    Your final answer must be ONLY the narrative document itself, starting
+    directly with '## Investment Thesis'. No preamble, no completion summary.
+
+    Source material:
+    {analyses_summary}
+  expected_output: >-
+    The markdown research narrative document itself, starting with
+    '## Investment Thesis' — never a summary of actions taken.

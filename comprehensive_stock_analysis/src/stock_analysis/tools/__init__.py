@@ -1,20 +1,20 @@
 """Tools for stock analysis."""
 
-from .data_collection import (
+from .free_data_collection import (
     YahooFinanceTool,
-    AlphaVantageTool,
-    SECFilingTool,
-    FREDTool,
-    QuandlTool,
-    NewsTool,
-    EconomicDataTool,
+    FreeSECFilingTool,
+    FreeFREDTool,
+    FreeNewsTool,
+    FreeEconomicDataTool,
+    FreeWebSearchTool,
+    FreeCompetitorAnalysisTool,
+    FreeIndustryAnalysisTool,
+    ParallelDataCollectionTool,
 )
-from .free_data_collection import ParallelDataCollectionTool
 from .analysis_tools import (
     TechnicalAnalysisTool,
     FundamentalAnalysisTool,
     RiskAnalysisTool,
-    SentimentAnalysisTool,
     ValuationTool,
     ComparisonTool,
 )
@@ -24,6 +24,14 @@ from .calculation_tools import (
     RiskCalculatorTool,
     ValuationCalculatorTool,
 )
+from .company_intel import (
+    AnalystDataTool,
+    ETFPortfolioTool,
+    FinancialStatementsTool,
+    OptionsSentimentTool,
+    OwnershipTool,
+)
+from .social_sentiment import SocialSentimentTool
 from .backtest_tools import BacktestTool
 from .portfolio_tools import PortfolioAnalysisTool
 from .report_tools import ReportGeneratorTool
@@ -31,18 +39,18 @@ from .report_tools import ReportGeneratorTool
 __all__ = [
     # Data Collection Tools
     "YahooFinanceTool",
-    "AlphaVantageTool",
-    "SECFilingTool",
-    "FREDTool",
-    "QuandlTool",
-    "NewsTool",
-    "EconomicDataTool",
+    "FreeSECFilingTool",
+    "FreeFREDTool",
+    "FreeNewsTool",
+    "FreeEconomicDataTool",
+    "FreeWebSearchTool",
+    "FreeCompetitorAnalysisTool",
+    "FreeIndustryAnalysisTool",
     "ParallelDataCollectionTool",
     # Analysis Tools
     "TechnicalAnalysisTool",
     "FundamentalAnalysisTool",
     "RiskAnalysisTool",
-    "SentimentAnalysisTool",
     "ValuationTool",
     "ComparisonTool",
     # Calculation Tools
@@ -50,7 +58,14 @@ __all__ = [
     "TechnicalIndicatorTool",
     "RiskCalculatorTool",
     "ValuationCalculatorTool",
-    # New Tools
+    # Company Intelligence Tools
+    "AnalystDataTool",
+    "OwnershipTool",
+    "FinancialStatementsTool",
+    "OptionsSentimentTool",
+    "ETFPortfolioTool",
+    "SocialSentimentTool",
+    # Strategy / Portfolio / Reporting Tools
     "BacktestTool",
     "PortfolioAnalysisTool",
     "ReportGeneratorTool",
