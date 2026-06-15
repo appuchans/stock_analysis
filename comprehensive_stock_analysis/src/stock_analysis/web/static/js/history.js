@@ -65,8 +65,14 @@ function card(it) {
     queueMicrotask(() => sparkline(cv, it.spark, up ? theme().pos : theme().neg));
   }
 
-  if (completed) {
-    node.append(row(it.asset_type === "etf" ? "Price/NAV" : "Price", fmtMoney(it.current_price)));
+  if (completed && it.asset_type === "etf") {
+    // Fund-relevant facts — P/E / price target are not meaningful for an ETF.
+    node.append(row("Price/NAV", fmtMoney(it.current_price)));
+    node.append(row("AUM", it.aum_bn != null ? "$" + fmtNum(it.aum_bn, 2) + "B" : "—"));
+    node.append(row("Expense", pctTxt(it.expense_ratio)));
+    node.append(row("YTD", it.ytd_return != null ? pctEl(it.ytd_return) : "—"));
+  } else if (completed) {
+    node.append(row("Price", fmtMoney(it.current_price)));
     if (it.target_price != null) node.append(row("Target", fmtMoney(it.target_price)));
     if (upside !== null) node.append(row("Upside", upsideEl(upside)));
     node.append(row("P/E", fmtNum(it.pe_ratio, 1)));
@@ -90,4 +96,15 @@ const row = (lbl, val) =>
 
 function upsideEl(u) {
   return el("span", { class: "num " + (u >= 0 ? "pos" : "neg") }, (u >= 0 ? "+" : "") + fmtNum(u, 1) + "%");
+}
+
+// Fraction (0.005 = 0.5%) → text.
+function pctTxt(v) {
+  return v == null ? "—" : (v * 100).toFixed(2).replace(/\.?0+$/, "") + "%";
+}
+
+// Fraction → delta-colored percent span (for YTD return).
+function pctEl(v) {
+  const x = v * 100;
+  return el("span", { class: "num " + (x >= 0 ? "pos" : "neg") }, (x >= 0 ? "+" : "") + fmtNum(x, 2) + "%");
 }

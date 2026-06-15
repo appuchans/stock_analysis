@@ -67,6 +67,8 @@ function showProgress(symbol, isRefresh) {
   $("#progress-pct").textContent = "0%";
   $("#progress-tokens").textContent = "0";
   $("#progress-calls").textContent = "0";
+  $("#progress-activity").classList.add("hidden");
+  $("#progress-activity").querySelector(".txt").textContent = "";
   setStepper(0, "queued");
   $("#progress-card").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
@@ -105,11 +107,17 @@ function startPolling(jobId, symbol) {
     $("#progress-tokens").textContent = fmtNum((job.token_usage || {}).total_tokens || 0, 0);
     $("#progress-calls").textContent = job.llm_calls || 0;
     setStepper(job.progress || 0, job.state);
+    const act = $("#progress-activity");
+    if (job.activity) {
+      act.querySelector(".txt").textContent = job.activity;
+      act.classList.remove("hidden");
+    }
 
     if (["completed", "failed", "aborted"].includes(job.state)) {
       clearInterval(polling); polling = null; currentJob = null;
       $("#run-btn").disabled = false;
       $("#cancel-btn").classList.add("hidden");
+      $("#progress-activity").classList.add("hidden");
     }
     if (job.state === "completed") {
       $("#progress-bar").style.width = "100%";

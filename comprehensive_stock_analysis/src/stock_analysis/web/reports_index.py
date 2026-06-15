@@ -111,6 +111,7 @@ def list_reports() -> List[Dict[str, Any]]:
         rec = _read_json(_paths.recommendation_path(sym))
         company = chart.get("company") or {}
         stats = chart.get("key_stats") or {}
+        etf = chart.get("etf_profile") or {}
         # Compact price series for the card sparkline (last ~30 weekly closes).
         spark = [p.get("close") for p in (chart.get("price_history") or [])][-30:]
         # Default a marker-less report (e.g. produced by the CLI) to completed.
@@ -132,6 +133,11 @@ def list_reports() -> List[Dict[str, Any]]:
             "pe_ratio": _num(stats.get("pe_ratio")),
             "high_52w": _num(stats.get("high_52w")),
             "low_52w": _num(stats.get("low_52w")),
+            # ETF-relevant fund facts (None for stocks) for the history card.
+            "aum_bn": _num(etf.get("total_assets_bn")),
+            "expense_ratio": _num(etf.get("expense_ratio")),
+            "distribution_yield": _num(etf.get("distribution_yield")),
+            "ytd_return": _num(etf.get("ytd_return")),
             "has_html": has_html,
             "has_chart": bool(chart),
             "spark": spark,

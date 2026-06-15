@@ -265,6 +265,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         agent = self._make_agent(DataCollectorAgent)
         cd = self._prompts["collect_data"]
         t = Task(
+            name="Data Collection",
             description=cd["description"],
             expected_output=cd["expected_output"],
             agent=agent,
@@ -557,6 +558,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             cls, key, desc = spec
             ag = self._make_agent(cls)
             t = Task(
+                name=f"{key.replace('_', ' ').title()} Analysis",
                 description=self._with_data(desc),
                 expected_output=stage_expected,
                 agent=ag,
@@ -670,6 +672,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         agent = self._make_agent(InvestmentAdvisorAgent)
         rec = self._prompts["recommendation"]
         t = Task(
+            name="Investment Recommendation",
             description=rec["description"],
             expected_output=rec["expected_output"],
             agent=agent,
@@ -718,6 +721,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
 
         rep = self._prompts["report"]
         t = Task(
+            name="Report Generation",
             description=rep["description"],
             expected_output=rep["expected_output"],
             agent=agent,

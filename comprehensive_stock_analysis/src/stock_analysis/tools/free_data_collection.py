@@ -81,6 +81,28 @@ def _fetch_top_holdings(ticker: "yf.Ticker") -> list:
         return []
 
 
+def _etf_fraction(*values: Any, pct_threshold: float) -> Optional[float]:
+    """First non-None value, normalized to a fraction (0.0085 = 0.85%).
+
+    yfinance is wildly inconsistent: ``ytdReturn`` / ``netExpenseRatio`` come as
+    percent figures (85.32, 0.5), while ``annualReportExpenseRatio`` / ``yield``
+    come as fractions (0.0085, 0.012). A value whose magnitude exceeds the
+    per-field threshold is treated as already-percent and divided by 100, so
+    everything downstream can consistently multiply by 100 for display.
+    """
+    for v in values:
+        if v is None:
+            continue
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if f != f:  # NaN
+            continue
+        return f / 100 if abs(f) > pct_threshold else f
+    return None
+
+
 def _compute_technical_summary(hist: "pd.DataFrame") -> Dict[str, Any]:
     """Pre-compute key technical indicators from raw OHLCV history.
 
@@ -299,12 +321,18 @@ class YahooFinanceTool(BaseTool):
                     "fund_family":         info.get("fundFamily"),
                     "category":            info.get("category"),
                     "total_assets_bn":     round(info.get("totalAssets", 0) / 1e9, 2) if info.get("totalAssets") else None,
-                    "expense_ratio":       info.get("annualReportExpenseRatio") or info.get("totalExpenseRatio"),
-                    "distribution_yield":  info.get("yield"),
-                    "ytd_return":          info.get("ytdReturn"),
-                    "three_year_return":   info.get("threeYearAverageReturn"),
-                    "five_year_return":    info.get("fiveYearAverageReturn"),
-                    "turnover_ratio":      info.get("annualHoldingsTurnover"),
+                    # Expense ratio: prefer fraction fields, fall back to
+                    # netExpenseRatio (a percent figure, e.g. 0.5 = 0.50%).
+                    "expense_ratio":       _etf_fraction(
+                        info.get("annualReportExpenseRatio"), info.get("totalExpenseRatio"),
+                        info.get("netExpenseRatio"), pct_threshold=0.1),
+                    "distribution_yield":  _etf_fraction(
+                        info.get("yield"), info.get("trailingAnnualDividendYield"), pct_threshold=1.0),
+                    # ytdReturn arrives as a percent figure (85.32 = 85.32%).
+                    "ytd_return":          _etf_fraction(info.get("ytdReturn"), pct_threshold=1.5),
+                    "three_year_return":   _etf_fraction(info.get("threeYearAverageReturn"), pct_threshold=1.5),
+                    "five_year_return":    _etf_fraction(info.get("fiveYearAverageReturn"), pct_threshold=1.5),
+                    "turnover_ratio":      _etf_fraction(info.get("annualHoldingsTurnover"), pct_threshold=1.0),
                     "inception_date":      info.get("fundInceptionDate"),
                     "index_tracked":       info.get("underlyingSymbol") or info.get("category"),
                     "top_holdings":        _fetch_top_holdings(ticker),

@@ -66,7 +66,7 @@ function buildDashboard() {
 
   if (rec && rec.recommendation) host.append(recBanner(rec));
   host.append(isEtf
-    ? etfTiles(chart.key_stats || {}, chart.etf_profile || {})
+    ? etfTiles(chart.key_stats || {}, chart.etf_profile || {}, symbol)
     : keyTiles(chart.key_stats || {}, chart.analyst || {}));
 
   const grid = el("div", { class: "grid-2" });
@@ -147,7 +147,14 @@ function pct(v) {
   return v == null || Number.isNaN(v) ? "—" : (v * 100).toFixed(2).replace(/\.?0+$/, "") + "%";
 }
 
-function etfTiles(stats, etf) {
+function issuerLink(name, symbol) {
+  // Link the issuer to the specific fund's page (Yahoo Finance quote).
+  return el("a", { class: "tile-link", target: "_blank", rel: "noopener",
+    href: `https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}`,
+    title: "Open the fund page" }, name);
+}
+
+function etfTiles(stats, etf, symbol) {
   return tiles([
     { k: "Price / NAV", v: fmtMoney(stats.current_price) },
     { k: "AUM", v: etf.total_assets_bn != null ? "$" + fmtNum(etf.total_assets_bn, 2) + "B" : "—" },
@@ -156,7 +163,7 @@ function etfTiles(stats, etf) {
     { k: "YTD return", v: pct(etf.ytd_return), cls: deltaCls(etf.ytd_return) },
     { k: "52w range", v: stats.low_52w && stats.high_52w ? `${fmtNum(stats.low_52w)}–${fmtNum(stats.high_52w)}` : "—" },
     etf.category ? { k: "Category", v: etf.category } : null,
-    etf.fund_family ? { k: "Issuer", v: etf.fund_family } : null,
+    etf.fund_family ? { k: "Issuer", v: issuerLink(etf.fund_family, symbol) } : null,
   ]);
 }
 

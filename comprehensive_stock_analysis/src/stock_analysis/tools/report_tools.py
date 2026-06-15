@@ -1435,7 +1435,7 @@ class ReportGeneratorTool(BaseTool):
             market_snap=market_snap,
             technical=detail.get("technical_analysis") or {},
             fundamental=detail.get("fundamental_analysis") or {},
-            etf_profile=analysis_data.get("etf_profile") or {},
+            etf_profile=analysis_data.get("etf_profile") or chart_data.get("etf_profile") or {},
             risk=detail.get("risk_assessment") or {},
             sentiment=detail.get("sentiment_analysis") or {},
             market_ctx=detail.get("market_context") or {},

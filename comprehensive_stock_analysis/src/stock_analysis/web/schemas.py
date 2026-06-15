@@ -36,6 +36,7 @@ class JobState(BaseModel):
     asset_type: str
     state: Literal["queued", "running", "completed", "failed", "aborted"]
     stage: Optional[str] = None
+    activity: Optional[str] = None
     progress: float = 0.0
     token_usage: Dict[str, int] = Field(default_factory=dict)
     llm_calls: int = 0
@@ -67,6 +68,10 @@ class HistoryItem(BaseModel):
     pe_ratio: Optional[float] = None
     high_52w: Optional[float] = None
     low_52w: Optional[float] = None
+    aum_bn: Optional[float] = None
+    expense_ratio: Optional[float] = None
+    distribution_yield: Optional[float] = None
+    ytd_return: Optional[float] = None
     has_html: bool = False
     has_chart: bool = False
     spark: List[float] = Field(default_factory=list)

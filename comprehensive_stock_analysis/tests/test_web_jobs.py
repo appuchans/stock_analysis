@@ -93,6 +93,16 @@ def test_cancel_marks_job_aborted(monkeypatch, tmp_path):
     assert (tmp_path / "TSLA" / "TSLA_run_status.json").exists()
 
 
+def test_live_view_exposes_activity():
+    from src.stock_analysis.web import progress
+    from src.stock_analysis.web.jobs import Job, manager
+
+    job = Job(id="t1", symbol="AAPL", depth="standard", asset_type="auto", use_cache=True, state="running")
+    job.tracker = progress.StageTracker(4)
+    job.tracker.note("Risk Analyst · Yahoo Finance")
+    assert manager.live_view(job)["activity"] == "Risk Analyst · Yahoo Finance"
+
+
 def test_cancel_unknown_job_404():
     assert client.post("/api/jobs/nope/cancel").status_code == 404
 

@@ -175,6 +175,7 @@ class JobManager:
         llm_calls = job.llm_calls
         stage = job.stage
         prog = job.progress
+        activity = None
         if job.state == "running":
             # token_meter/llm_budget are global; the one running job owns them.
             try:
@@ -187,6 +188,7 @@ class JobManager:
                 pass
             if job.tracker is not None:
                 stage, prog = job.tracker.snapshot()
+                activity = job.tracker.activity or None
         rec = None
         if job.result:
             rec = job.result.get("recommendation")
@@ -197,6 +199,7 @@ class JobManager:
             "asset_type": job.asset_type,
             "state": job.state,
             "stage": stage,
+            "activity": activity,
             "progress": round(float(prog), 3),
             "token_usage": token_usage,
             "llm_calls": llm_calls,
