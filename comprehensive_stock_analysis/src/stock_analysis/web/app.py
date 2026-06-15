@@ -21,6 +21,18 @@ app.include_router(results.router)
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
+@app.middleware("http")
+async def _revalidate_assets(request, call_next):
+    """Make the browser revalidate our assets and per-symbol reports so edits and
+    re-runs always show fresh content (cheap 304s on a localhost single-user app —
+    avoids stale cached JS/CSS and stale embedded reports after a re-analysis)."""
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static") or path.startswith("/api/reports"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/api/health")
 def health() -> JSONResponse:
     return JSONResponse({"status": "ok", "active_job_id": manager.active_id})

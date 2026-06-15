@@ -57,6 +57,7 @@ class Job:
     llm_calls: int = 0
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    cancel_requested: bool = False
     created_at: str = field(default_factory=_now)
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
@@ -94,7 +95,23 @@ class JobManager:
         return job
 
     # ── worker (runs in the single worker thread) ───────────────────────────
+    def cancel(self, job_id: str):
+        """Request cancellation of a job. Returns None (unknown), False (not
+        active / nothing to cancel), or True (cancellation requested)."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return None
+            if job.state not in _ACTIVE_STATES:
+                return False
+            job.cancel_requested = True
+        from ..llm_budget import request_abort
+        request_abort()
+        _logger.info("cancellation requested for job %s (%s)", job_id, job.symbol)
+        return True
+
     def _run(self, job: Job) -> None:
+        from ..llm_budget import AnalysisAbortedError
         from ..main import StockAnalysisApp
 
         job.state = "running"
@@ -112,7 +129,10 @@ class JobManager:
             job.result = result
             job.token_usage = result.get("token_usage") or {}
             job.llm_calls = int(result.get("llm_calls") or 0)
-            if result.get("status") == "completed":
+            if job.cancel_requested:
+                job.state = "aborted"
+                job.stage = "Aborted"
+            elif result.get("status") == "completed":
                 job.state = "completed"
                 job.stage = "Completed"
                 job.progress = 1.0
@@ -120,14 +140,22 @@ class JobManager:
                 job.state = "failed"
                 job.error = result.get("error") or "analysis failed"
                 job.stage = "Failed"
+        except AnalysisAbortedError:
+            job.state = "aborted"
+            job.stage = "Aborted"
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
             _logger.exception("analysis job %s failed", job.id)
-            job.state = "failed"
-            job.error = str(exc)
-            job.stage = "Failed"
+            job.state = "aborted" if job.cancel_requested else "failed"
+            job.stage = "Aborted" if job.cancel_requested else "Failed"
+            job.error = None if job.cancel_requested else str(exc)
         finally:
             job.finished_at = _now()
             progress.set_active(None)
+            try:
+                from .reports_index import write_run_status
+                write_run_status(job.symbol, job.state)
+            except Exception:  # status persistence is best-effort
+                pass
             with self._lock:
                 if self._active_id == job.id:
                     self._active_id = None

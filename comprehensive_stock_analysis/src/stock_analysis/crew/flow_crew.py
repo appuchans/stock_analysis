@@ -417,7 +417,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # Chart data for the HTML report (1y weekly closes + quarterly revenue)
         try:
             hist = ticker.history(period="1y", interval="1wk")
-            chart: Dict[str, Any] = {}
+            chart: Dict[str, Any] = {"asset_type": self.state.asset_type}
             ci = (yf_result or {}).get("company_info") or {}
             chart["company"] = {
                 "name": ci.get("name"),
@@ -426,6 +426,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 "industry": ci.get("industry"),
                 "exchange": ci.get("exchange"),
             }
+            # ETF fund facts (expense ratio, AUM, yield, …) for the dashboard —
+            # these replace the stock-only tiles (P/E, beta, analyst target).
+            if structured.get("etf_profile"):
+                chart["etf_profile"] = structured["etf_profile"]
             if hist is not None and not hist.empty:
                 chart["price_history"] = [
                     {"date": idx.date().isoformat(), "close": round(float(row["Close"]), 2)}

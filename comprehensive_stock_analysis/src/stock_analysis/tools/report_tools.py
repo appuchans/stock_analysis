@@ -137,11 +137,20 @@ _HTML_TEMPLATE = """\
   .narrative h3 + p, .narrative h4 + p { display: inline; }
   @media print { .toc { display: none; } body { font-size: 12px; }
     details.detail-section { page-break-inside: avoid; } }
+  html { scroll-behavior: smooth; }
+  .to-top { position: fixed; right: 22px; bottom: 22px; width: 42px; height: 42px;
+    border-radius: 50%; background: var(--brand); color: #fff; display: flex;
+    align-items: center; justify-content: center; font-size: 20px; line-height: 1;
+    text-decoration: none; box-shadow: 0 2px 10px rgba(16,24,40,.28); opacity: 0;
+    pointer-events: none; transition: opacity .2s ease; z-index: 50; }
+  .to-top.show { opacity: .92; pointer-events: auto; }
+  .to-top:hover { opacity: 1; }
+  @media print { .to-top { display: none; } }
 </style>
 </head>
 <body>
 
-<div class="report-header">
+<div class="report-header" id="top">
   <div class="logo">
     {% if logo_url %}<img src="{{ logo_url }}" alt="" onerror="this.parentElement.innerHTML='<span class=&quot;logo-fallback&quot;>{{ symbol[0] }}</span>'">
     {% else %}<span class="logo-fallback">{{ symbol[0] }}</span>{% endif %}
@@ -514,6 +523,34 @@ _HTML_TEMPLATE = """\
   Stocktwits, Google News). This report is generated automatically and is for informational
   purposes only. It does not constitute financial advice.
 </p>
+
+<a href="#top" class="to-top" id="to-top" aria-label="Back to top" title="Back to top">&uarr;</a>
+<script>
+  (function () {
+    var btn = document.getElementById('to-top');
+    if (!btn) return;
+    var scroller = document.scrollingElement || document.documentElement;
+    function onScroll() {
+      var y = scroller.scrollTop || window.pageYOffset || 0;
+      btn.classList.toggle('show', y > 400);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    // Scroll via JS so it works every time — an href="#top" only scrolls when
+    // the hash actually changes (a second click would otherwise do nothing).
+    // Force instant scroll-behavior for the jump so it lands reliably even where
+    // smooth-scrolling is unsupported; restore the CSS smooth afterwards (which
+    // still applies to the table-of-contents anchor links).
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      var prev = scroller.style.scrollBehavior;
+      scroller.style.scrollBehavior = 'auto';
+      scroller.scrollTop = 0;
+      window.scrollTo(0, 0);  // belt-and-suspenders for body-scrolling layouts
+      scroller.style.scrollBehavior = prev;
+    });
+    onScroll();
+  })();
+</script>
 
 </body>
 </html>

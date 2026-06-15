@@ -62,3 +62,48 @@ def test_partial_files_tolerated(_temp_reports):
     assert items[0]["symbol"] == "BARE"
     assert items[0]["has_chart"] is False
     assert items[0]["recommendation"] is None
+
+
+def test_sorted_reverse_chronological_by_analysis_time(_temp_reports):
+    import os
+    import time
+
+    _seed(_temp_reports, "OLDER")
+    _seed(_temp_reports, "NEWER")
+    old = time.time() - 100_000
+    new = time.time() - 100  # both in the past, OLDER clearly older
+    for f in ("OLDER_chart_data.json", "OLDER_investment_recommendation.json"):
+        os.utime(_temp_reports / "OLDER" / f, (old, old))
+    for f in ("NEWER_chart_data.json", "NEWER_investment_recommendation.json"):
+        os.utime(_temp_reports / "NEWER" / f, (new, new))
+    # Simulate re-rendering OLDER's HTML *now* (newer file mtime). This must NOT
+    # push it to the top — ordering follows analysis time, not the report mtime.
+    os.utime(_temp_reports / "OLDER" / "html" / "OLDER_report.html", None)
+
+    syms = [it["symbol"] for it in client.get("/api/history").json()["items"]]
+    assert syms == ["NEWER", "OLDER"]
+
+
+def test_completed_report_defaults_status_completed(_temp_reports):
+    _seed(_temp_reports, "AAPL")
+    it = client.get("/api/history").json()["items"][0]
+    assert it["status"] == "completed"
+
+
+def test_aborted_run_without_html_appears_with_status(_temp_reports):
+    from src.stock_analysis.web.reports_index import write_run_status
+    write_run_status("ZZZZ", "aborted")
+    items = {it["symbol"]: it for it in client.get("/api/history").json()["items"]}
+    assert "ZZZZ" in items
+    assert items["ZZZZ"]["status"] == "aborted"
+    assert items["ZZZZ"]["has_html"] is False
+
+
+def test_status_marker_overrides_for_symbol_with_html(_temp_reports):
+    from src.stock_analysis.web.reports_index import write_run_status
+    _seed(_temp_reports, "AAPL")           # completed report on disk
+    write_run_status("AAPL", "aborted")     # latest run was cancelled
+    it = client.get("/api/history").json()["items"][0]
+    assert it["symbol"] == "AAPL"
+    assert it["status"] == "aborted"
+    assert it["has_html"] is True           # the prior report is still viewable

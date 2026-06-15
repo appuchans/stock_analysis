@@ -37,6 +37,13 @@ class _FakeApp:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_reports(monkeypatch, tmp_path):
+    # The worker persists a run-status marker; keep it out of the real reports dir.
+    from src.stock_analysis.config import settings as settings_mod
+    monkeypatch.setattr(settings_mod.settings, "report_output_dir", str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
 def _patch_app(monkeypatch):
     monkeypatch.setattr("src.stock_analysis.main.StockAnalysisApp", _FakeApp)
     _FakeApp.gate = None
@@ -67,6 +74,33 @@ def test_failed_job_surfaces_error():
     job = _poll(client.post("/api/analyze", json={"symbol": "MSFT"}).json()["job_id"])
     assert job["state"] == "failed"
     assert job["error"] == "boom"
+
+
+def test_cancel_marks_job_aborted(monkeypatch, tmp_path):
+    # keep the status marker out of the real reports dir
+    from src.stock_analysis.config import settings as settings_mod
+    monkeypatch.setattr(settings_mod.settings, "report_output_dir", str(tmp_path))
+
+    _FakeApp.gate = threading.Event()
+    job_id = client.post("/api/analyze", json={"symbol": "TSLA"}).json()["job_id"]
+    # cancel while running
+    c = client.post(f"/api/jobs/{job_id}/cancel")
+    assert c.status_code == 200 and c.json()["state"] == "cancelling"
+    _FakeApp.gate.set()  # let the (mock) run finish; worker honors cancel_requested
+    job = _poll(job_id, until=("aborted", "completed", "failed"))
+    assert job["state"] == "aborted"
+    # a status marker was persisted for the history page
+    assert (tmp_path / "TSLA" / "TSLA_run_status.json").exists()
+
+
+def test_cancel_unknown_job_404():
+    assert client.post("/api/jobs/nope/cancel").status_code == 404
+
+
+def test_cancel_finished_job_409():
+    job_id = client.post("/api/analyze", json={"symbol": "AAPL"}).json()["job_id"]
+    _poll(job_id)
+    assert client.post(f"/api/jobs/{job_id}/cancel").status_code == 409
 
 
 def test_concurrent_submit_is_rejected_409_and_handler_is_nonblocking():

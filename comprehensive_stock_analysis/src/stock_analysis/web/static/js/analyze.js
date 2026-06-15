@@ -1,58 +1,94 @@
-// New Analysis form: submit, then poll job status and drive the progress panel.
-import { $, fetchJSON, fmtNum, navigate } from "./util.js";
+// New Analysis: form submit + refresh, then poll job status and drive progress.
+import { $, $$, fetchJSON, fmtNum, navigate } from "./util.js";
 
 let polling = null;
+let currentJob = null;
 
 export function initAnalyzeForm() {
   const form = $("#analyze-form");
   if (!form) return;
-  form.addEventListener("submit", onSubmit);
+  form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    startAnalysis({
+      symbol: $("#symbol").value.trim().toUpperCase(),
+      depth: $("#depth").value,
+      asset_type: $("#asset_type").value,
+      use_cache: $("#use_cache").checked,
+    });
+  });
+  $("#cancel-btn").addEventListener("click", onCancel);
 }
 
-async function onSubmit(ev) {
-  ev.preventDefault();
-  const btn = $("#run-btn");
-  const symbol = $("#symbol").value.trim().toUpperCase();
-  if (!symbol) return;
+// Re-run an existing report with fresh data (used by History + Report refresh).
+export function refreshSymbol(symbol, assetType) {
+  navigate("#/new");
+  // let the view switch before showing progress
+  setTimeout(() => startAnalysis({
+    symbol, depth: "standard", asset_type: assetType || "auto", use_cache: false,
+  }), 60);
+}
 
-  const payload = {
-    symbol,
-    depth: $("#depth").value,
-    asset_type: $("#asset_type").value,
-    use_cache: $("#use_cache").checked,
-  };
-
-  btn.disabled = true;
-  showProgress(symbol);
+export async function startAnalysis(payload) {
+  if (!payload.symbol) return;
+  $("#run-btn").disabled = true;
+  showProgress(payload.symbol, payload.use_cache === false);
   try {
     const { job_id } = await fetchJSON("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    startPolling(job_id, symbol);
+    currentJob = job_id;
+    const cancel = $("#cancel-btn");
+    cancel.classList.remove("hidden");
+    cancel.disabled = false;
+    startPolling(job_id, payload.symbol);
   } catch (err) {
     showError(err.message);
-    btn.disabled = false;
+    $("#run-btn").disabled = false;
   }
 }
 
-function showProgress(symbol) {
+async function onCancel() {
+  if (!currentJob) return;
+  $("#cancel-btn").disabled = true;
+  $("#progress-stage").textContent = "Cancelling…";
+  try {
+    await fetchJSON(`/api/jobs/${currentJob}/cancel`, { method: "POST" });
+  } catch (_) { /* 409 if already finished — polling reflects final state */ }
+}
+
+function showProgress(symbol, isRefresh) {
   $("#progress-card").classList.remove("hidden");
   $("#progress-error").classList.add("hidden");
   $("#progress-symbol").textContent = symbol;
-  $("#progress-stage").textContent = "Queued…";
+  $("#progress-stage").textContent = isRefresh ? "Refreshing — queued…" : "Queued…";
   $("#progress-bar").style.width = "3%";
   $("#progress-pct").textContent = "0%";
-  $("#progress-tokens").textContent = "0 tokens";
-  $("#progress-calls").textContent = "0 LLM calls";
+  $("#progress-tokens").textContent = "0";
+  $("#progress-calls").textContent = "0";
+  setStepper(0, "queued");
+  $("#progress-card").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function showError(msg) {
   const box = $("#progress-error");
   box.textContent = msg;
   box.classList.remove("hidden");
-  $("#progress-stage").textContent = "Failed";
+  $("#progress-stage").textContent = "Stopped";
+}
+
+function setStepper(progress, state) {
+  // 0 data · 1 specialists · 2 synthesis · 3 report
+  let active = 0;
+  if (progress >= 0.92) active = 3;
+  else if (progress >= 0.8) active = 2;
+  else if (progress >= 0.1) active = 1;
+  const done = state === "completed";
+  $$("#stepper .step").forEach((el, i) => {
+    el.classList.toggle("done", done || i < active);
+    el.classList.toggle("active", !done && i === active);
+  });
 }
 
 function startPolling(jobId, symbol) {
@@ -61,27 +97,27 @@ function startPolling(jobId, symbol) {
     let job;
     try {
       job = await fetchJSON(`/api/jobs/${jobId}`);
-    } catch (err) {
-      return; // transient; keep polling
-    }
+    } catch (_) { return; }
     const pct = Math.round((job.progress || 0) * 100);
     $("#progress-bar").style.width = Math.max(pct, 3) + "%";
     $("#progress-pct").textContent = pct + "%";
     $("#progress-stage").textContent = job.stage || job.state;
-    const tu = job.token_usage || {};
-    $("#progress-tokens").textContent = `${fmtNum(tu.total_tokens || 0, 0)} tokens`;
-    $("#progress-calls").textContent = `${job.llm_calls || 0} LLM calls`;
+    $("#progress-tokens").textContent = fmtNum((job.token_usage || {}).total_tokens || 0, 0);
+    $("#progress-calls").textContent = job.llm_calls || 0;
+    setStepper(job.progress || 0, job.state);
 
-    if (job.state === "completed") {
-      clearInterval(polling);
-      polling = null;
+    if (["completed", "failed", "aborted"].includes(job.state)) {
+      clearInterval(polling); polling = null; currentJob = null;
       $("#run-btn").disabled = false;
+      $("#cancel-btn").classList.add("hidden");
+    }
+    if (job.state === "completed") {
       $("#progress-bar").style.width = "100%";
       navigate(`#/report/${symbol}`);
+    } else if (job.state === "aborted") {
+      $("#progress-stage").textContent = "Aborted";
+      showError("Analysis was cancelled before completing.");
     } else if (job.state === "failed") {
-      clearInterval(polling);
-      polling = null;
-      $("#run-btn").disabled = false;
       showError(job.error || "Analysis failed.");
     }
   }, 1000);

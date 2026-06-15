@@ -34,7 +34,7 @@ class JobState(BaseModel):
     symbol: str
     depth: str
     asset_type: str
-    state: Literal["queued", "running", "completed", "failed"]
+    state: Literal["queued", "running", "completed", "failed", "aborted"]
     stage: Optional[str] = None
     progress: float = 0.0
     token_usage: Dict[str, int] = Field(default_factory=dict)
@@ -56,6 +56,8 @@ class HistoryItem(BaseModel):
     symbol: str
     name: Optional[str] = None
     sector: Optional[str] = None
+    status: str = "completed"  # completed | aborted | failed | incomplete
+    asset_type: Optional[str] = None
     recommendation: Optional[str] = None
     target_price: Optional[float] = None
     confidence: Optional[Any] = None
@@ -67,6 +69,7 @@ class HistoryItem(BaseModel):
     low_52w: Optional[float] = None
     has_html: bool = False
     has_chart: bool = False
+    spark: List[float] = Field(default_factory=list)
     mtime: Optional[str] = None
 
 

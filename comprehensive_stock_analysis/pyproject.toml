@@ -53,6 +53,9 @@ dependencies = [
     "pytrends>=4.9.0",
     # Caching (optional — degrades gracefully without Redis)
     "redis>=5.0.0",
+    # Local web UI (FastAPI backend + no-build frontend)
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
 ]
 
 [project.optional-dependencies]

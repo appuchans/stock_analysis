@@ -1,12 +1,54 @@
-// Shared helpers: DOM, fetch, formatting, brand palette.
+// Shared helpers: DOM, fetch, formatting, theme-aware colors, sparklines.
 
-export const PALETTE = {
-  ink: "#1a202c", inkSoft: "#4a5568", inkFaint: "#718096",
-  brand: "#1a365d", accent: "#2b6cb0",
-  green: "#276749", amber: "#744210", red: "#822727",
-  line: "#e2e8f0", bgSoft: "#f7fafc",
-  ratings: ["#22543d", "#38a169", "#d69e2e", "#c53030", "#822727"], // strong buy→strong sell
-};
+export function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// Colors pulled live from the active theme so charts re-theme on dark/light.
+export function theme() {
+  return {
+    text: cssVar("--text-2") || "#4a5a70",
+    faint: cssVar("--text-3") || "#8a98ab",
+    grid: cssVar("--border") || "#e6eaf1",
+    accent: cssVar("--accent") || "#2563eb",
+    accent2: cssVar("--accent-2") || "#3b82f6",
+    pos: cssVar("--pos") || "#15803d",
+    neg: cssVar("--neg") || "#b91c1c",
+    warn: cssVar("--warn") || "#b45309",
+    surface: cssVar("--surface") || "#ffffff",
+    ratings: ["#15803d", "#22c55e", cssVar("--warn") || "#d97706", "#ef4444", "#991b1b"],
+    sectors: ["#2563eb", "#16a34a", "#d97706", "#7c3aed", "#dc2626", "#0891b2", "#db2777", "#65a30d", "#ea580c", "#475569"],
+  };
+}
+
+export function isDark() {
+  return document.documentElement.getAttribute("data-theme") === "dark";
+}
+
+// Tiny axis-less sparkline drawn straight to a canvas (history cards).
+export function sparkline(canvas, values, color) {
+  const vals = (values || []).filter((v) => v !== null && v !== undefined);
+  if (vals.length < 2) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 240, h = canvas.clientHeight || 34;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  const min = Math.min(...vals), max = Math.max(...vals), span = max - min || 1;
+  const x = (i) => (i / (vals.length - 1)) * (w - 2) + 1;
+  const y = (v) => h - 3 - ((v - min) / span) * (h - 6);
+  ctx.beginPath();
+  vals.forEach((v, i) => (i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v))));
+  // area fill
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, color + "33"); grad.addColorStop(1, color + "00");
+  ctx.lineTo(x(vals.length - 1), h); ctx.lineTo(x(0), h); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+  // line
+  ctx.beginPath();
+  vals.forEach((v, i) => (i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v))));
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.lineJoin = "round"; ctx.stroke();
+}
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];

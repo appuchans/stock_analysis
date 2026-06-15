@@ -51,3 +51,9 @@ def recommendation_path(symbol: str) -> Optional[Path]:
     d = report_dir(symbol)
     sym = safe_symbol(symbol)
     return d / f"{sym}_investment_recommendation.json" if d else None
+
+
+def status_path(symbol: str) -> Optional[Path]:
+    d = report_dir(symbol)
+    sym = safe_symbol(symbol)
+    return d / f"{sym}_run_status.json" if d else None

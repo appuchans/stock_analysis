@@ -133,24 +133,31 @@ regardless of the directory you run from.
 ## Web UI (local)
 
 A professional local web interface — run analyses, watch **live progress**, and browse past
-reports — wraps the same engine. FastAPI backend + a no-build frontend (vanilla JS + Chart.js).
+reports. FastAPI backend + a no-build frontend (vanilla JS + Chart.js). Modern analytics-dashboard
+design: left-sidebar app shell, **light/dark theme toggle** (persisted; respects
+`prefers-color-scheme`), bundled **Inter** font with tabular figures, and themed charts.
 
 ```bash
 python -m stock_analysis.web              # → http://127.0.0.1:8000
 python -m stock_analysis.web --port 9000  # custom port
 ```
 
-- **New Analysis** — enter a ticker, pick depth/asset/cache, run; a live panel shows the current
-  stage, a progress bar, and running token + LLM-call counts. On completion it opens the report.
-- **Report** — tabbed: an interactive **Overview** dashboard built from `chart_data.json` (price,
-  revenue, analyst ratings, valuation scenarios, sentiment, peers, ETF sectors) plus the **Full
-  Report** (the existing self-contained HTML, embedded).
-- **History** — a gallery of every past report with recommendation badges and key stats.
+- **New Analysis** — enter a ticker, pick depth/asset/cache, run; a **stage stepper** + progress bar
+  show the current stage with live token + LLM-call chips, and a **Cancel** button aborts the run.
+  On completion it opens the report.
+- **Report** — tabbed: an interactive **Overview** dashboard from `chart_data.json` (price, revenue,
+  analyst ratings, valuation scenarios, sentiment, peers — or ETF fund facts + sector weightings for
+  funds) plus the **Full Report** (the self-contained HTML, embedded). A **Refresh** button re-runs
+  the analysis with fresh data.
+- **History** — a gallery of every past analysis with recommendation/status badges, price
+  sparklines, key stats, and a per-card **Refresh**. Aborted/failed runs are shown with their status;
+  cards are ordered by true analysis time (newest first).
 
 Design notes: single-user, localhost-only, **one analysis at a time** (runs are serialized because
 `token_meter`/`llm_budget` are process-global). A second concurrent submit returns HTTP 409. The
 blocking analysis runs in a worker thread, so the status endpoint (polled every 1s) stays
-responsive. Host/port via `WEB_HOST`/`WEB_PORT`.
+responsive. **Cancel** is cooperative (`llm_budget.request_abort()` stops at the next LLM call).
+**Refresh** is just `POST /api/analyze` with `use_cache:false`. Host/port via `WEB_HOST`/`WEB_PORT`.
 
 ## Python API
 

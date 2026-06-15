@@ -5,7 +5,21 @@ from unittest.mock import patch
 import pytest
 
 from src.stock_analysis import llm_budget
-from src.stock_analysis.llm_budget import LLMBudgetExceededError
+from src.stock_analysis.llm_budget import AnalysisAbortedError, LLMBudgetExceededError
+
+
+class TestAbort:
+    def test_request_abort_raises_on_next_call(self):
+        llm_budget.reset()
+        llm_budget.check_and_increment()  # fine before abort
+        llm_budget.request_abort()
+        with pytest.raises(AnalysisAbortedError):
+            llm_budget.check_and_increment()
+
+    def test_reset_clears_abort(self):
+        llm_budget.request_abort()
+        llm_budget.reset()
+        llm_budget.check_and_increment()  # must not raise
 
 
 class TestBudgetCounter:

@@ -1,4 +1,8 @@
-"""Builds the history gallery by scanning the reports directory on disk."""
+"""Builds the history gallery by scanning the reports directory on disk.
+
+Each run writes a small ``<SYM>_run_status.json`` marker (completed / aborted /
+failed) so the gallery can show the outcome even when a run produced no report.
+"""
 
 import json
 import logging
@@ -27,11 +31,60 @@ def _num(v: Any) -> Optional[float]:
         return None
 
 
-def list_reports() -> List[Dict[str, Any]]:
-    """One entry per symbol with an HTML report, newest first.
+def _analyzed_at(sym: str, status_data: Dict[str, Any]) -> Optional[str]:
+    """Best estimate of when the analysis actually ran, as an ISO string.
 
-    Best-effort: a symbol is included only if its HTML report exists; chart and
-    recommendation data are merged when present but never required.
+    Prefers the run-status marker, then the newest *data* artifact mtime. The
+    HTML report is deliberately excluded — re-rendering it (e.g. a template
+    change) bumps its mtime and would otherwise reorder old analyses to the top.
+    """
+    if status_data.get("finished_at"):
+        return status_data["finished_at"]
+    d = _paths.report_dir(sym)
+    mtimes = []
+    candidates = [_paths.chart_path(sym), _paths.recommendation_path(sym)]
+    if d:
+        candidates.append(d / f"{sym}_data.json")
+        candidates.append(d / f"{sym}_comprehensive_report.md")
+    for p in candidates:
+        try:
+            if p and p.exists():
+                mtimes.append(p.stat().st_mtime)
+        except OSError:
+            pass
+    if not mtimes:
+        html = _paths.html_path(sym)  # last resort
+        try:
+            if html and html.exists():
+                mtimes.append(html.stat().st_mtime)
+        except OSError:
+            pass
+    return (
+        datetime.fromtimestamp(max(mtimes)).isoformat(timespec="seconds")
+        if mtimes else None
+    )
+
+
+def write_run_status(symbol: str, status: str) -> None:
+    """Persist the latest run outcome for a symbol (best-effort)."""
+    path = _paths.status_path(symbol)
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"status": status, "finished_at": datetime.now().isoformat(timespec="seconds")}),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        _logger.debug("could not write run status for %s: %s", symbol, exc)
+
+
+def list_reports() -> List[Dict[str, Any]]:
+    """One entry per symbol that has a report or a run-status marker, newest first.
+
+    A completed run has a viewable HTML report; aborted/failed runs may have no
+    report but still appear with their status so the user sees what happened.
     """
     root = _paths.reports_root()
     items: List[Dict[str, Any]] = []
@@ -45,18 +98,31 @@ def list_reports() -> List[Dict[str, Any]]:
         if not sym:
             continue
         html = _paths.html_path(sym)
-        if not html or not html.exists():
-            continue  # require a viewable report
+        has_html = bool(html and html.exists())
+        status_data = _read_json(_paths.status_path(sym))
+        status = status_data.get("status")
+        # Show a symbol only if it has a viewable report, or a non-completed
+        # outcome worth surfacing (aborted/failed/incomplete). A bare "completed"
+        # marker with no report is anomalous and skipped.
+        if not has_html and status in (None, "completed"):
+            continue
 
         chart = _read_json(_paths.chart_path(sym))
         rec = _read_json(_paths.recommendation_path(sym))
         company = chart.get("company") or {}
         stats = chart.get("key_stats") or {}
+        # Compact price series for the card sparkline (last ~30 weekly closes).
+        spark = [p.get("close") for p in (chart.get("price_history") or [])][-30:]
+        # Default a marker-less report (e.g. produced by the CLI) to completed.
+        effective_status = status or ("completed" if has_html else "incomplete")
+        mtime = _analyzed_at(sym, status_data)
 
         items.append({
             "symbol": sym,
             "name": company.get("name"),
             "sector": company.get("sector"),
+            "status": effective_status,
+            "asset_type": chart.get("asset_type"),
             "recommendation": rec.get("recommendation"),
             "target_price": _num(rec.get("target_price")),
             "confidence": rec.get("confidence"),
@@ -66,9 +132,10 @@ def list_reports() -> List[Dict[str, Any]]:
             "pe_ratio": _num(stats.get("pe_ratio")),
             "high_52w": _num(stats.get("high_52w")),
             "low_52w": _num(stats.get("low_52w")),
-            "has_html": True,
+            "has_html": has_html,
             "has_chart": bool(chart),
-            "mtime": datetime.fromtimestamp(html.stat().st_mtime).isoformat(timespec="seconds"),
+            "spark": spark,
+            "mtime": mtime,
         })
 
     items.sort(key=lambda it: it.get("mtime") or "", reverse=True)

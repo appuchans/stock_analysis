@@ -21,10 +21,24 @@ _lock = threading.Lock()
 _count = 0
 _limit: int = 0  # resolved lazily from settings on first use
 _warned = False
+_aborted = False
 
 
 class LLMBudgetExceededError(RuntimeError):
     """Raised before an LLM request when the per-run call budget is exhausted."""
+
+
+class AnalysisAbortedError(RuntimeError):
+    """Raised at the next LLM call after a user requests cancellation."""
+
+
+def request_abort() -> None:
+    """Ask the running analysis to stop — the next LLM call raises and unwinds
+    the flow. Cooperative (a blocking call in flight finishes first)."""
+    global _aborted
+    with _lock:
+        _aborted = True
+    _logger.info("[llm-budget] abort requested — run will stop at next LLM call")
 
 
 def _resolve_limit() -> int:
@@ -37,19 +51,22 @@ def _resolve_limit() -> int:
 
 def reset(allowance_multiplier: int = 1) -> None:
     """Start a new budget window (call at the beginning of each analysis run)."""
-    global _count, _limit, _warned
+    global _count, _limit, _warned, _aborted
     from .config.settings import settings
     with _lock:
         _count = 0
         _warned = False
+        _aborted = False
         _limit = settings.max_llm_calls_per_run * max(1, allowance_multiplier)
     _logger.info("[llm-budget] reset — limit=%d calls", _limit)
 
 
 def check_and_increment() -> None:
-    """Account for one LLM call; raise when the budget is exhausted."""
+    """Account for one LLM call; raise when the budget is exhausted or aborted."""
     global _count, _warned
     with _lock:
+        if _aborted:
+            raise AnalysisAbortedError("analysis aborted by user")
         limit = _resolve_limit()
         _count += 1
         count = _count
