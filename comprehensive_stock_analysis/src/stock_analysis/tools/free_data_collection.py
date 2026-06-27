@@ -25,6 +25,7 @@ import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from crewai.tools import BaseTool
+from pydantic import Field as _PydanticField
 
 from .cache import cached_tool
 from ..models.stock_data import (
@@ -129,12 +130,12 @@ def _compute_technical_summary(hist: "pd.DataFrame") -> Dict[str, Any]:
     sma_50 = _safe(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else None
     sma_90 = _safe(close.rolling(90).mean().iloc[-1]) if len(close) >= 90 else None
 
-    # RSI(14)
+    # RSI(14) — Wilder's smoothing (EWM with alpha=1/14) matches charting platforms
     rsi = None
     if len(close) >= 15:
         delta = close.diff()
-        gain = delta.clip(lower=0).rolling(14).mean()
-        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        gain = delta.clip(lower=0).ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
         rs = gain / loss.replace(0, float("nan"))
         rsi_series = 100 - (100 / (1 + rs))
         rsi = _safe(rsi_series.iloc[-1])
@@ -169,9 +170,11 @@ def _compute_technical_summary(hist: "pd.DataFrame") -> Dict[str, Any]:
         ], axis=1).max(axis=1)
         atr = _safe(tr.rolling(14).mean().iloc[-1])
 
-    # Volume stats
-    vol_avg = float(volume.mean()) if len(volume) > 0 else 0
-    vol_latest = float(volume.iloc[-1]) if len(volume) > 0 else 0
+    # Volume stats — guard against NaN values from illiquid/newly-listed tickers
+    vol_avg_raw = float(volume.mean()) if len(volume) > 0 else 0.0
+    vol_avg = 0.0 if vol_avg_raw != vol_avg_raw else vol_avg_raw
+    vol_latest_raw = float(volume.iloc[-1]) if len(volume) > 0 else 0.0
+    vol_latest = 0.0 if vol_latest_raw != vol_latest_raw else vol_latest_raw
     vol_vs_avg_pct = round(vol_latest / vol_avg * 100, 1) if vol_avg > 0 else None
 
     # Price context
@@ -526,8 +529,14 @@ class FreeSECFilingTool(BaseTool):
     @cached_tool(ttl=86400)
     def _run(self, symbol: str, form_type: str = "10-K", limit: int = 1) -> Dict[str, Any]:
         """Collect SEC filing data: MD&A, Risk Factors, and key metadata."""
+        from ..config.settings import settings as _edgar_settings
+        edgar_email = _edgar_settings.sec_edgar_email
+        if edgar_email == "contact@example.com":
+            _logger.warning(
+                "SEC_EDGAR_EMAIL is not configured — set it in .env to avoid EDGAR throttling"
+            )
         headers = {
-            "User-Agent": "Stock Analysis Tool (contact@example.com)",
+            "User-Agent": f"Stock Analysis Tool ({edgar_email})",
             "Accept-Encoding": "gzip, deflate",
             "Host": "www.sec.gov",
         }
@@ -633,7 +642,7 @@ class FreeFREDTool(BaseTool):
 
     name: str = "Free FRED Economic Data Collector"
     description: str = "Collects economic indicators from Federal Reserve Economic Data (FRED) - FREE"
-    api_key: str = "demo"
+    api_key: str = _PydanticField(default="demo", exclude=True)
 
     def __init__(self, api_key: Optional[str] = None, **kwargs):
         resolved = api_key or os.getenv('FRED_API_KEY') or "demo"
@@ -905,7 +914,7 @@ class FreeEconomicDataTool(BaseTool):
         "yield, S&P 500, WTI crude, dollar index) that work even when FRED is "
         "rate-limited. Free, no paid key required."
     )
-    fred_api_key: str = "demo"
+    fred_api_key: str = _PydanticField(default="demo", exclude=True)
 
     def __init__(self, fred_api_key: Optional[str] = None, **kwargs):
         if fred_api_key is None:
@@ -1055,15 +1064,21 @@ class FreeEconomicDataTool(BaseTool):
                     economic_data.get("PAYEMS", {}).get("data", {}).get("observations", []), "PAYEMS"),
             }
 
+            market_indicators = _market_macro_snapshot()
             result = {
                 "economic_data": economic_data_model.dict(),
                 "indicator_summaries": indicator_summaries,
                 # Market-traded proxies double as a fallback when FRED is
                 # rate-limited (demo key) or unreachable
-                "market_indicators": _market_macro_snapshot(),
+                "market_indicators": market_indicators,
             }
-            if not economic_data and not result["market_indicators"]:
+            if not economic_data and not market_indicators:
                 return {"error": "No economic data available from FRED or market proxies"}
+            if not economic_data:
+                # All FRED series failed but market proxies are available.
+                # Add a note so agents know FRED trends are unavailable, and
+                # cache with the normal TTL since proxy data is still fresh.
+                result["note"] = "FRED series unavailable; indicator_summaries reflect no data"
             return result
 
         except Exception as e:
@@ -1081,12 +1096,15 @@ class FreeEconomicDataTool(BaseTool):
 
 class FreeWebSearchTool(BaseTool):
     """Tool for web search using free methods."""
-    
+
     name: str = "Free Web Search Tool"
     description: str = "Performs web searches using free methods like DuckDuckGo and web scraping"
-    
+
+    @cached_tool(ttl=3600)
     def _run(self, query: str, num_results: int = 5) -> Dict[str, Any]:
         """Perform web search using free methods."""
+        if BeautifulSoup is None:
+            return {"error": "bs4 is not installed; install it with: pip install beautifulsoup4"}
         try:
             # Use DuckDuckGo search (free)
             search_url = "https://html.duckduckgo.com/html/"
@@ -1094,14 +1112,14 @@ class FreeWebSearchTool(BaseTool):
                 "q": query,
                 "kl": "us-en"
             }
-            
+
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             }
-            
+
             response = _http.get(search_url, params=params, headers=headers, timeout=15)
             response.raise_for_status()
-            
+
             soup = BeautifulSoup(response.content, 'html.parser')
             
             results = []

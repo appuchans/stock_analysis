@@ -120,6 +120,16 @@ class JobManager:
         job.tracker = progress.StageTracker(_n_specialists(job.depth, is_etf))
         progress.set_active(job.tracker)
         try:
+            # Archive the previous recommendation so diff can compare before/after
+            try:
+                from . import _paths as _p
+                import shutil
+                cur = _p.recommendation_path(job.symbol)
+                prev = _p.prev_recommendation_path(job.symbol)
+                if cur and prev and cur.exists():
+                    shutil.copy2(cur, prev)
+            except Exception:
+                pass
             app = StockAnalysisApp(
                 depth=job.depth,
                 asset_type=job.asset_type,
@@ -155,6 +165,21 @@ class JobManager:
                 from .reports_index import write_run_status
                 write_run_status(job.symbol, job.state)
             except Exception:  # status persistence is best-effort
+                pass
+            try:
+                from .alerts import check_and_dispatch
+                from . import _paths as _ap
+                import json as _json
+                cur_rec = None
+                prev_rec_data = None
+                cur_p = _ap.recommendation_path(job.symbol)
+                prev_p = _ap.prev_recommendation_path(job.symbol)
+                if cur_p and cur_p.exists():
+                    cur_rec = _json.loads(cur_p.read_text(encoding="utf-8"))
+                if prev_p and prev_p.exists():
+                    prev_rec_data = _json.loads(prev_p.read_text(encoding="utf-8"))
+                check_and_dispatch(job.symbol, cur_rec, prev_rec_data)
+            except Exception:
                 pass
             with self._lock:
                 if self._active_id == job.id:

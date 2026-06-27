@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .jobs import manager
-from .routes import analyze, history, results
+from .routes import alerts, analyze, history, portfolio, results, watchlist
 
 _WEB_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _WEB_DIR / "static"
@@ -18,6 +18,9 @@ app = FastAPI(title="Stock Analysis", docs_url="/api/docs", openapi_url="/api/op
 app.include_router(analyze.router)
 app.include_router(history.router)
 app.include_router(results.router)
+app.include_router(alerts.router)
+app.include_router(portfolio.router)
+app.include_router(watchlist.router)
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 

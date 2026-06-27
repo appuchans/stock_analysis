@@ -62,7 +62,13 @@ def reset(allowance_multiplier: int = 1) -> None:
 
 
 def check_and_increment() -> None:
-    """Account for one LLM call; raise when the budget is exhausted or aborted."""
+    """Account for one LLM call; raise when the budget is exhausted or aborted.
+
+    Note: the increment happens *before* the actual network request, so failed
+    calls (network errors, timeouts) still consume one budget unit. Under high
+    retry conditions this may exhaust the budget faster than expected. Raise
+    MAX_LLM_CALLS_PER_RUN if legitimate runs hit the limit.
+    """
     global _count, _warned
     with _lock:
         if _aborted:

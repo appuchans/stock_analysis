@@ -123,10 +123,20 @@ def _narrative_guardrail(output: Any) -> Tuple[bool, Any]:
 
     Catches two failure modes: a status summary about the work instead of the
     document, and a sectioned summary without the opening Investment Thesis.
+    Accepts investment-framing synonyms (Investment Overview, Executive Summary,
+    etc.) so minor LLM phrasing variation doesn't trigger a spurious retry.
     """
     text = _strip_md_fences(str(getattr(output, "raw", output)))
     headings = [l.strip() for l in text.splitlines() if l.strip().startswith("## ")]
-    if len(headings) >= 3 and "thesis" in headings[0].lower():
+    first_lower = headings[0].lower() if headings else ""
+    # Accept "## Investment Thesis", "## Investment Overview/Analysis/Summary",
+    # and "## Executive Summary" as valid opening headings.
+    valid_opening = (
+        "thesis" in first_lower
+        or "investment " in first_lower
+        or "executive summary" in first_lower
+    )
+    if len(headings) >= 3 and valid_opening:
         return (True, text)
     return (
         False,
@@ -574,9 +584,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 key = futures[fut]
                 try:
                     k, text = fut.result()
-                    setattr(self.state, k, {"result": text})
-                    _write_report_file(sym, self._stage_filename(k), text)
-                    print(f"  ✓ {k.replace('_', ' ').title()} analysis", flush=True)
+                    assert k == key, f"Stage key mismatch: got {k!r}, expected {key!r}"
+                    setattr(self.state, key, {"result": text})
+                    _write_report_file(sym, self._stage_filename(key), text)
+                    print(f"  ✓ {key.replace('_', ' ').title()} analysis", flush=True)
                 except Exception as exc:
                     _logger.error("Stage '%s' failed: %s", key, exc)
                     self.state.errors.append(f"{key}: {exc}")
@@ -763,6 +774,11 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             from .. import token_meter
             _reset_llm_budget()
             token_meter.reset()
+            # Explicitly clear mutable state so repeated calls on the same
+            # flow instance never bleed results from a prior symbol into the next.
+            self.state.errors = []
+            self.state.report = ""
+            self.state.recommendation = {}
             resolved_type = self._resolve_asset_type(symbol)
             result = self.kickoff(inputs={
                 "symbol": symbol,

@@ -405,23 +405,23 @@ class FundamentalAnalysisTool(BaseTool):
         
         if profitability["roe"]:
             total_metrics += 1
-            if profitability["roe"] >= 15:
+            if profitability["roe"] >= 0.15:  # yfinance returns fractions (15% = 0.15)
                 score += 1
-            elif profitability["roe"] >= 10:
+            elif profitability["roe"] >= 0.10:
                 score += 0.5
-        
+
         if profitability["roa"]:
             total_metrics += 1
-            if profitability["roa"] >= 5:
+            if profitability["roa"] >= 0.05:
                 score += 1
-            elif profitability["roa"] >= 3:
+            elif profitability["roa"] >= 0.03:
                 score += 0.5
-        
+
         if profitability["net_margin"]:
             total_metrics += 1
-            if profitability["net_margin"] >= 10:
+            if profitability["net_margin"] >= 0.10:
                 score += 1
-            elif profitability["net_margin"] >= 5:
+            elif profitability["net_margin"] >= 0.05:
                 score += 0.5
         
         if total_metrics > 0:
@@ -506,16 +506,16 @@ class FundamentalAnalysisTool(BaseTool):
         
         if growth["revenue_growth"]:
             total_metrics += 1
-            if growth["revenue_growth"] >= 10:
+            if growth["revenue_growth"] >= 0.10:  # yfinance returns fractions (10% = 0.10)
                 score += 1
-            elif growth["revenue_growth"] >= 5:
+            elif growth["revenue_growth"] >= 0.05:
                 score += 0.5
-        
+
         if growth["earnings_growth"]:
             total_metrics += 1
-            if growth["earnings_growth"] >= 15:
+            if growth["earnings_growth"] >= 0.15:
                 score += 1
-            elif growth["earnings_growth"] >= 10:
+            elif growth["earnings_growth"] >= 0.10:
                 score += 0.5
         
         if total_metrics > 0:
@@ -717,21 +717,21 @@ class RiskAnalysisTool(BaseTool):
         earnings_growth = fundamental_data.get("earnings_growth") or 0
         roe = fundamental_data.get("roe") or 0
         
-        # Operational risk score
+        # Operational risk score (yfinance returns fractions: 10% = 0.10)
         operational_score = 0
-        if revenue_growth >= 10:
+        if revenue_growth >= 0.10:
             operational_score += 1
-        elif revenue_growth >= 5:
+        elif revenue_growth >= 0.05:
             operational_score += 0.5
-        
-        if earnings_growth >= 15:
+
+        if earnings_growth >= 0.15:
             operational_score += 1
-        elif earnings_growth >= 10:
+        elif earnings_growth >= 0.10:
             operational_score += 0.5
-        
-        if roe >= 15:
+
+        if roe >= 0.15:
             operational_score += 1
-        elif roe >= 10:
+        elif roe >= 0.10:
             operational_score += 0.5
         
         risk_level = "Low" if operational_score >= 2.5 else "Medium" if operational_score >= 1.5 else "High"

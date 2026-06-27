@@ -80,3 +80,122 @@ class HistoryItem(BaseModel):
 
 class HistoryResponse(BaseModel):
     items: List[HistoryItem]
+
+
+class PortfolioRequest(BaseModel):
+    symbols: List[str]
+    period: str = "1y"
+    risk_free_rate: float = Field(0.02, ge=0.0, le=0.2)
+    weights: Optional[Dict[str, float]] = None
+
+    @field_validator("symbols")
+    @classmethod
+    def _check_symbols(cls, v: List[str]) -> List[str]:
+        import re
+
+        cleaned = [(s or "").strip().upper() for s in v]
+        for s in cleaned:
+            if not re.match(_SYMBOL_RE, s):
+                raise ValueError(f"invalid symbol: {s!r}")
+        if len(cleaned) < 2:
+            raise ValueError("at least 2 symbols required")
+        if len(cleaned) > 20:
+            raise ValueError("max 20 symbols")
+        return cleaned
+
+    @field_validator("weights")
+    @classmethod
+    def _check_weights(cls, v: Optional[Dict[str, float]]) -> Optional[Dict[str, float]]:
+        if v is None:
+            return v
+        total = sum(v.values())
+        if abs(total - 1.0) > 0.01:
+            raise ValueError(f"weights must sum to 1.0 (got {total:.4f})")
+        return v
+
+
+class PortfolioResponse(BaseModel):
+    symbols: List[str]
+    period: str
+    correlation_matrix: Dict[str, Any]
+    individual_metrics: Dict[str, Any]
+    equal_weight_allocation: Dict[str, float]
+    min_variance_weights: Dict[str, float]
+    portfolio_metrics: Dict[str, Any]
+
+
+class WatchlistAddRequest(BaseModel):
+    symbol: str
+    notes: str = ""
+
+    @field_validator("symbol")
+    @classmethod
+    def _normalize(cls, v: str) -> str:
+        import re
+
+        v = (v or "").strip().upper()
+        if not re.match(_SYMBOL_RE, v):
+            raise ValueError("invalid symbol")
+        return v
+
+
+class WatchlistItem(BaseModel):
+    symbol: str
+    added_at: str
+    notes: str = ""
+
+
+class WatchlistResponse(BaseModel):
+    items: List[WatchlistItem]
+
+
+class WatchlistAnalyzeRequest(BaseModel):
+    depth: Literal["quick", "standard", "deep"] = "standard"
+    use_cache: bool = True
+
+
+class RecommendationDiff(BaseModel):
+    has_diff: bool
+    symbol: str
+    message: Optional[str] = None
+    current: Optional[Dict[str, Any]] = None
+    previous: Optional[Dict[str, Any]] = None
+    recommendation_changed: bool = False
+    target_price_delta: Optional[float] = None
+    confidence_delta: Optional[float] = None
+    new_risks: List[str] = Field(default_factory=list)
+    removed_risks: List[str] = Field(default_factory=list)
+    new_opportunities: List[str] = Field(default_factory=list)
+    removed_opportunities: List[str] = Field(default_factory=list)
+
+
+class AlertItem(BaseModel):
+    symbol: str
+    timestamp: str
+    reason: str
+    old_rec: Optional[str] = None
+    new_rec: Optional[str] = None
+    old_confidence: Optional[float] = None
+    new_confidence: Optional[float] = None
+
+
+class AlertsResponse(BaseModel):
+    items: List[AlertItem]
+
+
+class AlertSettingsRequest(BaseModel):
+    alert_email: Optional[str] = None
+    alert_smtp_host: Optional[str] = None
+    alert_smtp_port: Optional[int] = None
+    alert_smtp_user: Optional[str] = None
+    alert_smtp_password: Optional[str] = None
+    alert_webhook_url: Optional[str] = None
+
+
+class AlertSettingsResponse(BaseModel):
+    alert_email: str
+    alert_smtp_host: str
+    alert_smtp_port: int
+    alert_smtp_user: str
+    alert_smtp_password_set: bool
+    alert_webhook_url: str

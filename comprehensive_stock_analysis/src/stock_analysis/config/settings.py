@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = Field(None, validation_alias="OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = Field(None, validation_alias="ANTHROPIC_API_KEY")
     fred_api_key: str = Field("demo", validation_alias="FRED_API_KEY")
+    # Required by SEC EDGAR terms of service — set to a real contact email.
+    # A warning is logged at startup if the placeholder default is still in use.
+    sec_edgar_email: str = Field("contact@example.com", validation_alias="SEC_EDGAR_EMAIL")
 
     # ── Application ───────────────────────────────────────────────────────────
     debug: bool = Field(False, validation_alias="DEBUG")
@@ -44,6 +47,14 @@ class Settings(BaseSettings):
     # Local web UI (single-user). Defaults to localhost-only, no auth.
     web_host: str = Field("127.0.0.1", validation_alias="WEB_HOST")
     web_port: int = Field(8000, validation_alias="WEB_PORT")
+
+    # ── Alerts ────────────────────────────────────────────────────────────────
+    alert_email: str = Field("", validation_alias="ALERT_EMAIL")
+    alert_smtp_host: str = Field("smtp.gmail.com", validation_alias="ALERT_SMTP_HOST")
+    alert_smtp_port: int = Field(587, validation_alias="ALERT_SMTP_PORT")
+    alert_smtp_user: str = Field("", validation_alias="ALERT_SMTP_USER")
+    alert_smtp_password: str = Field("", validation_alias="ALERT_SMTP_PASSWORD")
+    alert_webhook_url: str = Field("", validation_alias="ALERT_WEBHOOK_URL")
 
     # ── LLM — global overrides (empty string = defer to llm_config.yaml) ─────
     # Set these to switch all agents at once without editing llm_config.yaml.

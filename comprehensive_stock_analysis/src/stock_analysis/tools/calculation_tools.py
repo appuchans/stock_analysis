@@ -125,32 +125,36 @@ class FinancialCalculatorTool(BaseTool):
             "annualized_volatility": np.std(returns_array) * np.sqrt(252)
         }
     
-    def _calculate_valuation(self, current_price: float, earnings: float, 
-                           growth_rate: float, discount_rate: float, 
+    def _calculate_valuation(self, current_price: float, earnings: float,
+                           growth_rate: float, discount_rate: float,
                            terminal_growth_rate: float = 0.02) -> Dict[str, Any]:
         """Calculate intrinsic value using DCF."""
         if not all([earnings, growth_rate, discount_rate]):
             return {"error": "Missing required parameters for valuation"}
-        
+        if discount_rate <= 0:
+            return {"error": "discount_rate must be positive"}
+        if earnings <= 0:
+            return {"error": "earnings must be positive for DCF"}
+        if discount_rate <= terminal_growth_rate:
+            return {"error": "discount_rate must be greater than terminal_growth_rate"}
+
         # Simple DCF calculation
         years = 5
         projected_earnings = []
-        
+
         for year in range(1, years + 1):
             if year <= 3:  # High growth period
                 projected_earnings.append(earnings * ((1 + growth_rate) ** year))
             else:  # Terminal growth period
                 projected_earnings.append(projected_earnings[-1] * (1 + terminal_growth_rate))
-        
+
         # Calculate present value of projected earnings
         pv_earnings = []
         for i, earning in enumerate(projected_earnings):
             pv = earning / ((1 + discount_rate) ** (i + 1))
             pv_earnings.append(pv)
-        
+
         # Terminal value
-        if discount_rate <= terminal_growth_rate:
-            return {"error": "discount_rate must be greater than terminal_growth_rate"}
         terminal_value = projected_earnings[-1] / (discount_rate - terminal_growth_rate)
         pv_terminal = terminal_value / ((1 + discount_rate) ** years)
 
@@ -560,26 +564,31 @@ class ValuationCalculatorTool(BaseTool):
         except Exception as e:
             return {"error": f"Valuation calculation failed: {str(e)}"}
     
-    def _calculate_dcf(self, current_earnings: float, growth_rate: float, 
+    def _calculate_dcf(self, current_earnings: float, growth_rate: float,
                       discount_rate: float, terminal_growth_rate: float = 0.02,
                       years: int = 5) -> Dict[str, Any]:
         """Calculate DCF valuation."""
+        if not discount_rate or discount_rate <= 0:
+            return {"error": "discount_rate must be positive"}
+        if current_earnings <= 0:
+            return {"error": "current_earnings must be positive for DCF"}
+        if discount_rate <= terminal_growth_rate:
+            return {"error": "discount_rate must be greater than terminal_growth_rate"}
+
         projected_earnings = []
         pv_earnings = []
-        
+
         for year in range(1, years + 1):
             if year <= 3:  # High growth period
                 earning = current_earnings * ((1 + growth_rate) ** year)
             else:  # Terminal growth period
                 earning = projected_earnings[-1] * (1 + terminal_growth_rate)
-            
+
             projected_earnings.append(earning)
             pv = earning / ((1 + discount_rate) ** year)
             pv_earnings.append(pv)
-        
+
         # Terminal value
-        if discount_rate <= terminal_growth_rate:
-            return {"error": "discount_rate must be greater than terminal_growth_rate"}
         terminal_value = projected_earnings[-1] / (discount_rate - terminal_growth_rate)
         pv_terminal = terminal_value / ((1 + discount_rate) ** years)
 

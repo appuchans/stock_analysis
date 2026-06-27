@@ -17,7 +17,7 @@ services:
     depends_on:
       - redis
       - db
-    command: ["python", "-m", "stock_analysis.main", "--help"]
+    command: ["python", "-m", "stock_analysis.web"]
     restart: unless-stopped
 
   redis:

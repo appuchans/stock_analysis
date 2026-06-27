@@ -108,6 +108,15 @@ def _disk_dir() -> Optional[str]:
     return _disk_dir_cached or None
 
 
+def reset_disk_dir() -> None:
+    """Reset the cached disk-cache directory so the next call re-resolves it.
+
+    Only needed in tests that change settings.data_output_dir after import.
+    """
+    global _disk_dir_cached
+    _disk_dir_cached = None
+
+
 def _disk_path(cache_key: str) -> Optional[str]:
     d = _disk_dir()
     return os.path.join(d, cache_key.replace(":", "_") + ".json") if d else None
