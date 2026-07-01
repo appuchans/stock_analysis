@@ -50,6 +50,7 @@ def _date_label(col: Any) -> str:
 
 # ── Analyst consensus, estimates, and rating changes ──────────────────────────
 
+
 def summarize_analyst_data(ticker: Any) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
 
@@ -64,8 +65,7 @@ def summarize_analyst_data(ticker: Any) -> Dict[str, Any]:
             "median": _num(pt.get("median")),
             "high": _num(pt.get("high")),
             "implied_upside_pct": (
-                round((mean - current) / current * 100, 1)
-                if mean and current else None
+                round((mean - current) / current * 100, 1) if mean and current else None
             ),
         }
     except Exception as exc:
@@ -112,10 +112,14 @@ def summarize_analyst_data(ticker: Any) -> Dict[str, Any]:
         if df is None or df.empty:
             return block
         for period, row in df.iterrows():
-            entry = {k: _num(row.get(src)) for k, src in zip(
-                ("avg", "low", "high", "year_ago", "analysts", "growth_pct"),
-                value_keys,
-            ) if src in row.index}
+            entry = {
+                k: _num(row.get(src))
+                for k, src in zip(
+                    ("avg", "low", "high", "year_ago", "analysts", "growth_pct"),
+                    value_keys,
+                )
+                if src in row.index
+            }
             if "growth" in row.index and entry.get("growth_pct") is not None:
                 entry["growth_pct"] = round(entry["growth_pct"] * 100, 1)
             block[str(period)] = entry
@@ -162,6 +166,7 @@ def summarize_analyst_data(ticker: Any) -> Dict[str, Any]:
 
 # ── Insider and institutional ownership ───────────────────────────────────────
 
+
 def summarize_ownership(ticker: Any) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
 
@@ -172,10 +177,14 @@ def summarize_ownership(ticker: Any) -> Dict[str, Any]:
             breakdown = dict(zip(mh.index, values))
             out["holders_breakdown"] = {
                 "insider_pct": (
-                    round(v * 100, 2) if (v := _num(breakdown.get("insidersPercentHeld"))) is not None else None
+                    round(v * 100, 2)
+                    if (v := _num(breakdown.get("insidersPercentHeld"))) is not None
+                    else None
                 ),
                 "institution_pct": (
-                    round(v * 100, 2) if (v := _num(breakdown.get("institutionsPercentHeld"))) is not None else None
+                    round(v * 100, 2)
+                    if (v := _num(breakdown.get("institutionsPercentHeld"))) is not None
+                    else None
                 ),
                 "institution_count": _num(breakdown.get("institutionsCount"), 0),
             }
@@ -206,19 +215,25 @@ def summarize_ownership(ticker: Any) -> Dict[str, Any]:
             buys = sells = 0
             for _, r in recent.iterrows():
                 text = str(r.get("Text", "") or r.get("Transaction", "")).lower()
-                kind = "sell" if "sale" in text else ("buy" if ("purchase" in text or "buy" in text) else "other")
+                kind = (
+                    "sell"
+                    if "sale" in text
+                    else ("buy" if ("purchase" in text or "buy" in text) else "other")
+                )
                 if kind == "buy":
                     buys += 1
                 elif kind == "sell":
                     sells += 1
-                txns.append({
-                    "date": _date_label(r.get("Start Date")),
-                    "insider": str(r.get("Insider", "")),
-                    "position": str(r.get("Position", "")),
-                    "type": kind,
-                    "shares": _num(r.get("Shares"), 0),
-                    "value_usd_m": _millions(r.get("Value")),
-                })
+                txns.append(
+                    {
+                        "date": _date_label(r.get("Start Date")),
+                        "insider": str(r.get("Insider", "")),
+                        "position": str(r.get("Position", "")),
+                        "type": kind,
+                        "shares": _num(r.get("Shares"), 0),
+                        "value_usd_m": _millions(r.get("Value")),
+                    }
+                )
             out["insider_transactions"] = txns
             out["insider_recent_summary"] = {"buys": buys, "sells": sells, "sampled": len(txns)}
     except Exception as exc:
@@ -229,6 +244,7 @@ def summarize_ownership(ticker: Any) -> Dict[str, Any]:
 
 # ── Financial statements (annual, last 3 FY) ──────────────────────────────────
 
+
 def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
 
@@ -238,7 +254,9 @@ def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
             cols = list(inc.columns)[:4]
             revenue = _row(inc, ["Total Revenue", "TotalRevenue", "Operating Revenue"])
             gross = _row(inc, ["Gross Profit", "GrossProfit"])
-            op = _row(inc, ["Operating Income", "OperatingIncome", "Total Operating Income As Reported"])
+            op = _row(
+                inc, ["Operating Income", "OperatingIncome", "Total Operating Income As Reported"]
+            )
             net = _row(inc, ["Net Income", "Net Income Common Stockholders", "NetIncome"])
             annual: Dict[str, Any] = {}
             for i, col in enumerate(cols[:3]):
@@ -246,7 +264,8 @@ def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
                 rev_v = _millions(revenue.get(col)) if revenue is not None else None
                 prev_v = (
                     _millions(revenue.get(cols[i + 1]))
-                    if revenue is not None and i + 1 < len(cols) else None
+                    if revenue is not None and i + 1 < len(cols)
+                    else None
                 )
                 annual[label] = {
                     "revenue_m": rev_v,
@@ -255,7 +274,8 @@ def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
                     "net_income_m": _millions(net.get(col)) if net is not None else None,
                     "revenue_yoy_pct": (
                         round((rev_v - prev_v) / abs(prev_v) * 100, 1)
-                        if rev_v is not None and prev_v else None
+                        if rev_v is not None and prev_v
+                        else None
                     ),
                 }
             out["annual_income"] = annual
@@ -265,18 +285,33 @@ def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
     try:
         bs = ticker.balance_sheet
         if bs is not None and not bs.empty:
-            cols = list(bs.columns)[:2]
+            cols = list(bs.columns)[:3]
             assets = _row(bs, ["Total Assets", "TotalAssets"])
-            cash = _row(bs, ["Cash Cash Equivalents And Short Term Investments",
-                             "Cash And Cash Equivalents", "Cash Financial"])
+            cash = _row(
+                bs,
+                [
+                    "Cash Cash Equivalents And Short Term Investments",
+                    "Cash And Cash Equivalents",
+                    "Cash Financial",
+                ],
+            )
             debt = _row(bs, ["Total Debt", "TotalDebt"])
-            equity = _row(bs, ["Stockholders Equity", "Common Stock Equity", "Total Equity Gross Minority Interest"])
+            equity = _row(
+                bs,
+                [
+                    "Stockholders Equity",
+                    "Common Stock Equity",
+                    "Total Equity Gross Minority Interest",
+                ],
+            )
             out["balance_sheet"] = {
                 _date_label(col): {
                     "total_assets_m": _millions(assets.get(col)) if assets is not None else None,
                     "cash_and_sti_m": _millions(cash.get(col)) if cash is not None else None,
                     "total_debt_m": _millions(debt.get(col)) if debt is not None else None,
-                    "stockholders_equity_m": _millions(equity.get(col)) if equity is not None else None,
+                    "stockholders_equity_m": (
+                        _millions(equity.get(col)) if equity is not None else None
+                    ),
                 }
                 for col in cols
             }
@@ -287,7 +322,9 @@ def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
         cf = ticker.cashflow
         if cf is not None and not cf.empty:
             cols = list(cf.columns)[:3]
-            ocf = _row(cf, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"])
+            ocf = _row(
+                cf, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"]
+            )
             capex = _row(cf, ["Capital Expenditure", "CapitalExpenditure"])
             fcf = _row(cf, ["Free Cash Flow", "FreeCashFlow"])
             buyback = _row(cf, ["Repurchase Of Capital Stock"])
@@ -309,6 +346,7 @@ def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
 
 
 # ── Options-market sentiment ──────────────────────────────────────────────────
+
 
 def summarize_options_sentiment(ticker: Any) -> Dict[str, Any]:
     try:
@@ -359,14 +397,14 @@ def summarize_options_sentiment(ticker: Any) -> Dict[str, Any]:
 
 # ── Dividends and splits ──────────────────────────────────────────────────────
 
+
 def summarize_dividends_splits(ticker: Any) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     try:
         d = ticker.dividends
         if d is not None and len(d) > 0:
             out["recent_dividends"] = [
-                {"date": _date_label(idx), "amount": _num(val)}
-                for idx, val in d.tail(8).items()
+                {"date": _date_label(idx), "amount": _num(val)} for idx, val in d.tail(8).items()
             ]
             # 5-year dividend CAGR from annual sums
             annual = d.groupby(d.index.year).sum()
@@ -386,6 +424,7 @@ def summarize_dividends_splits(ticker: Any) -> Dict[str, Any]:
 
 
 # ── ETF portfolio details ─────────────────────────────────────────────────────
+
 
 def summarize_etf_portfolio(ticker: Any) -> Dict[str, Any]:
     """Sector weightings, asset classes, and top holdings for funds/ETFs."""
@@ -421,13 +460,16 @@ def summarize_etf_portfolio(ticker: Any) -> Dict[str, Any]:
 
 # ── Peer comparison ───────────────────────────────────────────────────────────
 
+
 def fetch_peer_symbols(symbol: str, limit: int = 4) -> List[str]:
     """Similar symbols from Yahoo's keyless recommendations endpoint."""
     try:
         resp = _http.get(
             f"https://query2.finance.yahoo.com/v6/finance/recommendationsbysymbol/{symbol.upper()}",
-            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                                   "AppleWebKit/537.36"},
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36"
+            },
             timeout=10,
         )
         resp.raise_for_status()
@@ -459,10 +501,14 @@ def summarize_peers(symbol: str, yf_module: Any = None) -> Dict[str, Any]:
                 "pe_ttm": _num(info.get("trailingPE"), 1),
                 "fwd_pe": _num(info.get("forwardPE"), 1),
                 "revenue_growth_pct": (
-                    round(v * 100, 1) if (v := _num(info.get("revenueGrowth"))) is not None else None
+                    round(v * 100, 1)
+                    if (v := _num(info.get("revenueGrowth"))) is not None
+                    else None
                 ),
                 "operating_margin_pct": (
-                    round(v * 100, 1) if (v := _num(info.get("operatingMargins"))) is not None else None
+                    round(v * 100, 1)
+                    if (v := _num(info.get("operatingMargins"))) is not None
+                    else None
                 ),
             }
         except Exception as exc:
@@ -480,6 +526,7 @@ def summarize_peers(symbol: str, yf_module: Any = None) -> Dict[str, Any]:
 
 # ── Catalysts (upcoming events) ──────────────────────────────────────────────
 
+
 def summarize_catalysts(ticker: Any) -> Dict[str, Any]:
     """Next earnings date with street estimates, plus dividend dates."""
     out: Dict[str, Any] = {}
@@ -495,8 +542,10 @@ def summarize_catalysts(ticker: Any) -> Dict[str, Any]:
             out["earnings_eps_estimate"] = _num(cal.get("Earnings Average"), 2)
         if cal.get("Revenue Average"):
             out["earnings_revenue_estimate_m"] = _millions(cal.get("Revenue Average"))
-        for key, label in (("Ex-Dividend Date", "ex_dividend_date"),
-                           ("Dividend Date", "dividend_date")):
+        for key, label in (
+            ("Ex-Dividend Date", "ex_dividend_date"),
+            ("Dividend Date", "dividend_date"),
+        ):
             if cal.get(key):
                 out[label] = _date_label(cal[key])
     except Exception as exc:
@@ -505,6 +554,7 @@ def summarize_catalysts(ticker: Any) -> Dict[str, Any]:
 
 
 # ── Valuation scenarios (two-stage DCF per share) ────────────────────────────
+
 
 def dcf_scenarios(eps_base: float, growth_pct: float) -> List[Dict[str, Any]]:
     """Bear/base/bull intrinsic-value-per-share grid with disclosed assumptions.
@@ -533,17 +583,20 @@ def dcf_scenarios(eps_base: float, growth_pct: float) -> List[Dict[str, Any]]:
         pv = sum(e / (1 + disc) ** (i + 1) for i, e in enumerate(earnings))
         tv = earnings[-1] * (1 + terminal) / (disc - terminal)
         pv_tv = tv / (1 + disc) ** 5
-        out.append({
-            "scenario": name,
-            "growth_pct": round(g * 100, 1),
-            "discount_pct": round(disc * 100, 1),
-            "terminal_pct": round(terminal * 100, 1),
-            "intrinsic_per_share": round(pv + pv_tv, 2),
-        })
+        out.append(
+            {
+                "scenario": name,
+                "growth_pct": round(g * 100, 1),
+                "discount_pct": round(disc * 100, 1),
+                "terminal_pct": round(terminal * 100, 1),
+                "intrinsic_per_share": round(pv + pv_tv, 2),
+            }
+        )
     return out
 
 
 # ── Google Trends search interest ────────────────────────────────────────────
+
 
 def summarize_search_interest(symbol: str) -> Dict[str, Any]:
     """Retail attention momentum from Google Trends (pytrends, best-effort)."""

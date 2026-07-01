@@ -14,7 +14,9 @@ class PortfolioAnalysisTool(BaseTool):
     name: str = "Portfolio Analysis Tool"
     description: str = (
         "Given a list of stock symbols, calculates the portfolio correlation matrix, "
-        "per-stock risk/return metrics, equal-weight allocation, minimum-variance weights, "
+        "per-stock risk/return metrics, equal-weight allocation, minimum-variance weights "
+        "(an inverse-variance-weighted proxy that ignores cross-asset covariance/correlation, "
+        "not a true covariance-based minimum-variance optimization), "
         "and combined portfolio risk metrics."
     )
 
@@ -79,7 +81,8 @@ class PortfolioAnalysisTool(BaseTool):
 
     def _min_variance_weights(self, returns: pd.DataFrame) -> Dict[str, float]:
         """Inverse-variance weighting as a simple proxy for minimum-variance allocation."""
-        inv_var = 1.0 / returns.var()
+        var = returns.var().clip(lower=1e-8)  # floor near-zero variance to avoid inf weights
+        inv_var = 1.0 / var
         weights = inv_var / inv_var.sum()
         return {k: round(float(v), 4) for k, v in weights.items()}
 

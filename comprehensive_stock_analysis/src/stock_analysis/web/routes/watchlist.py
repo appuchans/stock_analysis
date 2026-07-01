@@ -1,10 +1,13 @@
 """Watchlist CRUD endpoints."""
 
+import re
+
 from fastapi import APIRouter, HTTPException
 
 from .. import db
 from ..jobs import JobConflictError, manager
 from ..schemas import (
+    _SYMBOL_RE,
     WatchlistAddRequest,
     WatchlistAnalyzeRequest,
     WatchlistItem,
@@ -16,9 +19,7 @@ router = APIRouter(prefix="/api", tags=["watchlist"])
 
 @router.get("/watchlist", response_model=WatchlistResponse)
 def list_watchlist() -> WatchlistResponse:
-    return WatchlistResponse(
-        items=[WatchlistItem(**row) for row in db.list_symbols()]
-    )
+    return WatchlistResponse(items=[WatchlistItem(**row) for row in db.list_symbols()])
 
 
 @router.post("/watchlist", response_model=WatchlistItem, status_code=201)
@@ -35,7 +36,10 @@ def add_to_watchlist(req: WatchlistAddRequest) -> WatchlistItem:
 
 @router.delete("/watchlist/{symbol}", status_code=204)
 def remove_from_watchlist(symbol: str) -> None:
-    removed = db.remove_symbol(symbol.upper())
+    symbol = symbol.upper()
+    if not re.match(_SYMBOL_RE, symbol):
+        raise HTTPException(status_code=400, detail="invalid symbol")
+    removed = db.remove_symbol(symbol)
     if not removed:
         raise HTTPException(status_code=404, detail="symbol not found in watchlist")
 

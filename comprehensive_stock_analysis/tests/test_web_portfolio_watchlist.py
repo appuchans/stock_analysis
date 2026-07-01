@@ -132,7 +132,7 @@ def _fresh_db(monkeypatch, tmp_path):
     from src.stock_analysis.web import db as db_mod
 
     db_path = tmp_path / "watchlist.db"
-    monkeypatch.setattr(db_mod, "_DB_PATH", db_path)
+    monkeypatch.setattr(db_mod, "_db_path", lambda: db_path)
     monkeypatch.setattr(db_mod, "_initialized", False)
     yield
 

@@ -1,5 +1,6 @@
 """Tools for generating structured investment reports."""
 
+import html
 import json
 import logging
 from datetime import datetime
@@ -14,27 +15,27 @@ _logger = logging.getLogger(__name__)
 
 # Order and labels for the specialist markdown files — stock path
 _MD_SECTIONS: List[Tuple[str, str]] = [
-    ("technical_analysis",      "Technical Analysis"),
-    ("fundamental_analysis",    "Fundamental Analysis"),
-    ("ownership_analysis",      "Ownership & Capital Allocation"),
-    ("risk_analysis",           "Risk Analysis"),
-    ("sentiment_analysis",      "Sentiment Analysis"),
-    ("market_analysis",         "Market Analysis"),
-    ("industry_analysis",       "Industry Analysis"),
-    ("competitor_analysis",     "Competitor Analysis"),
-    ("economic_analysis",       "Economic Analysis"),
+    ("technical_analysis", "Technical Analysis"),
+    ("fundamental_analysis", "Fundamental Analysis"),
+    ("ownership_analysis", "Ownership & Capital Allocation"),
+    ("risk_analysis", "Risk Analysis"),
+    ("sentiment_analysis", "Sentiment Analysis"),
+    ("market_analysis", "Market Analysis"),
+    ("industry_analysis", "Industry Analysis"),
+    ("competitor_analysis", "Competitor Analysis"),
+    ("economic_analysis", "Economic Analysis"),
     ("investment_recommendation", "Investment Recommendation"),
 ]
 
 # ETF path — technical_analysis omitted; three sections replaced by ETF variants
 _ETF_MD_SECTIONS: List[Tuple[str, str]] = [
     ("etf_fundamental_analysis", "ETF Profile & Cost Analysis"),
-    ("etf_holdings_analysis",    "Holdings & Sector Allocation"),
-    ("etf_peer_analysis",        "Peer ETF Comparison"),
-    ("risk_analysis",            "Risk Analysis"),
-    ("sentiment_analysis",       "Sentiment Analysis"),
-    ("market_analysis",          "Market Analysis"),
-    ("economic_analysis",        "Economic Analysis"),
+    ("etf_holdings_analysis", "Holdings & Sector Allocation"),
+    ("etf_peer_analysis", "Peer ETF Comparison"),
+    ("risk_analysis", "Risk Analysis"),
+    ("sentiment_analysis", "Sentiment Analysis"),
+    ("market_analysis", "Market Analysis"),
+    ("economic_analysis", "Economic Analysis"),
     ("investment_recommendation", "Investment Recommendation"),
 ]
 
@@ -561,6 +562,7 @@ def _md_to_html(text: str) -> str:
     """Convert markdown to HTML."""
     try:
         import markdown
+
         return markdown.markdown(
             text,
             extensions=[
@@ -640,7 +642,7 @@ def _strip_leading_title(md_text: str) -> str:
     if stripped.startswith("#"):
         first_break = stripped.find("\n")
         if first_break > 0:
-            return stripped[first_break + 1:].lstrip()
+            return stripped[first_break + 1 :].lstrip()
     return md_text
 
 
@@ -654,22 +656,24 @@ def _split_gaps(md_text: str) -> Tuple[str, str]:
 
     m = re.search(
         r"^(#{1,4})\s*Data Sources?\s*(?:&(?:amp;)?|and)\s*Gaps[^\n]*$",
-        md_text, re.IGNORECASE | re.MULTILINE,
+        md_text,
+        re.IGNORECASE | re.MULTILINE,
     )
     if not m:
         return md_text, ""
     level = len(m.group(1))
-    nxt = re.search(rf"^#{{1,{level}}}\s", md_text[m.end():], re.MULTILINE)
+    nxt = re.search(rf"^#{{1,{level}}}\s", md_text[m.end() :], re.MULTILINE)
     end = m.end() + nxt.start() if nxt else len(md_text)
-    gaps = md_text[m.end():end].strip()
-    cleaned = (md_text[:m.start()] + md_text[end:]).strip()
+    gaps = md_text[m.end() : end].strip()
+    cleaned = (md_text[: m.start()] + md_text[end:]).strip()
     return cleaned, gaps
 
 
 def _load_narrative(symbol: str) -> str:
     """Load the synthesized comprehensive narrative markdown, if present."""
     path = (
-        Path(settings.report_output_dir) / symbol.upper()
+        Path(settings.report_output_dir)
+        / symbol.upper()
         / f"{symbol.upper()}_comprehensive_report.md"
     )
     if not path.exists():
@@ -684,7 +688,7 @@ def _load_narrative(symbol: str) -> str:
     if stripped.startswith("# ") and not stripped.startswith("## "):
         first_break = stripped.find("\n")
         if first_break > 0:
-            text = stripped[first_break + 1:]
+            text = stripped[first_break + 1 :]
     text, _ = _split_gaps(text)
     # A valid narrative has the mandated '## ' sections; a status summary or
     # fragment must not be embedded as the report body.
@@ -726,22 +730,27 @@ def _build_narrative_sections(
     for i, m in enumerate(matches):
         title = m.group(1).strip()
         body_end = matches[i + 1].start() if i + 1 < len(matches) else len(narrative_md)
-        body_md = narrative_md[m.end():body_end].strip()
+        body_md = narrative_md[m.end() : body_end].strip()
         visuals = []
         lowered = title.lower()
         # Appendix-style sections never receive visuals
         if not lowered.startswith("appendix"):
             for keywords, group in section_map:
-                if (any(k in lowered for k in keywords)
-                        and group in visual_groups and group not in consumed):
+                if (
+                    any(k in lowered for k in keywords)
+                    and group in visual_groups
+                    and group not in consumed
+                ):
                     visuals.append(visual_groups[group])
                     consumed.add(group)
-        sections.append({
-            "anchor": "sec-" + re.sub(r"[^a-z0-9]+", "-", lowered).strip("-"),
-            "title": title,
-            "html": _md_to_html(body_md),
-            "visuals": visuals,
-        })
+        sections.append(
+            {
+                "anchor": "sec-" + re.sub(r"[^a-z0-9]+", "-", lowered).strip("-"),
+                "title": title,
+                "html": _md_to_html(body_md),
+                "visuals": visuals,
+            }
+        )
     return sections, consumed
 
 
@@ -752,10 +761,13 @@ def _peers_table_html(peers: List[Dict[str, Any]]) -> str:
     rows = []
     for p in peers:
         style = ' style="font-weight:700; background:#ebf8ff"' if p.get("is_subject") else ""
+
         def cell(v, suffix=""):
             return f"{v}{suffix}" if v is not None else "—"
+
         rows.append(
-            f"<tr{style}><td>{p.get('symbol', '')} — {p.get('name', '')}</td>"
+            f"<tr{style}><td>{html.escape(str(p.get('symbol', '')))} — "
+            f"{html.escape(str(p.get('name', '')))}</td>"
             f"<td>{cell(p.get('market_cap_b'))}</td>"
             f"<td>{cell(p.get('pe_ttm'))}</td>"
             f"<td>{cell(p.get('fwd_pe'))}</td>"
@@ -778,9 +790,7 @@ def _scenarios_table_html(scenarios: List[Dict[str, Any]]) -> str:
         return ""
     rows = []
     for sc in scenarios:
-        upside = (
-            f"{sc['upside_pct']:+.1f}%" if sc.get("upside_pct") is not None else "—"
-        )
+        upside = f"{sc['upside_pct']:+.1f}%" if sc.get("upside_pct") is not None else "—"
         rows.append(
             f"<tr><td><strong>{sc['scenario']}</strong></td>"
             f"<td>{sc['growth_pct']}%</td><td>{sc['discount_pct']}%</td>"
@@ -841,8 +851,9 @@ def _load_chart_data(symbol: str) -> Dict[str, Any]:
             if qis is not None and not qis.empty and "Total Revenue" in qis.index:
                 rev = qis.loc["Total Revenue"]
                 chart["quarterly_revenue_m"] = {
-                    (c.date().isoformat() if hasattr(c, "date") else str(c)[:10]):
-                        round(float(v) / 1e6, 1)
+                    (c.date().isoformat() if hasattr(c, "date") else str(c)[:10]): round(
+                        float(v) / 1e6, 1
+                    )
                     for c, v in sorted(rev.items())
                     if v == v and v is not None
                 }
@@ -912,7 +923,11 @@ class ReportGeneratorTool(BaseTool):
                 data = {}
         # Auto-detect ETF by checking for ETF-specific output files when not specified
         if asset_type == "stock":
-            etf_check = Path(settings.report_output_dir) / symbol.upper() / f"{symbol.upper()}_etf_fundamental_analysis.md"
+            etf_check = (
+                Path(settings.report_output_dir)
+                / symbol.upper()
+                / f"{symbol.upper()}_etf_fundamental_analysis.md"
+            )
             if etf_check.exists():
                 asset_type = "etf"
         try:
@@ -998,8 +1013,15 @@ class ReportGeneratorTool(BaseTool):
         """Pull the first `max_bullets` substantive bullet-point lines from markdown text."""
         bullets: List[str] = []
         # Metadata lines to skip (bold key: value patterns at the top of files)
-        _SKIP_PREFIXES = ("**as of", "**instrument", "**current price", "**52-week",
-                          "**data timestamp", "**exchange", "**source")
+        _SKIP_PREFIXES = (
+            "**as of",
+            "**instrument",
+            "**current price",
+            "**52-week",
+            "**data timestamp",
+            "**exchange",
+            "**source",
+        )
         for raw in text.splitlines():
             stripped = raw.strip()
             if not stripped.startswith(("- ", "* ")):
@@ -1045,16 +1067,16 @@ class ReportGeneratorTool(BaseTool):
         section_slugs = (
             [
                 ("fundamental_analysis", "Business & Fundamentals"),
-                ("risk_analysis",        "Risk"),
-                ("sentiment_analysis",   "Market Sentiment"),
-                ("market_analysis",      "Market Context"),
-                ("industry_analysis",    "Industry"),
+                ("risk_analysis", "Risk"),
+                ("sentiment_analysis", "Market Sentiment"),
+                ("market_analysis", "Market Context"),
+                ("industry_analysis", "Industry"),
             ]
             if asset_type != "etf"
             else [
                 ("etf_fundamental_analysis", "ETF Profile"),
-                ("risk_analysis",            "Risk"),
-                ("sentiment_analysis",       "Market Sentiment"),
+                ("risk_analysis", "Risk"),
+                ("sentiment_analysis", "Market Sentiment"),
             ]
         )
 
@@ -1087,17 +1109,28 @@ class ReportGeneratorTool(BaseTool):
         lines = [f"## Investment Recommendation: {data.get('recommendation', 'N/A')}"]
         fields = [
             ("Target Price", data.get("target_price")),
-            ("Stop Loss",    data.get("stop_loss")),
+            ("Stop Loss", data.get("stop_loss")),
             ("Time Horizon", data.get("time_horizon")),
-            ("Risk Level",   data.get("risk_level")),
-            ("Confidence",   f"{int(float(data['confidence']) * 100)}%" if data.get("confidence") is not None else None),
+            ("Risk Level", data.get("risk_level")),
+            (
+                "Confidence",
+                (
+                    f"{int(float(data['confidence']) * 100)}%"
+                    if data.get("confidence") is not None
+                    else None
+                ),
+            ),
         ]
         for label, val in fields:
             if val is not None:
                 lines.append(f"- **{label}:** {val}")
         if data.get("reasoning"):
             lines += ["", "### Reasoning", data["reasoning"]]
-        for section, key in [("Key Factors", "key_factors"), ("Risks", "risks"), ("Opportunities", "opportunities")]:
+        for section, key in [
+            ("Key Factors", "key_factors"),
+            ("Risks", "risks"),
+            ("Opportunities", "opportunities"),
+        ]:
             items = data.get(key) or []
             if items:
                 lines += [f"", f"### {section}"]
@@ -1190,14 +1223,16 @@ class ReportGeneratorTool(BaseTool):
 
         detail = analysis_data.get("detailed_analysis") or {}
         supporting = analysis_data.get("supporting_evidence") or {}
-        market_snap = (
-            supporting.get("market_snapshot")
-            or analysis_data.get("market_data")
-            or {}
-        )
+        market_snap = supporting.get("market_snapshot") or analysis_data.get("market_data") or {}
 
         # Charts + branding (all degrade gracefully when data is unavailable)
-        from ._svg_charts import _fmt, bar_chart_svg, line_chart_svg, range_bar_svg, rating_bar_svg
+        from ._svg_charts import (
+            _fmt,
+            bar_chart_svg,
+            line_chart_svg,
+            range_bar_svg,
+            rating_bar_svg,
+        )
 
         chart_data = _load_chart_data(symbol)
         company = chart_data.get("company") or {}
@@ -1221,44 +1256,59 @@ class ReportGeneratorTool(BaseTool):
         pt = analyst.get("price_targets") or {}
         target_range_svg = ""
         if pt.get("low") and pt.get("high"):
-            markers = [("Current", pt.get("current_price") or ks.get("current_price"), "#1a202c"),
-                       ("Mean target", pt.get("mean"), "#2b6cb0")]
-            target_range_svg = Markup(range_bar_svg(
-                pt["low"], pt["high"],
-                [(l, v, c) for l, v, c in markers if v is not None],
-                title="Analyst Price Targets (12-month)",
-            ))
+            markers = [
+                ("Current", pt.get("current_price") or ks.get("current_price"), "#1a202c"),
+                ("Mean target", pt.get("mean"), "#2b6cb0"),
+            ]
+            target_range_svg = Markup(
+                range_bar_svg(
+                    pt["low"],
+                    pt["high"],
+                    [(l, v, c) for l, v, c in markers if v is not None],
+                    title="Analyst Price Targets (12-month)",
+                )
+            )
         rating_svg = ""
         rc = analyst.get("rating_counts") or {}
         if any(rc.get(k) for k in ("strong_buy", "buy", "hold", "sell", "strong_sell")):
             rating_svg = Markup(rating_bar_svg(rc, title="Analyst Ratings"))
         range_52w_svg = ""
         if ks.get("low_52w") and ks.get("high_52w") and ks.get("current_price"):
-            range_52w_svg = Markup(range_bar_svg(
-                ks["low_52w"], ks["high_52w"],
-                [("Current", ks["current_price"], "#1a202c")],
-                title="52-Week Range", height=84,
-            ))
+            range_52w_svg = Markup(
+                range_bar_svg(
+                    ks["low_52w"],
+                    ks["high_52w"],
+                    [("Current", ks["current_price"], "#1a202c")],
+                    title="52-Week Range",
+                    height=84,
+                )
+            )
 
         # Sentiment chips
         ss = chart_data.get("sentiment_snapshot") or {}
         sentiment_chips: List[Tuple[str, str]] = []
         if ss.get("stocktwits_bullish_pct") is not None:
-            sentiment_chips.append((
-                "Retail (Stocktwits)",
-                f"{_fmt(ss['stocktwits_bullish_pct'])}% bullish of {ss.get('stocktwits_labeled', 0)} labeled",
-            ))
+            sentiment_chips.append(
+                (
+                    "Retail (Stocktwits)",
+                    f"{_fmt(ss['stocktwits_bullish_pct'])}% bullish of {ss.get('stocktwits_labeled', 0)} labeled",
+                )
+            )
         if ss.get("put_call_oi_ratio") is not None:
             pc = ss["put_call_oi_ratio"]
             tone = "bullish tilt" if pc < 0.7 else ("bearish tilt" if pc > 1.0 else "neutral")
             sentiment_chips.append(("Options Put/Call OI", f"{_fmt(pc)} ({tone})"))
         if ss.get("short_pct_of_float") is not None:
-            sentiment_chips.append(("Short Interest", f"{_fmt(ss['short_pct_of_float'])}% of float"))
+            sentiment_chips.append(
+                ("Short Interest", f"{_fmt(ss['short_pct_of_float'])}% of float")
+            )
         if ss.get("fear_greed_score") is not None:
             # NB: must not be named `rating` — that variable holds the
             # investment recommendation shown in the badge.
             fg_label = (ss.get("fear_greed_rating") or "").replace("_", " ")
-            sentiment_chips.append(("Market Mood (CNN)", f"{_fmt(ss['fear_greed_score'])} — {fg_label}"))
+            sentiment_chips.append(
+                ("Market Mood (CNN)", f"{_fmt(ss['fear_greed_score'])} — {fg_label}")
+            )
         if ss.get("watchers"):
             sentiment_chips.append(("Stocktwits Watchers", _fmt(ss["watchers"])))
 
@@ -1284,8 +1334,7 @@ class ReportGeneratorTool(BaseTool):
         for sc in valuation_scenarios:
             iv = sc.get("intrinsic_per_share")
             sc["upside_pct"] = (
-                round((iv - current_px) / current_px * 100, 1)
-                if iv and current_px else None
+                round((iv - current_px) / current_px * 100, 1) if iv and current_px else None
             )
 
         # Sentiment trend across runs
@@ -1297,52 +1346,67 @@ class ReportGeneratorTool(BaseTool):
         ]
         sentiment_trend_svg = ""
         if len(trend_points) >= 3:
-            sentiment_trend_svg = Markup(line_chart_svg(
-                trend_points, title="Retail Bullishness Over Time (% bullish, Stocktwits)",
-                height=200, currency="",
-            ))
+            sentiment_trend_svg = Markup(
+                line_chart_svg(
+                    trend_points,
+                    title="Retail Bullishness Over Time (% bullish, Stocktwits)",
+                    height=200,
+                    currency="",
+                )
+            )
         if len(trend_points) >= 2:
             prev_label, prev_val = trend_points[-2]
             _, last_val = trend_points[-1]
-            sentiment_chips.append((
-                "Retail Trend",
-                f"{_fmt(last_val)}% bullish (was {_fmt(prev_val)}% on {prev_label})",
-            ))
+            sentiment_chips.append(
+                (
+                    "Retail Trend",
+                    f"{_fmt(last_val)}% bullish (was {_fmt(prev_val)}% on {prev_label})",
+                )
+            )
         if ss.get("search_momentum_pct") is not None:
             sm = ss["search_momentum_pct"]
-            sentiment_chips.append((
-                "Search Interest (Google)",
-                f"{'+' if sm > 0 else ''}{_fmt(sm)}% vs 3-mo avg",
-            ))
-
+            sentiment_chips.append(
+                (
+                    "Search Interest (Google)",
+                    f"{'+' if sm > 0 else ''}{_fmt(sm)}% vs 3-mo avg",
+                )
+            )
 
         price_chart_svg = ""
         prices = chart_data.get("price_history") or []
         if len(prices) >= 2:
-            price_chart_svg = Markup(line_chart_svg(
-                [(p["date"][5:], p["close"]) for p in prices],
-                title=f"{symbol.upper()} — 1-Year Weekly Close",
-            ))
+            price_chart_svg = Markup(
+                line_chart_svg(
+                    [(p["date"][5:], p["close"]) for p in prices],
+                    title=f"{symbol.upper()} — 1-Year Weekly Close",
+                )
+            )
         revenue_chart_svg = ""
         qrev = chart_data.get("quarterly_revenue_m") or {}
         if qrev:
             items = sorted(qrev.items())[-5:]
-            revenue_chart_svg = Markup(bar_chart_svg(
-                [k[2:7] for k, _ in items],
-                [v for _, v in items],
-                title="Quarterly Revenue (USD millions)",
-            ))
+            revenue_chart_svg = Markup(
+                bar_chart_svg(
+                    [k[2:7] for k, _ in items],
+                    [v for _, v in items],
+                    title="Quarterly Revenue (USD millions)",
+                )
+            )
         sector_chart_svg = ""
         sectors = chart_data.get("sector_weightings_pct") or {}
         if sectors:
             top = sorted(sectors.items(), key=lambda kv: kv[1], reverse=True)[:10]
-            sector_chart_svg = Markup(bar_chart_svg(
-                [k.replace("_", " ").title() for k, _ in top],
-                [v for _, v in top],
-                title="Sector Weightings (%)",
-                unit="", suffix="%", horizontal=True,
-                height=max(220, 36 * len(top) + 50),
-            ))
+            sector_chart_svg = Markup(
+                bar_chart_svg(
+                    [k.replace("_", " ").title() for k, _ in top],
+                    [v for _, v in top],
+                    title="Sector Weightings (%)",
+                    unit="",
+                    suffix="%",
+                    horizontal=True,
+                    height=max(220, 36 * len(top) + 50),
+                )
+            )
 
         # Synthesized narrative = report body; specialist reports become appendices.
         # Visuals are interleaved INTO their matching narrative sections so the

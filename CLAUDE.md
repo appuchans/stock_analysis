@@ -78,7 +78,7 @@ A local single-user web interface lives in `src/stock_analysis/web/` (FastAPI ba
 
 ### Data Flow
 
-All data is typed via **Pydantic v2** models in `models/stock_data.py` (uses `@field_validator`, `@model_validator`, not deprecated `@validator`). The master container is `StockData`.
+All data is typed via **Pydantic v2** models in `models/stock_data.py` (uses `@field_validator`, `@model_validator`, not deprecated `@validator`). There is no single unified container class — only the models actually consumed by the running code are kept: `CompanyInfo`, `MarketData`, `FundamentalData`, `NewsData`, `EconomicData` (built by the data collectors) and `InvestmentRecommendation` (validated against the advisor's structured output).
 
 Tools in `tools/`:
 - `free_data_collection.py` — Yahoo Finance (incl. short interest), SEC EDGAR, FRED (with yfinance market-proxy fallback: VIX/10Y/S&P/WTI/DXY), news with fallback chain (Google News → Bing News → Yahoo per-symbol RSS), DuckDuckGo; parallel fetch via `ThreadPoolExecutor` (`ParallelDataCollectionTool`, which also merges analyst/statements/ownership/social blocks)

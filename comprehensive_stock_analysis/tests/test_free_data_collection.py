@@ -125,6 +125,40 @@ class TestFreeEconomicDataTool:
         assert mock_get.call_count > 0
 
 
+class TestFreeFREDTool:
+    """FreeFREDTool must never leak the API key or request URL in error text."""
+
+    @patch("src.stock_analysis.tools.cache._get_redis", return_value=None)
+    @patch("src.stock_analysis.tools._http.SESSION.get")
+    def test_http_error_does_not_leak_api_key_or_url(self, mock_get, _redis):
+        import requests
+
+        secret_key = "supersecretfredkey123"
+        tool = FreeFREDTool(api_key=secret_key)
+
+        def _raise_http_error():
+            # Mimic requests' real HTTPError message, which embeds the full
+            # request URL — including api_key=<key> — in str(exc).
+            err = requests.exceptions.HTTPError(
+                "429 Client Error: Too Many Requests for url: "
+                f"https://api.stlouisfed.org/fred/series/observations"
+                f"?series_id=GDP&api_key={secret_key}&file_type=json"
+            )
+            err.response = Mock(status_code=429)
+            raise err
+
+        mock_resp = Mock()
+        mock_resp.raise_for_status = Mock(side_effect=_raise_http_error)
+        mock_get.return_value = mock_resp
+
+        result = tool._run(series_id="GDP")
+
+        assert "error" in result
+        assert secret_key not in result["error"]
+        assert "api_key=" not in result["error"]
+        assert "429" in result["error"] or "HTTP" in result["error"]
+
+
 class TestFreeCompetitorAnalysisTool:
     """Tests for FreeCompetitorAnalysisTool."""
 
@@ -178,8 +212,23 @@ class TestFreeCompetitorAnalysisTool:
         # MSFT, GOOG, AMZN, META, NFLX, TSLA, NVDA, ORCL, IBM, CSCO -> 10 valid tickers.
         # It should deduplicate and limit validation to at most 8 candidates.
         # Let's count YahooFinanceTool._run calls for symbols other than AAPL.
-        run_calls = [call.args[0] for call in mock_yahoo_instance._run.call_args_list if call.args[0] != "AAPL"]
+        # The tool now calls yahoo_tool._run(symbol=symbol) with symbol as a
+        # keyword argument (cache-key-consistency fix), so call.args is empty —
+        # read call.kwargs["symbol"] instead of call.args[0].
+        run_calls = [
+            call.kwargs["symbol"] for call in mock_yahoo_instance._run.call_args_list
+            if call.kwargs.get("symbol") != "AAPL"
+        ]
         assert len(run_calls) <= 8
+
+        # The primary company-info fetch itself must be a keyword call too —
+        # regression guard for the cache-key-consistency fix.
+        primary_calls = [
+            call for call in mock_yahoo_instance._run.call_args_list
+            if call.kwargs.get("symbol") == "AAPL"
+        ]
+        assert len(primary_calls) == 1
+        assert primary_calls[0].args == ()
 
         # Stop words like SEC, ETF, NYSE, CEO, AND should not be in the run_calls
         blocklist = {"AND", "NYSE", "SEC", "ETF", "CEO"}
@@ -227,7 +276,12 @@ class TestFreeNewsToolFallbacks:
     """News collection must fall back Google News → Bing News → Yahoo feed."""
 
     @patch("src.stock_analysis.tools.cache._get_redis", return_value=None)
-    def test_bing_fallback_when_google_empty(self, _redis):
+    @patch("src.stock_analysis.tools._http.SESSION.get")
+    def test_bing_fallback_when_google_empty(self, mock_get, _redis):
+        # FreeNewsTool._run now fetches each RSS feed via the shared HTTP
+        # session (_http.get(url, timeout=15)) and passes resp.content to
+        # feedparser.parse(...) instead of handing feedparser the raw URL
+        # (fix: RSS fetching was bypassing the shared session's timeout/retry).
         import src.stock_analysis.tools.free_data_collection as fdc
 
         empty_feed = Mock(entries=[])
@@ -236,10 +290,23 @@ class TestFreeNewsToolFallbacks:
         }
         bing_feed = Mock(entries=[bing_entry])
 
-        def _parse(url):
+        # Distinct byte payloads per source so the feedparser.parse mock can
+        # key off *content* (what the code now passes) rather than the URL.
+        def _get(url, timeout=15, **kwargs):
+            resp = Mock()
+            resp.raise_for_status = Mock()
             if "news.google.com" in url:
-                return empty_feed
-            if "bing.com" in url:
+                resp.content = b"google-empty-feed"
+            elif "bing.com" in url:
+                resp.content = b"bing-feed-content"
+            else:
+                resp.content = b"other-feed-content"
+            return resp
+
+        mock_get.side_effect = _get
+
+        def _parse(content):
+            if content == b"bing-feed-content":
                 return bing_feed
             return empty_feed
 
@@ -250,6 +317,19 @@ class TestFreeNewsToolFallbacks:
         assert result["total_count"] == 1
         assert result["news_data"][0]["source"] == "Bing News"
         assert result["news_data"][0]["title"] == "NVDA rallies"
+
+        # Google News and Bing were both fetched through the shared session,
+        # each with the RSS URL and an explicit timeout — never a bare
+        # feedparser.parse(url) call.
+        fetched_urls = [c.args[0] if c.args else c.kwargs.get("url") for c in mock_get.call_args_list]
+        assert any("news.google.com" in u for u in fetched_urls)
+        assert any("bing.com" in u for u in fetched_urls)
+        for c in mock_get.call_args_list:
+            assert c.kwargs.get("timeout") == 15
+        # feedparser.parse must have been called with bytes content, never a URL string.
+        for parse_call in mock_fp.parse.call_args_list:
+            arg = parse_call.args[0]
+            assert isinstance(arg, bytes)
 
 
 class TestCachingDecorators:

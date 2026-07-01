@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class RecommendationType(str, Enum):
     """Investment recommendation types."""
+
     STRONG_BUY = "Strong Buy"
     BUY = "Buy"
     HOLD = "Hold"
@@ -26,6 +27,7 @@ class RecommendationType(str, Enum):
 
 class RiskLevel(str, Enum):
     """Risk level enumeration."""
+
     VERY_LOW = "Very Low"
     LOW = "Low"
     MEDIUM = "Medium"
@@ -35,6 +37,7 @@ class RiskLevel(str, Enum):
 
 class CompanyInfo(BaseModel):
     """Company information model."""
+
     symbol: str = Field(..., description="Stock symbol")
     name: str = Field(..., description="Company name")
     sector: Optional[str] = Field(None, description="Sector")
@@ -59,6 +62,7 @@ class CompanyInfo(BaseModel):
 
 class MarketData(BaseModel):
     """Market data model."""
+
     symbol: str = Field(..., description="Stock symbol")
     current_price: Decimal = Field(..., description="Current price")
     previous_close: Optional[Decimal] = Field(None, description="Previous close")
@@ -75,6 +79,7 @@ class MarketData(BaseModel):
 
 class FundamentalData(BaseModel):
     """Fundamental data model."""
+
     # Valuation
     pe_ratio: Optional[Decimal] = Field(None, description="Price-to-Earnings ratio")
     pb_ratio: Optional[Decimal] = Field(None, description="Price-to-Book ratio")
@@ -109,6 +114,7 @@ class FundamentalData(BaseModel):
 
 class NewsData(BaseModel):
     """News data model."""
+
     title: str = Field(..., description="News title")
     summary: Optional[str] = Field(None, description="News summary")
     url: str = Field(..., description="News URL")
@@ -118,9 +124,24 @@ class NewsData(BaseModel):
     relevance_score: Optional[float] = Field(None, description="Relevance score (0 to 1)")
     tags: List[str] = Field(default_factory=list, description="News tags")
 
+    @field_validator("sentiment_score")
+    @classmethod
+    def validate_sentiment_score(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and not -1 <= v <= 1:
+            raise ValueError("Sentiment score must be between -1 and 1")
+        return v
+
+    @field_validator("relevance_score")
+    @classmethod
+    def validate_relevance_score(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and not 0 <= v <= 1:
+            raise ValueError("Relevance score must be between 0 and 1")
+        return v
+
 
 class EconomicData(BaseModel):
     """Economic data model."""
+
     gdp_growth: Optional[Decimal] = Field(None, description="GDP growth rate")
     inflation_rate: Optional[Decimal] = Field(None, description="Inflation rate")
     interest_rate: Optional[Decimal] = Field(None, description="Interest rate")
@@ -134,6 +155,7 @@ class EconomicData(BaseModel):
 
 class InvestmentRecommendation(BaseModel):
     """Investment recommendation — the advisor stage's validated output."""
+
     symbol: str = Field(..., description="Stock symbol")
     recommendation: RecommendationType = Field(..., description="Investment recommendation")
     target_price: Optional[Decimal] = Field(None, description="Target price")
@@ -145,8 +167,10 @@ class InvestmentRecommendation(BaseModel):
     key_factors: List[str] = Field(..., description="Key factors influencing recommendation")
     risks: List[str] = Field(default_factory=list, description="Key risks")
     opportunities: List[str] = Field(default_factory=list, description="Key opportunities")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc),
-                                description="Timestamp of the recommendation")
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Timestamp of the recommendation",
+    )
 
     @field_validator("confidence")
     @classmethod

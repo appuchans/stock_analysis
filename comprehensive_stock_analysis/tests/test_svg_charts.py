@@ -21,6 +21,18 @@ class TestLineChart:
         svg = line_chart_svg([("a", 50.0), ("b", 50.0)])
         assert "<svg" in svg
 
+    def test_title_is_html_escaped(self):
+        """A title containing markup/quotes must never reach the output
+        unescaped — regression guard for an SVG/HTML injection bug where the
+        title was interpolated raw into an aria-label/text attribute."""
+        malicious = '<script>alert(1)</script> "quoted"'
+        svg = line_chart_svg([("01-01", 100.0), ("02-01", 110.0)], title=malicious)
+        assert "<script>alert(1)</script>" not in svg
+        assert "&lt;script&gt;" in svg
+        # quote=True escaping turns " into &quot;
+        assert "&quot;quoted&quot;" in svg
+        assert '"quoted"' not in svg
+
 
 class TestBarChart:
     def test_vertical_bars_with_values(self):

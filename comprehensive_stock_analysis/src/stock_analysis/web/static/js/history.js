@@ -85,9 +85,24 @@ function card(it) {
     el("span", { class: "when" }, it.mtime ? it.mtime.replace("T", " ") : "—"),
     el("button", { class: "btn btn-ghost btn-sm btn-refresh", title: "Re-run with fresh data",
       onclick: () => refreshSymbol(it.symbol, it.asset_type) },
-      el("span", { class: "ic", html: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>' }),
+      el("span", { class: "ic" }, refreshIcon()),
       "Refresh")));
   return node;
+}
+
+// Built via createElementNS (not el()'s generic innerHTML sink) — this is the
+// only inline icon this module needs.
+function refreshIcon() {
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  for (const [k, v] of Object.entries({
+    viewBox: "0 0 24 24", width: "14", height: "14", fill: "none",
+    stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round",
+  })) svg.setAttribute(k, v);
+  const path = document.createElementNS(svgNS, "path");
+  path.setAttribute("d", "M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6");
+  svg.append(path);
+  return svg;
 }
 
 const row = (lbl, val) =>

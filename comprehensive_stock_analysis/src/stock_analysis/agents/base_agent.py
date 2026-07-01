@@ -2,9 +2,9 @@
 
 from typing import Any, Dict, List, Optional
 
-from crewai import Agent, LLM
+from crewai import LLM, Agent
 
-from ..config.loader import config_loader, AgentConfig
+from ..config.loader import AgentConfig, config_loader
 from ..config.settings import settings
 from ..llm_budget import check_and_increment
 
@@ -28,6 +28,7 @@ def _with_budget(llm: Any) -> Any:
 
     orig_acall = getattr(llm, "acall", None)
     if orig_acall is not None:
+
         async def _budgeted_acall(*args, **kwargs):
             check_and_increment()
             return await orig_acall(*args, **kwargs)
@@ -54,6 +55,14 @@ def preflight_llm_credentials(provider_override: Optional[str] = None) -> List[s
         for agent_cfg in llm_cfg.agents.values():
             if isinstance(agent_cfg, dict) and agent_cfg.get("provider"):
                 providers.add(agent_cfg["provider"])
+        # agents.yaml llm_config blocks outrank llm_config.yaml per-agent
+        # overrides (see BaseAgent._resolve_llm_config), so they must be
+        # checked too or a misconfigured agent-level provider only fails
+        # deep inside the flow instead of at preflight.
+        for agent_config in config_loader.load_agents_config().values():
+            agent_llm_cfg = agent_config.llm_config or {}
+            if agent_llm_cfg.get("provider"):
+                providers.add(agent_llm_cfg["provider"])
 
     problems: List[str] = []
     for p in sorted(providers):
@@ -81,7 +90,7 @@ class BaseAgent:
     ):
         self.agent_name = agent_name
         self._init_provider = llm_provider  # may be None → use config
-        self._init_model = model            # may be None → use config
+        self._init_model = model  # may be None → use config
         self.config = config_loader.get_agent_config(agent_name)
         self._resolved = self._resolve_llm_config()
         # LLM, tools, and Agent are built lazily on first get_agent() call
@@ -162,13 +171,11 @@ class BaseAgent:
         # Validate API key before attempting to construct the LLM
         if provider == "openai" and not settings.openai_api_key:
             raise ValueError(
-                "OPENAI_API_KEY is not set. "
-                "Set it in .env or as an environment variable."
+                "OPENAI_API_KEY is not set. " "Set it in .env or as an environment variable."
             )
         if provider == "anthropic" and not settings.anthropic_api_key:
             raise ValueError(
-                "ANTHROPIC_API_KEY is not set. "
-                "Set it in .env or as an environment variable."
+                "ANTHROPIC_API_KEY is not set. " "Set it in .env or as an environment variable."
             )
 
         # Build the LiteLLM model string: "<prefix><model>"
@@ -188,16 +195,20 @@ class BaseAgent:
             else {"max_tokens": self._resolved["max_tokens"]}
         )
 
-        return _with_budget(LLM(
-            model=litellm_model,
-            temperature=self._resolved["temperature"],
-            **token_kwargs,
-            timeout=self._resolved["timeout"],
-            max_retries=self._resolved["max_retries"],
-            api_key=settings.openai_api_key if provider == "openai"
-                    else settings.anthropic_api_key if provider == "anthropic"
-                    else None,
-        ))
+        return _with_budget(
+            LLM(
+                model=litellm_model,
+                temperature=self._resolved["temperature"],
+                **token_kwargs,
+                timeout=self._resolved["timeout"],
+                max_retries=self._resolved["max_retries"],
+                api_key=(
+                    settings.openai_api_key
+                    if provider == "openai"
+                    else settings.anthropic_api_key if provider == "anthropic" else None
+                ),
+            )
+        )
 
     # ── Agent creation ────────────────────────────────────────────────────────
 

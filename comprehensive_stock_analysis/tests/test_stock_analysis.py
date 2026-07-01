@@ -254,6 +254,25 @@ class TestFundamentalAnalysisTool:
         assert 0 <= profitability['score'] <= 1
         assert profitability['assessment'] in ['excellent', 'good', 'average', 'poor']
 
+    def test_analyze_financial_health_debt_to_equity_zero_scores_best_bucket(self):
+        """debt_to_equity=0.0 (no debt at all) must count as a real metric and
+        score in the best bucket. Regression guard for an `if value:` truthy
+        check that silently excluded 0.0 (falsy) as if the metric were absent,
+        instead of using `is not None`."""
+        fundamental_data = {
+            'debt_to_equity': 0.0,
+            'current_ratio': None,
+            'quick_ratio': None,
+        }
+
+        tool = FundamentalAnalysisTool()
+        financial_health = tool._analyze_financial_health(fundamental_data)
+
+        assert financial_health['debt_to_equity'] == 0.0
+        # Only one metric provided; if it were excluded the score would stay 0.0.
+        assert financial_health['score'] == 1.0
+        assert financial_health['assessment'] == 'excellent'
+
 
 class TestFinancialCalculatorTool:
     """Test financial calculator tool."""
@@ -303,6 +322,31 @@ class TestFinancialCalculatorTool:
         assert returns['total_return'] == 0.15  # (115 - 100) / 100
         assert isinstance(returns['mean_return'], float)
         assert isinstance(returns['std_return'], float)
+
+    def test_calculate_valuation_terminal_value_formula(self):
+        """DCF terminal value must include the (1 + terminal_growth_rate)
+        factor: TV = last_year_earnings * (1 + g) / (r - g). Regression guard
+        for a bug where the growth factor was omitted, understating the
+        terminal value (and therefore intrinsic value) on every DCF run."""
+        tool = FinancialCalculatorTool()
+        growth_rate = 0.10
+        discount_rate = 0.12
+        terminal_growth_rate = 0.03
+
+        result = tool._calculate_valuation(
+            current_price=100.0,
+            earnings=5.0,
+            growth_rate=growth_rate,
+            discount_rate=discount_rate,
+            terminal_growth_rate=terminal_growth_rate,
+        )
+
+        assert "error" not in result
+        last_projected = result["projected_earnings"][-1]
+        expected_terminal_value = (
+            last_projected * (1 + terminal_growth_rate) / (discount_rate - terminal_growth_rate)
+        )
+        assert result["terminal_value"] == pytest.approx(expected_terminal_value)
 
 
 class TestDataModels:
@@ -523,6 +567,28 @@ class TestValuationCalculatorTool:
         )
         assert "intrinsic_value" in result
         assert result["intrinsic_value"] > 0
+
+    def test_dcf_terminal_value_includes_growth_factor(self):
+        """Terminal value = last_projected_earnings * (1 + g) / (r - g).
+        Regression guard: a prior bug omitted the (1 + terminal_growth_rate)
+        factor, understating both terminal_value and intrinsic_value."""
+        tool = ValuationCalculatorTool()
+        growth_rate = 0.10
+        discount_rate = 0.12
+        terminal_growth_rate = 0.03
+
+        result = tool._calculate_dcf(
+            current_earnings=5.0,
+            growth_rate=growth_rate,
+            discount_rate=discount_rate,
+            terminal_growth_rate=terminal_growth_rate,
+        )
+
+        last_projected = result["projected_earnings"][-1]
+        expected_terminal_value = (
+            last_projected * (1 + terminal_growth_rate) / (discount_rate - terminal_growth_rate)
+        )
+        assert result["terminal_value"] == pytest.approx(expected_terminal_value)
 
     def test_dcf_rejects_equal_rates(self):
         """discount_rate == terminal_growth_rate must return an error dict, not divide by zero."""

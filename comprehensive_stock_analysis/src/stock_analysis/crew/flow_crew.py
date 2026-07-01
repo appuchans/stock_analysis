@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from crewai import Crew, Process, Task
-from crewai.flow.flow import Flow, listen, router, start, or_
+from crewai.flow.flow import Flow, listen, or_, router, start
 from pydantic import BaseModel, Field
 
 from ..agents import (
@@ -28,7 +28,9 @@ from ..agents import (
 from ..config.loader import config_loader
 from ..config.settings import settings
 from ..models.stock_data import InvestmentRecommendation
-from .event_listener import event_listener  # noqa: F401 — registers event handlers on import
+from .event_listener import (  # noqa: F401 — registers event handlers on import
+    event_listener,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -62,11 +64,13 @@ def _write_report_file(symbol: str, filename: str, content: str) -> None:
 
 # ── Typed flow state ──────────────────────────────────────────────────────────
 
+
 class StockAnalysisState(BaseModel):
     """Shared state carried through the analysis flow."""
+
     symbol: str = ""
     analysis_depth: str = "standard"  # "quick" | "standard" | "deep"
-    asset_type: str = "stock"         # "stock" | "etf"
+    asset_type: str = "stock"  # "stock" | "etf"
     # None = resolved by BaseAgent from llm_config.yaml + env vars
     llm_provider: Optional[str] = None
     model: Optional[str] = None
@@ -89,21 +93,28 @@ def _step_callback(step_output: Any) -> None:
     _logger.info("[flow-step] %s", str(step_output)[:200])
 
 
-def _run_crew(agents_list: list, tasks_list: list, inputs: dict) -> Any:
-    """Helper: build and kick off a mini crew, returning the raw result."""
+def _run_crew(agents_list: list, tasks_list: list, inputs: dict, log_suffix: str = "") -> Any:
+    """Helper: build and kick off a mini crew, returning the raw result.
+
+    `log_suffix` (typically the stage key) routes concurrent stage crews to
+    their own log file, avoiding interleaved writes to the shared crew log
+    when several stages run at once.
+    """
+    log_file = f"{settings.crew_log_file}.{log_suffix}" if log_suffix else settings.crew_log_file
     c = Crew(
         agents=agents_list,
         tasks=tasks_list,
         process=Process.sequential,
         verbose=False,
         memory=False,
-        output_log_file=settings.crew_log_file,
+        output_log_file=log_file,
     )
     result = c.kickoff(inputs=inputs)
     # Accumulate this crew's token usage into the per-run total (otherwise
     # discarded — the flow builds a fresh crew per stage).
     try:
         from ..token_meter import add as _add_tokens
+
         _add_tokens(getattr(c, "usage_metrics", None))
     except Exception:
         pass
@@ -162,6 +173,7 @@ def _result_str(result: Any) -> str:
 
 
 # ── Main analysis flow ────────────────────────────────────────────────────────
+
 
 class StockAnalysisFlow(Flow[StockAnalysisState]):
     """
@@ -242,14 +254,17 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         shared = self._prompts["shared"]
         return (
             description.strip()
-            + "\n\n" + shared["with_data_suffix"].strip()
-            + "\n\n" + shared["rigor_footer"].strip()
+            + "\n\n"
+            + shared["with_data_suffix"].strip()
+            + "\n\n"
+            + shared["rigor_footer"].strip()
         )
 
     def _resolve_asset_type(self, symbol: str) -> str:
         if self._raw_asset_type != "auto":
             return self._raw_asset_type
         from ..tools.free_data_collection import _detect_asset_type
+
         return _detect_asset_type(symbol)
 
     @property
@@ -313,7 +328,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         if bundle is not None:
             _logger.info(
                 "[collect_data] reusing cached structured data for %s "
-                "(within %ds TTL) — no network fetch", sym, settings.data_cache_ttl
+                "(within %ds TTL) — no network fetch",
+                sym,
+                settings.data_cache_ttl,
             )
         else:
             bundle = self._fetch_structured_uncached()
@@ -408,9 +425,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             if fetched.get(key):
                 structured[key] = fetched[key]
 
-        headlines = [
-            n.get("title", "") for n in (yf_result.get("recent_news") or [])[:10]
-        ]
+        headlines = [n.get("title", "") for n in (yf_result.get("recent_news") or [])[:10]]
         structured["sentiment"] = {
             "social": fetched.get("social") or {"note": "social sources unavailable"},
             "options_positioning": fetched.get("options") or {"available": False},
@@ -501,7 +516,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             if peer_rows:
                 chart["peers"] = peer_rows
             # Valuation scenarios from street EPS estimates (assumptions disclosed)
-            eps_est = (an.get("eps_estimates") or {})
+            eps_est = an.get("eps_estimates") or {}
             eps_base = (eps_est.get("0y") or {}).get("avg")
             growth = (eps_est.get("+1y") or {}).get("growth_pct")
             if eps_base:
@@ -525,8 +540,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         import datetime as _dt
 
         path = (
-            Path(settings.data_output_dir)
-            / f"{self.state.symbol.upper()}_sentiment_history.json"
+            Path(settings.data_output_dir) / f"{self.state.symbol.upper()}_sentiment_history.json"
         )
         history: List[Dict[str, Any]] = []
         try:
@@ -575,7 +589,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 markdown=True,
             )
             stage_inputs = dict(inputs, analysis_key=key)
-            return key, _result_str(_run_crew([ag], [t], stage_inputs))
+            return key, _result_str(_run_crew([ag], [t], stage_inputs, log_suffix=key))
 
         max_workers = max(1, min(len(stages), settings.max_workers))
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -621,10 +635,13 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # Investor-first report: technical analysis only runs in deep mode and is
         # framed as a timing footnote; the standard path covers ownership instead.
         if depth == "deep" and not self._is_etf:
-            stages.append((
-                TechnicalAnalystAgent, "technical",
-                self._desc_technical(brief=False, backtest=True),
-            ))
+            stages.append(
+                (
+                    TechnicalAnalystAgent,
+                    "technical",
+                    self._desc_technical(brief=False, backtest=True),
+                )
+            )
         stages.append((FundamentalAnalystAgent, "fundamental", self._desc_for("fundamental")))
         if depth in ("standard", "deep"):
             if not self._is_etf:
@@ -726,8 +743,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             "recommendation": self.state.recommendation,
         }
         summary = "\n".join(
-            f"### {k}\n{v.get('result', 'N/A')[:3000]}"
-            for k, v in all_analyses.items() if v
+            f"### {k}\n{v.get('result', 'N/A')[:3000]}" for k, v in all_analyses.items() if v
         )
 
         rep = self._prompts["report"]
@@ -743,8 +759,16 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             markdown=True,
         )
         report_inputs = dict(self._inputs(), analyses_summary=summary)
-        result = _run_crew([agent], [t], report_inputs)
-        narrative = _strip_md_fences(_result_str(result))
+        try:
+            result = _run_crew([agent], [t], report_inputs)
+            narrative = _strip_md_fences(_result_str(result))
+        except Exception as exc:
+            _logger.warning(
+                "Report crew failed for %s: %s; HTML will fall back to the executive summary",
+                sym,
+                exc,
+            )
+            narrative = ""
 
         if narrative.count("## ") >= 3:
             self.state.report = narrative
@@ -757,6 +781,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
 
         # Rendering is deterministic — always done in code, never by the LLM.
         from ..tools.report_tools import render_html_report
+
         try:
             rendered = render_html_report(sym, asset_type=self.state.asset_type)
             if rendered.get("report_path"):
@@ -766,12 +791,15 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
 
     # ── public API ─────────────────────────────────────────────────────────────
 
-    def analyze_stock(self, symbol: str, analysis_depth: str = "standard", **kwargs: Any) -> Dict[str, Any]:
+    def analyze_stock(
+        self, symbol: str, analysis_depth: str = "standard", **kwargs: Any
+    ) -> Dict[str, Any]:
         """Run the full flow for a single stock or ETF."""
         try:
+            from .. import token_meter
             from ..llm_budget import reset as _reset_llm_budget
             from ..llm_budget import used as _llm_calls_used
-            from .. import token_meter
+
             _reset_llm_budget()
             token_meter.reset()
             # Explicitly clear mutable state so repeated calls on the same
@@ -779,15 +807,26 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             self.state.errors = []
             self.state.report = ""
             self.state.recommendation = {}
+            self.state.technical = {}
+            self.state.fundamental = {}
+            self.state.ownership = {}
+            self.state.risk = {}
+            self.state.sentiment = {}
+            self.state.market = {}
+            self.state.industry = {}
+            self.state.competitor = {}
+            self.state.economic = {}
             resolved_type = self._resolve_asset_type(symbol)
-            result = self.kickoff(inputs={
-                "symbol": symbol,
-                "analysis_depth": analysis_depth,
-                "asset_type": resolved_type,
-                "llm_provider": self._llm_provider,
-                "model": self._model,
-                **kwargs,
-            })
+            result = self.kickoff(
+                inputs={
+                    "symbol": symbol,
+                    "analysis_depth": analysis_depth,
+                    "asset_type": resolved_type,
+                    "llm_provider": self._llm_provider,
+                    "model": self._model,
+                    **kwargs,
+                }
+            )
             token_meter.check_alert()
             return {
                 "symbol": symbol,
@@ -801,10 +840,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             }
         except Exception as e:
             _logger.error("Flow analysis failed for %s: %s", symbol, e)
+            token_meter.check_alert()
             return {
                 "symbol": symbol,
                 "error": str(e),
                 "status": "failed",
                 "timestamp": datetime.now().isoformat(),
             }
-

@@ -81,6 +81,11 @@ def test_cancel_marks_job_aborted(monkeypatch, tmp_path):
     from src.stock_analysis.config import settings as settings_mod
     monkeypatch.setattr(settings_mod.settings, "report_output_dir", str(tmp_path))
 
+    # Genuine abort: analyze_stock stops short of completing (e.g. it caught
+    # AnalysisAbortedError internally) so its result status is NOT
+    # "completed" — this is what distinguishes a real abort from the
+    # completed-despite-cancel race covered below.
+    _FakeApp.result = {"status": "aborted", "token_usage": {}, "llm_calls": 3}
     _FakeApp.gate = threading.Event()
     job_id = client.post("/api/analyze", json={"symbol": "TSLA"}).json()["job_id"]
     # cancel while running
@@ -91,6 +96,26 @@ def test_cancel_marks_job_aborted(monkeypatch, tmp_path):
     assert job["state"] == "aborted"
     # a status marker was persisted for the history page
     assert (tmp_path / "TSLA" / "TSLA_run_status.json").exists()
+
+
+def test_cancel_race_completed_result_is_not_mislabeled_aborted(monkeypatch, tmp_path):
+    """Regression guard for the cancel/reset race: if analyze_stock finishes
+    and returns status="completed" just as a cancel was requested (the run
+    was already past its last abort-checkpoint), the job must be reported
+    completed — never mislabeled "aborted" just because cancel_requested was
+    set. The result's own status always wins over cancel_requested."""
+    from src.stock_analysis.config import settings as settings_mod
+    monkeypatch.setattr(settings_mod.settings, "report_output_dir", str(tmp_path))
+
+    # _patch_app's default _FakeApp.result already has status="completed".
+    _FakeApp.gate = threading.Event()
+    job_id = client.post("/api/analyze", json={"symbol": "TSLA"}).json()["job_id"]
+    c = client.post(f"/api/jobs/{job_id}/cancel")
+    assert c.status_code == 200 and c.json()["state"] == "cancelling"
+    _FakeApp.gate.set()  # analyze_stock returns status="completed" despite the cancel
+    job = _poll(job_id, until=("aborted", "completed", "failed"))
+    assert job["state"] == "completed"
+    assert job["result_ready"] is True
 
 
 def test_live_view_exposes_activity():

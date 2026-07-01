@@ -191,6 +191,15 @@ class AlertSettingsRequest(BaseModel):
     alert_smtp_password: Optional[str] = None
     alert_webhook_url: Optional[str] = None
 
+    @field_validator("alert_webhook_url")
+    @classmethod
+    def _validate_webhook_url(cls, v: Optional[str]) -> Optional[str]:
+        if not v:
+            return v
+        if not v.lower().startswith(("http://", "https://")):
+            raise ValueError("alert_webhook_url must start with http:// or https://")
+        return v
+
 
 class AlertSettingsResponse(BaseModel):
     alert_email: str

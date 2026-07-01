@@ -3,16 +3,15 @@
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, List
 
 from ..config.settings import settings
 
-_DB_PATH: Path = Path(settings.data_output_dir) / "watchlist.db"
 _initialized: bool = False
 
 
 def _db_path() -> Path:
-    return _DB_PATH
+    return Path(settings.data_output_dir) / "watchlist.db"
 
 
 def init_db() -> None:
@@ -20,17 +19,15 @@ def init_db() -> None:
     global _initialized
     if _initialized:
         return
-    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(_DB_PATH) as conn:
-        conn.execute(
-            """
+    _db_path().parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(_db_path()) as conn:
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS watchlist (
                 symbol   TEXT PRIMARY KEY,
                 added_at TEXT NOT NULL,
                 notes    TEXT DEFAULT ''
             )
-            """
-        )
+            """)
         conn.commit()
     _initialized = True
 
@@ -47,7 +44,7 @@ def add_symbol(symbol: str, notes: str = "") -> bool:
     """
     _ensure()
     added_at = datetime.now(timezone.utc).isoformat()
-    with sqlite3.connect(_DB_PATH) as conn:
+    with sqlite3.connect(_db_path()) as conn:
         cursor = conn.execute(
             "INSERT OR IGNORE INTO watchlist (symbol, added_at, notes) VALUES (?, ?, ?)",
             (symbol, added_at, notes),
@@ -62,10 +59,8 @@ def remove_symbol(symbol: str) -> bool:
     Returns True if the row was found and deleted, False if it was not present.
     """
     _ensure()
-    with sqlite3.connect(_DB_PATH) as conn:
-        cursor = conn.execute(
-            "DELETE FROM watchlist WHERE symbol = ?", (symbol,)
-        )
+    with sqlite3.connect(_db_path()) as conn:
+        cursor = conn.execute("DELETE FROM watchlist WHERE symbol = ?", (symbol,))
         conn.commit()
         return cursor.rowcount == 1
 
@@ -73,7 +68,7 @@ def remove_symbol(symbol: str) -> bool:
 def list_symbols() -> List[Dict[str, str]]:
     """Return all watchlist entries ordered by *added_at* descending."""
     _ensure()
-    with sqlite3.connect(_DB_PATH) as conn:
+    with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT symbol, added_at, notes FROM watchlist ORDER BY added_at DESC"
@@ -83,10 +78,8 @@ def list_symbols() -> List[Dict[str, str]]:
 
 def symbol_exists(symbol: str) -> bool:
     _ensure()
-    with sqlite3.connect(_DB_PATH) as conn:
-        row = conn.execute(
-            "SELECT 1 FROM watchlist WHERE symbol = ?", (symbol,)
-        ).fetchone()
+    with sqlite3.connect(_db_path()) as conn:
+        row = conn.execute("SELECT 1 FROM watchlist WHERE symbol = ?", (symbol,)).fetchone()
     return row is not None
 
 

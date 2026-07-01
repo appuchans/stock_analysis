@@ -30,6 +30,7 @@ class BacktestTool(BaseTool):
     ) -> Dict[str, Any]:
         try:
             from .free_data_collection import _normalize_period
+
             period = _normalize_period(period, default="2y")
             hist = yf.download(symbol, period=period, progress=False, auto_adjust=True)
             if hist.empty:
@@ -40,9 +41,13 @@ class BacktestTool(BaseTool):
             if strategy == "sma_crossover":
                 signals = self._sma_crossover_signals(close, fast_window, slow_window)
             elif strategy == "rsi_reversion":
-                signals = self._rsi_reversion_signals(close, rsi_window, rsi_oversold, rsi_overbought)
+                signals = self._rsi_reversion_signals(
+                    close, rsi_window, rsi_oversold, rsi_overbought
+                )
             else:
-                return {"error": f"Unknown strategy '{strategy}'. Use sma_crossover or rsi_reversion."}
+                return {
+                    "error": f"Unknown strategy '{strategy}'. Use sma_crossover or rsi_reversion."
+                }
 
             return self._compute_performance(close, signals, symbol, strategy)
 
@@ -96,9 +101,20 @@ class BacktestTool(BaseTool):
         max_drawdown = float(((cum - rolling_max) / rolling_max).min())
 
         signal_changes = signals.diff().abs()
-        trade_mask = signal_changes.shift(-1) > 0
-        win_rate = float((strategy_returns[trade_mask] > 0).mean()) if trade_mask.any() else 0.0
         total_trades = int(signal_changes.sum() / 2)
+
+        # Win rate: compound the return over each contiguous "in a trade" run
+        # (signal != 0) rather than looking at a single day's return.
+        sig = signals.reindex(strategy_returns.index).fillna(0)
+        in_trade = sig > 0
+        trade_id = (in_trade & ~in_trade.shift(1, fill_value=False)).cumsum().where(in_trade)
+        if in_trade.any():
+            segment_returns = strategy_returns.groupby(trade_id).apply(
+                lambda r: float((1 + r).prod() - 1)
+            )
+            win_rate = float((segment_returns > 0).mean()) if len(segment_returns) > 0 else 0.0
+        else:
+            win_rate = 0.0
 
         return {
             "symbol": symbol,

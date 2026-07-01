@@ -1,5 +1,6 @@
 """Pure-Python inline SVG charts for HTML reports — no plotting dependencies."""
 
+import html
 from typing import Dict, Sequence, Tuple
 
 _BLUE = "#2b6cb0"
@@ -36,6 +37,7 @@ def line_chart_svg(
     if len(pts) < 2:
         return ""
 
+    title = html.escape(str(title), quote=True)
     pad_l, pad_r, pad_t, pad_b = 64, 16, 30, 28
     plot_w, plot_h = width - pad_l - pad_r, height - pad_t - pad_b
     values = [v for _, v in pts]
@@ -78,7 +80,7 @@ def line_chart_svg(
     for i in range(0, len(pts), max(1, (len(pts) - 1) // 4)):
         parts.append(
             f'<text x="{x(i):.1f}" y="{height - 8}" font-size="11" fill="{_TEXT}" '
-            f'text-anchor="middle">{pts[i][0]}</text>'
+            f'text-anchor="middle">{html.escape(str(pts[i][0]), quote=True)}</text>'
         )
     parts.append(f'<polygon points="{area}" fill="{_BLUE_LIGHT}" opacity="0.45"/>')
     parts.append(
@@ -108,10 +110,13 @@ def bar_chart_svg(
     horizontal: bool = False,
 ) -> str:
     """Bar chart. Vertical by default; horizontal for long category labels."""
-    data = [(str(l), float(v)) for l, v in zip(labels, values) if v is not None]
+    data = [
+        (html.escape(str(l), quote=True), float(v)) for l, v in zip(labels, values) if v is not None
+    ]
     if not data:
         return ""
 
+    title = html.escape(str(title), quote=True)
     parts = [
         f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" '
         f'role="img" aria-label="{title}">'
@@ -167,7 +172,7 @@ def bar_chart_svg(
             parts.append(
                 f'<text x="{bx + bar_w / 2:.1f}" y="{by - 6 if v >= 0 else by + bh + 14:.1f}" '
                 f'font-size="11" font-weight="600" fill="{_TEXT}" text-anchor="middle">'
-                f'{unit}{_fmt(v)}{suffix}</text>'
+                f"{unit}{_fmt(v)}{suffix}</text>"
             )
             parts.append(
                 f'<text x="{bx + bar_w / 2:.1f}" y="{height - 8}" font-size="11" fill="{_TEXT}" '
@@ -199,6 +204,7 @@ def range_bar_svg(
     if high_f <= low_f:
         return ""
 
+    title = html.escape(str(title), quote=True)
     pad_l, pad_r = 70, 70
     band_y, band_h = height - 38, 12
     plot_w = width - pad_l - pad_r
@@ -246,7 +252,7 @@ def range_bar_svg(
         ly = band_y - 10 - (i % 2) * 14
         parts.append(
             f'<text x="{mx:.1f}" y="{ly}" font-size="11.5" font-weight="600" fill="{color}" '
-            f'text-anchor="middle">{label} {currency}{_fmt(float(value))}</text>'
+            f'text-anchor="middle">{html.escape(str(label), quote=True)} {currency}{_fmt(float(value))}</text>'
         )
     parts.append("</svg>")
     return "".join(parts)
@@ -270,6 +276,7 @@ def rating_bar_svg(
     if total <= 0:
         return ""
 
+    title = html.escape(str(title), quote=True)
     pad_l, pad_r = 16, 16
     bar_y, bar_h = 34, 22
     plot_w = width - pad_l - pad_r
@@ -281,7 +288,7 @@ def rating_bar_svg(
     if title:
         parts.append(
             f'<text x="{pad_l}" y="16" font-size="13" font-weight="600" fill="{_TEXT}">'
-            f'{title} ({total} analysts)</text>'
+            f"{title} ({total} analysts)</text>"
         )
     cx = float(pad_l)
     for key, label, color in order:

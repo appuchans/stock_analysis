@@ -23,6 +23,11 @@ from typing import Any, Callable, Dict, Optional, Tuple
 _logger = logging.getLogger(__name__)
 _redis_client: Any = None
 _redis_unavailable: bool = False
+# Monotonic timestamp after which a fresh Redis connection attempt is allowed
+# again, so a transient outage doesn't permanently disable Redis caching for
+# the life of the process.
+_redis_retry_after: float = 0.0
+_REDIS_RETRY_COOLDOWN = 60.0
 
 # In-process fallback cache used when Redis is unreachable. Besides saving API
 # calls, it makes repeated identical tool calls return identical results, which
@@ -68,6 +73,7 @@ def _sweep_disk_cache(d: str) -> None:
     """Delete cache files older than the age cap and trim to a file count cap."""
     try:
         import glob
+
         files = glob.glob(os.path.join(d, "*.json"))
         now = time.time()
         survivors = []
@@ -98,6 +104,7 @@ def _disk_dir() -> Optional[str]:
     if _disk_dir_cached is None:
         try:
             from ..config.settings import settings
+
             d = os.path.join(settings.data_output_dir, ".tool_cache")
             os.makedirs(d, exist_ok=True)
             _sweep_disk_cache(d)
@@ -155,21 +162,34 @@ def _disk_set(cache_key: str, payload: str, ttl: int) -> None:
 
 
 def _get_redis():
-    """Return a connected Redis client, or None when Redis is unreachable."""
-    global _redis_client, _redis_unavailable
+    """Return a connected Redis client, or None when Redis is unreachable.
+
+    Failures suppress further connection attempts for a cooldown window
+    (``_REDIS_RETRY_COOLDOWN``) rather than forever, so Redis coming back up
+    mid-run (or mid-process-lifetime) is picked up again automatically.
+    """
+    global _redis_client, _redis_unavailable, _redis_retry_after
     if _redis_unavailable:
-        return None
+        if time.monotonic() < _redis_retry_after:
+            return None
+        _redis_unavailable = False
     if _redis_client is None:
         try:
+            from urllib.parse import urlparse
+
             import redis
+
             from ..config.settings import settings
+
             client = redis.from_url(settings.redis_url, socket_connect_timeout=2)
             client.ping()
             _redis_client = client
-            _logger.debug("Redis cache connected: %s", settings.redis_url)
+            parsed = urlparse(settings.redis_url)
+            _logger.debug("Redis cache connected: %s:%s", parsed.hostname, parsed.port)
         except Exception as exc:
             _logger.debug("Redis unavailable, caching disabled: %s", exc)
             _redis_unavailable = True
+            _redis_retry_after = time.monotonic() + _REDIS_RETRY_COOLDOWN
     return _redis_client
 
 
@@ -178,6 +198,7 @@ def cached_tool(ttl: Optional[int] = None) -> Callable:
 
     Silently degrades to no-cache when Redis is unreachable.
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(self, *args, **kwargs):
@@ -214,6 +235,7 @@ def cached_tool(ttl: Optional[int] = None) -> Callable:
             is_error = isinstance(result, dict) and "error" in result
             if not is_error:
                 from ..config.settings import settings
+
                 effective_ttl = ttl if ttl is not None else settings.cache_ttl
                 payload = json.dumps(result, default=str)
                 if client is not None:
@@ -228,6 +250,7 @@ def cached_tool(ttl: Optional[int] = None) -> Callable:
             return result
 
         return wrapper
+
     return decorator
 
 

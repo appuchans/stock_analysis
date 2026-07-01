@@ -79,9 +79,7 @@ class JobManager:
             if self._active_id is not None:
                 active = self._jobs.get(self._active_id)
                 if active and active.state in _ACTIVE_STATES:
-                    raise JobConflictError(
-                        f"analysis already in progress for {active.symbol}"
-                    )
+                    raise JobConflictError(f"analysis already in progress for {active.symbol}")
             job = Job(
                 id=uuid.uuid4().hex,
                 symbol=symbol,
@@ -106,12 +104,16 @@ class JobManager:
                 return False
             job.cancel_requested = True
         from ..llm_budget import request_abort
+
         request_abort()
         _logger.info("cancellation requested for job %s (%s)", job_id, job.symbol)
         return True
 
     def _run(self, job: Job) -> None:
-        from ..llm_budget import AnalysisAbortedError
+        # analyze_stock() never lets AnalysisAbortedError propagate — it catches
+        # everything internally and returns a {"status": "failed", ...} dict, so
+        # abort-detection here happens via result.get("status") below, not a
+        # try/except around AnalysisAbortedError.
         from ..main import StockAnalysisApp
 
         job.state = "running"
@@ -122,8 +124,10 @@ class JobManager:
         try:
             # Archive the previous recommendation so diff can compare before/after
             try:
-                from . import _paths as _p
                 import shutil
+
+                from . import _paths as _p
+
                 cur = _p.recommendation_path(job.symbol)
                 prev = _p.prev_recommendation_path(job.symbol)
                 if cur and prev and cur.exists():
@@ -139,20 +143,17 @@ class JobManager:
             job.result = result
             job.token_usage = result.get("token_usage") or {}
             job.llm_calls = int(result.get("llm_calls") or 0)
-            if job.cancel_requested:
-                job.state = "aborted"
-                job.stage = "Aborted"
-            elif result.get("status") == "completed":
+            if result.get("status") == "completed":
                 job.state = "completed"
                 job.stage = "Completed"
                 job.progress = 1.0
+            elif job.cancel_requested:
+                job.state = "aborted"
+                job.stage = "Aborted"
             else:
                 job.state = "failed"
                 job.error = result.get("error") or "analysis failed"
                 job.stage = "Failed"
-        except AnalysisAbortedError:
-            job.state = "aborted"
-            job.stage = "Aborted"
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
             _logger.exception("analysis job %s failed", job.id)
             job.state = "aborted" if job.cancel_requested else "failed"
@@ -163,13 +164,16 @@ class JobManager:
             progress.set_active(None)
             try:
                 from .reports_index import write_run_status
+
                 write_run_status(job.symbol, job.state)
             except Exception:  # status persistence is best-effort
                 pass
             try:
-                from .alerts import check_and_dispatch
-                from . import _paths as _ap
                 import json as _json
+
+                from . import _paths as _ap
+                from .alerts import check_and_dispatch
+
                 cur_rec = None
                 prev_rec_data = None
                 cur_p = _ap.recommendation_path(job.symbol)
