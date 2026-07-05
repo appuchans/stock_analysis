@@ -34,15 +34,6 @@ class JobConflictError(RuntimeError):
     """Raised when a run is requested while another is queued/running."""
 
 
-def _n_specialists(depth: str, is_etf: bool) -> int:
-    """Specialist-stage count, mirroring flow_crew._stages_for (stock vs ETF)."""
-    if depth == "quick":
-        return 1
-    if depth == "standard":
-        return 3 if is_etf else 4
-    return 7 if is_etf else 9  # deep
-
-
 @dataclass
 class Job:
     id: str
@@ -57,6 +48,7 @@ class Job:
     llm_calls: int = 0
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    company_name: Optional[str] = None
     cancel_requested: bool = False
     created_at: str = field(default_factory=_now)
     started_at: Optional[str] = None
@@ -118,10 +110,18 @@ class JobManager:
 
         job.state = "running"
         job.started_at = _now()
-        is_etf = job.asset_type == "etf"
-        job.tracker = progress.StageTracker(_n_specialists(job.depth, is_etf))
+        job.tracker = progress.StageTracker()
         progress.set_active(job.tracker)
         try:
+            from ..tools.free_data_collection import resolve_symbol
+
+            info = resolve_symbol(job.symbol)
+            if info is None:
+                job.state = "failed"
+                job.stage = "Failed"
+                job.error = f"'{job.symbol}' doesn't look like a valid stock or ETF symbol"
+                return
+            job.company_name = info["name"]
             # Archive the previous recommendation so diff can compare before/after
             try:
                 import shutil
@@ -224,6 +224,7 @@ class JobManager:
         return {
             "id": job.id,
             "symbol": job.symbol,
+            "company_name": job.company_name,
             "depth": job.depth,
             "asset_type": job.asset_type,
             "state": job.state,

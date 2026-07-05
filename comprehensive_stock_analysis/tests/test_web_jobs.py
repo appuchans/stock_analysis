@@ -57,6 +57,17 @@ def _patch_app(monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _patch_resolve_symbol(monkeypatch):
+    """Keep the pre-flight symbol check off the network and deterministic;
+    invalid-symbol behavior is exercised separately via a per-test override."""
+    monkeypatch.setattr(
+        "src.stock_analysis.tools.free_data_collection.resolve_symbol",
+        lambda symbol: {"name": f"{symbol} Inc.", "asset_type": "stock"},
+    )
+    yield
+
+
 def test_completed_job_surfaces_result():
     r = client.post("/api/analyze", json={"symbol": "AAPL", "depth": "quick"})
     assert r.status_code == 202
@@ -74,6 +85,35 @@ def test_failed_job_surfaces_error():
     job = _poll(client.post("/api/analyze", json={"symbol": "MSFT"}).json()["job_id"])
     assert job["state"] == "failed"
     assert job["error"] == "boom"
+
+
+def test_completed_job_surfaces_company_name():
+    job = _poll(client.post("/api/analyze", json={"symbol": "AAPL", "depth": "quick"}).json()["job_id"])
+    assert job["company_name"] == "AAPL Inc."
+
+
+def test_invalid_symbol_fails_fast_without_running_the_flow(monkeypatch):
+    """A symbol that doesn't resolve to a real security (resolve_symbol
+    returns None) must fail before StockAnalysisApp.analyze_stock ever runs —
+    otherwise a bogus ticker would burn a full flow producing garbage output."""
+    monkeypatch.setattr(
+        "src.stock_analysis.tools.free_data_collection.resolve_symbol",
+        lambda symbol: None,
+    )
+    called = False
+
+    def _should_not_run(self, symbol, **k):
+        nonlocal called
+        called = True
+        return {"status": "completed"}
+
+    monkeypatch.setattr(_FakeApp, "analyze_stock", _should_not_run)
+
+    job = _poll(client.post("/api/analyze", json={"symbol": "ZZZINVALID"}).json()["job_id"])
+    assert job["state"] == "failed"
+    assert "ZZZINVALID" in job["error"]
+    assert job["company_name"] is None
+    assert called is False
 
 
 def test_cancel_marks_job_aborted(monkeypatch, tmp_path):
@@ -123,9 +163,47 @@ def test_live_view_exposes_activity():
     from src.stock_analysis.web.jobs import Job, manager
 
     job = Job(id="t1", symbol="AAPL", depth="standard", asset_type="auto", use_cache=True, state="running")
-    job.tracker = progress.StageTracker(4)
-    job.tracker.note("Risk Analyst · Yahoo Finance")
-    assert manager.live_view(job)["activity"] == "Risk Analyst · Yahoo Finance"
+    job.tracker = progress.StageTracker()
+    job.tracker.set_stage("Synthesizing recommendation", 0.80)
+    job.tracker.note("Risk Analysis · Yahoo Finance")
+    view = manager.live_view(job)
+    assert view["activity"] == "Risk Analysis · Yahoo Finance"
+    assert view["stage"] == "Synthesizing recommendation"
+    assert view["progress"] == 0.8
+
+
+def test_stage_progresses_through_flow_and_is_monotonic():
+    from src.stock_analysis.web import progress
+
+    t = progress.StageTracker()
+    progress.set_active(t)
+    try:
+        for method in ("collect_data", "standard_analysis",
+                       "synthesize_recommendation", "generate_report"):
+            progress._dispatch_stage(*progress._STAGE_MAP[method])
+        assert t.snapshot() == ("Generating report", 0.92)
+        # a stray earlier event must never move the bar backwards
+        progress._dispatch_stage(*progress._STAGE_MAP["collect_data"])
+        assert t.snapshot()[1] == 0.92
+    finally:
+        progress.set_active(None)
+
+
+def test_task_label_falls_back_to_task_object_when_task_name_unset():
+    """Regression: crewai's AgentExecutionStartedEvent never populates
+    task_name (only ToolUsageStartedEvent does), which used to freeze the
+    activity ticker on the last tool call once a stage — e.g. synthesis or
+    report generation — ran an agent that never invokes a tool."""
+    from src.stock_analysis.web.progress import _task_label
+
+    class _FakeTask:
+        name = "Investment Recommendation"
+
+    class _FakeEvent:
+        task_name = None
+        task = _FakeTask()
+
+    assert _task_label(_FakeEvent()) == "Investment Recommendation"
 
 
 def test_cancel_unknown_job_404():
