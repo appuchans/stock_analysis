@@ -4,7 +4,7 @@ from typing import List
 
 from fastapi import APIRouter
 
-from ..schemas import AlertItem, AlertSettingsRequest, AlertSettingsResponse, AlertsResponse
+from ..schemas import AlertItem, AlertSettingsRequest, AlertSettingsResponse
 from ...config.settings import settings
 
 router = APIRouter(prefix="/api", tags=["alerts"])
@@ -22,14 +22,13 @@ def _log_entry_to_item(entry: dict) -> AlertItem:
     )
 
 
-@router.get("/alerts", response_model=AlertsResponse)
-def list_alerts() -> AlertsResponse:
+@router.get("/alerts", response_model=List[AlertItem])
+def list_alerts() -> List[AlertItem]:
     from ..alerts import get_alert_log
-    entries = get_alert_log()
-    return AlertsResponse(items=[_log_entry_to_item(e) for e in entries])
+    return [_log_entry_to_item(e) for e in get_alert_log()]
 
 
-@router.post("/settings", response_model=dict)
+@router.post("/settings/alerts", response_model=dict)
 def save_alert_settings(body: AlertSettingsRequest) -> dict:
     _FIELDS = (
         "alert_email",
@@ -39,19 +38,17 @@ def save_alert_settings(body: AlertSettingsRequest) -> dict:
         "alert_smtp_password",
         "alert_webhook_url",
     )
-    updated: List[str] = []
     for field in _FIELDS:
         val = getattr(body, field)
         if val is not None:
             try:
                 object.__setattr__(settings, field, val)
-                updated.append(field)
             except Exception:
                 pass
-    return {"saved": True, "fields": updated}
+    return {"status": "ok"}
 
 
-@router.get("/settings", response_model=AlertSettingsResponse)
+@router.get("/settings/alerts", response_model=AlertSettingsResponse)
 def get_alert_settings() -> AlertSettingsResponse:
     return AlertSettingsResponse(
         alert_email=settings.alert_email,
