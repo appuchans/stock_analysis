@@ -62,6 +62,7 @@ function showProgress(symbol, isRefresh) {
   $("#progress-card").classList.remove("hidden");
   $("#progress-error").classList.add("hidden");
   $("#progress-symbol").textContent = symbol;
+  $("#progress-name").textContent = "";
   $("#progress-stage").textContent = isRefresh ? "Refreshing — queued…" : "Queued…";
   $("#progress-bar").style.width = "3%";
   $("#progress-pct").textContent = "0%";
@@ -104,6 +105,7 @@ function startPolling(jobId, symbol) {
     $("#progress-bar").style.width = Math.max(pct, 3) + "%";
     $("#progress-pct").textContent = pct + "%";
     $("#progress-stage").textContent = job.stage || job.state;
+    if (job.company_name) $("#progress-name").textContent = job.company_name;
     $("#progress-tokens").textContent = fmtNum((job.token_usage || {}).total_tokens || 0, 0);
     $("#progress-calls").textContent = job.llm_calls || 0;
     setStepper(job.progress || 0, job.state);

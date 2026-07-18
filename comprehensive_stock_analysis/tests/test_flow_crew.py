@@ -2,6 +2,7 @@
 
 import pytest
 
+from src.stock_analysis.crew import flow_crew
 from src.stock_analysis.crew.flow_crew import StockAnalysisFlow
 
 
@@ -102,3 +103,43 @@ class TestAnalyzeStockStateReset:
         assert flow.state.ownership == {"result": "ownership data for MSFT"}
         assert first["symbol"] == "AAPL"
         assert second["symbol"] == "MSFT"
+
+
+class TestSynthesizeRecommendationFailure:
+    """A recommendation-crew failure must degrade gracefully (matching
+    generate_report's behavior) instead of propagating and aborting the whole
+    flow with zero artifact — see CLAUDE.md's LLM Initialisation section."""
+
+    def _make_flow(self) -> StockAnalysisFlow:
+        flow = StockAnalysisFlow(use_data_cache=False, asset_type="stock")
+        flow.state.symbol = "AAPL"
+        flow.state.technical = {"result": "some technical analysis"}
+        return flow
+
+    def test_crew_exception_does_not_propagate(self, monkeypatch):
+        flow = self._make_flow()
+
+        def _raise(*args, **kwargs):
+            raise RuntimeError("LLM provider unavailable")
+
+        monkeypatch.setattr(flow_crew, "_run_crew", _raise)
+
+        flow.synthesize_recommendation()  # must not raise
+
+        assert flow.state.recommendation == {}
+
+    def test_crew_exception_skips_writing_report_file(self, monkeypatch):
+        flow = self._make_flow()
+        monkeypatch.setattr(
+            flow_crew,
+            "_run_crew",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+        written = []
+        monkeypatch.setattr(
+            flow_crew, "_write_report_file", lambda *a, **k: written.append(a)
+        )
+
+        flow.synthesize_recommendation()
+
+        assert written == []

@@ -103,6 +103,26 @@ def _detect_asset_type(symbol: str) -> str:
         return "stock"
 
 
+def resolve_symbol(symbol: str) -> Optional[Dict[str, str]]:
+    """Cheap pre-flight check: does ``symbol`` resolve to a real security, and
+    if so what's its display name? Used to fail fast and to surface the
+    company/fund name before the full analysis flow starts.
+
+    yfinance doesn't raise for a bogus ticker — ``.info`` just comes back
+    near-empty (e.g. ``{'trailingPegRatio': None}``) — so validity is judged
+    by whether a name is present, not by catching an exception.
+    """
+    try:
+        info = yf.Ticker(symbol).info or {}
+    except Exception:
+        return None
+    name = info.get("shortName") or info.get("longName")
+    if not name:
+        return None
+    asset_type = "etf" if (info.get("quoteType", "") or "").upper() == "ETF" else "stock"
+    return {"name": name, "asset_type": asset_type}
+
+
 def _fetch_top_holdings(ticker: "yf.Ticker") -> list:
     """Return list of top-10 holdings dicts or [] on failure."""
     try:

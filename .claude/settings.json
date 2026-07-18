@@ -14,7 +14,9 @@
       "Bash(python3 -c \"import crewai.utilities.events.crewai_events as e; print\\([x for x in dir\\(e\\) if 'Task' in x or 'task' in x]\\)\")",
       "Bash(python -c \"from stock_analysis.tools.analysis_tools import TechnicalAnalysisTool; from stock_analysis.tools.calculation_tools import TechnicalIndicatorTool; print\\('imports ok'\\)\")",
       "Bash(python3 -c \"from stock_analysis.tools.analysis_tools import TechnicalAnalysisTool; from stock_analysis.tools.calculation_tools import TechnicalIndicatorTool; print\\('imports ok'\\)\")",
-      "Bash(python3 -m pytest tests/ -q --tb=short)"
+      "Bash(python3 -m pytest tests/ -q --tb=short)",
+      "Bash(flake8 *)",
+      "mcp__Claude_Preview__preview_screenshot"
     ]
   }
 }

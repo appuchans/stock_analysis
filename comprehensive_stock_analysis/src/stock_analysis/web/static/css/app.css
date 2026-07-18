@@ -207,6 +207,7 @@ a { color: var(--accent); text-decoration: none; }
 .progress-card { margin-top: 18px; padding: 22px 24px; }
 .progress-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .progress-symbol { font-weight: 800; font-size: 18px; letter-spacing: .04em; }
+.progress-name { color: var(--text-2); font-size: 13.5px; }
 .progress-stage { color: var(--text-2); font-size: 13.5px; }
 .btn-cancel { margin-left: auto; }
 .stepper { display: flex; gap: 8px; margin-bottom: 16px; }

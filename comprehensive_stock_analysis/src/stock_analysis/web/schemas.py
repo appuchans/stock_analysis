@@ -32,6 +32,7 @@ class JobState(BaseModel):
 
     id: str
     symbol: str
+    company_name: Optional[str] = None
     depth: str
     asset_type: str
     state: Literal["queued", "running", "completed", "failed", "aborted"]

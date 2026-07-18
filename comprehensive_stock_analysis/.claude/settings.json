@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source .venv/bin/activate)",
+      "Bash(curl -s http://127.0.0.1:*)",
+      "mcp__Claude_Preview__preview_screenshot"
+    ]
+  }
+}

@@ -9,6 +9,9 @@ Sharing one Ticker across all summarizers minimizes Yahoo Finance API calls.
 """
 
 import logging
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +20,17 @@ import pandas as pd
 from . import _http
 
 _logger = logging.getLogger(__name__)
+
+# Common capitalized tokens that regex-match the ticker pattern but aren't
+# tickers; filtered out of web-search results in fetch_peer_symbols().
+_TICKER_STOPWORDS = {
+    "AND", "OR", "BUT", "FOR", "THE", "WITH", "FROM", "INTO", "OVER", "ITS",
+    "INC", "CORP", "LLC", "LTD", "PLC", "CO", "USA", "US", "UK", "EU",
+    "NYSE", "NASDAQ", "AMEX", "OTC", "ETF", "CEO", "CFO", "IPO", "ESG",
+    "SEC", "GDP", "CPI", "TTM", "YTD", "EPS", "PE", "FY", "Q1", "Q2", "Q3",
+    "Q4", "NEW", "TOP", "VS", "ALSO", "MORE", "WHAT", "WHO", "HOW", "WHY",
+    "ARE", "IS", "IT", "AI", "API", "FAQ", "HTML",
+}
 
 
 def _num(v: Any, digits: int = 4) -> Optional[float]:
@@ -461,37 +475,106 @@ def summarize_etf_portfolio(ticker: Any) -> Dict[str, Any]:
 # ── Peer comparison ───────────────────────────────────────────────────────────
 
 
-def fetch_peer_symbols(symbol: str, limit: int = 4) -> List[str]:
-    """Similar symbols from Yahoo's keyless recommendations endpoint."""
+def fetch_peer_symbols(
+    symbol: str,
+    company_name: Optional[str] = None,
+    sector: Optional[str] = None,
+    industry: Optional[str] = None,
+    limit: int = 4,
+) -> List[str]:
+    """Discover real business competitors via a keyless web search.
+
+    Yahoo's ``recommendationsbysymbol`` endpoint returns co-viewed/correlated
+    tickers, not actual competitors — it once paired PEGA (enterprise workflow
+    automation) with WEX (fleet-card payments) and Cognex (machine-vision
+    hardware). Instead, search for the company's named competitors and
+    extract ticker-shaped tokens from the results, then keep only candidates
+    that validate against yfinance (and, when available, share the subject's
+    sector) so unrelated companies don't slip through.
+    """
     try:
-        resp = _http.get(
-            f"https://query2.finance.yahoo.com/v6/finance/recommendationsbysymbol/{symbol.upper()}",
-            headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36"
-            },
-            timeout=10,
-        )
-        resp.raise_for_status()
-        recs = resp.json()["finance"]["result"][0]["recommendedSymbols"]
-        return [r["symbol"] for r in recs[:limit]]
-    except Exception as exc:
-        _logger.debug("peer symbols fetch failed: %s", exc)
+        from bs4 import BeautifulSoup  # optional dependency, imported lazily
+    except ImportError:
+        _logger.debug("bs4 not installed; cannot discover peers via web search")
         return []
+
+    query = f"{company_name or symbol} main competitors publicly traded stock ticker"
+
+    def _search() -> List[Any]:
+        """One DuckDuckGo HTML search attempt; [] on failure or a bot-check page."""
+        try:
+            resp = _http.get(
+                "https://html.duckduckgo.com/html/",
+                params={"q": query, "kl": "us-en"},
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36"
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+        except Exception as exc:
+            _logger.debug("peer web search failed: %s", exc)
+            return []
+        soup = BeautifulSoup(resp.content, "html.parser")
+        return soup.find_all("div", class_="result")[:8]
+
+    # DuckDuckGo's keyless HTML endpoint occasionally serves a bot-check page
+    # (no result divs) instead of real results; one retry with a short
+    # backoff recovers most of those without hammering the endpoint.
+    results = _search()
+    if not results:
+        time.sleep(1.5)
+        results = _search()
+    if not results:
+        return []
+
+    symbol_u = symbol.upper()
+    candidates: List[str] = []
+    for result in results:
+        title = result.find("a", class_="result__a")
+        snippet = result.find("a", class_="result__snippet")
+        text = " ".join(el.get_text(strip=True) for el in (title, snippet) if el)
+        for tok in re.findall(r"\b[A-Z]{1,5}\b", text):
+            if tok != symbol_u and tok not in _TICKER_STOPWORDS and tok not in candidates:
+                candidates.append(tok)
+    if not candidates:
+        return []
+    candidates = candidates[:15]
+
+    import yfinance as yf_module  # local import: keep module load light
+
+    def _is_plausible_peer(cand: str) -> bool:
+        try:
+            info = yf_module.Ticker(cand).info or {}
+            if not info.get("marketCap"):
+                return False
+            if sector and info.get("sector") and info.get("sector") != sector:
+                return False
+            return True
+        except Exception:
+            return False
+
+    validated: set = set()
+    with ThreadPoolExecutor(max_workers=min(len(candidates), 5)) as ex:
+        futures = {ex.submit(_is_plausible_peer, c): c for c in candidates}
+        for fut in as_completed(futures):
+            if fut.result():
+                validated.add(futures[fut])
+
+    # Preserve search-result relevance order rather than futures-completion order.
+    return [c for c in candidates if c in validated][:limit]
 
 
 def summarize_peers(symbol: str, yf_module: Any = None) -> Dict[str, Any]:
-    """Side-by-side key metrics for the subject company and its peers."""
+    """Side-by-side key metrics for the subject company and its true business peers."""
     if yf_module is None:
         import yfinance as yf_module  # type: ignore[no-redef]
 
-    peers = fetch_peer_symbols(symbol)
-    if not peers:
-        return {}
-
-    def _metrics(sym: str) -> Optional[Dict[str, Any]]:
+    def _metrics(sym: str, info: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         try:
-            info = yf_module.Ticker(sym).info or {}
+            if info is None:
+                info = yf_module.Ticker(sym).info or {}
             if not info.get("marketCap"):
                 return None
             return {
@@ -515,11 +598,30 @@ def summarize_peers(symbol: str, yf_module: Any = None) -> Dict[str, Any]:
             _logger.debug("peer metrics failed for %s: %s", sym, exc)
             return None
 
+    try:
+        subject_info = yf_module.Ticker(symbol).info or {}
+    except Exception as exc:
+        _logger.debug("subject info fetch failed for peers: %s", exc)
+        subject_info = {}
+
+    peers = fetch_peer_symbols(
+        symbol,
+        company_name=subject_info.get("shortName") or subject_info.get("longName"),
+        sector=subject_info.get("sector"),
+        industry=subject_info.get("industry"),
+    )
+    if not peers:
+        return {}
+
     rows = []
-    for sym in [symbol.upper()] + peers:
+    subject_row = _metrics(symbol, info=subject_info)
+    if subject_row:
+        subject_row["is_subject"] = True
+        rows.append(subject_row)
+    for sym in peers:
         row = _metrics(sym)
         if row:
-            row["is_subject"] = sym.upper() == symbol.upper()
+            row["is_subject"] = False
             rows.append(row)
     return {"rows": rows} if len(rows) >= 2 else {}
 

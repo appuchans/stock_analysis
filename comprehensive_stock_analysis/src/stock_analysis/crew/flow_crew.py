@@ -707,8 +707,17 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             output_pydantic=InvestmentRecommendation,
         )
         inputs = dict(self._inputs(), analyses_summary=context_summary)
-        result = _run_crew([agent], [t], inputs)
-        rec_text = _result_str(result)
+        try:
+            result = _run_crew([agent], [t], inputs)
+            rec_text = _result_str(result)
+        except Exception as exc:
+            _logger.warning(
+                "Recommendation crew failed for %s: %s; report will fall back to N/A rating",
+                self.state.symbol,
+                exc,
+            )
+            return
+
         self.state.recommendation = {"result": rec_text}
         # _result_str returns clean JSON when output_pydantic parsed successfully
         _write_report_file(

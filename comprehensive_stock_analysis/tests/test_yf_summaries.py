@@ -224,7 +224,7 @@ class TestInvestorFeatureSummarizers:
     def test_peers_with_mocked_endpoint(self, monkeypatch):
         from src.stock_analysis.tools import yf_summaries as ys
 
-        monkeypatch.setattr(ys, "fetch_peer_symbols", lambda s, limit=4: ["PEER"])
+        monkeypatch.setattr(ys, "fetch_peer_symbols", lambda s, **kwargs: ["PEER"])
 
         class _YF:
             class Ticker:
@@ -244,6 +244,54 @@ class TestInvestorFeatureSummarizers:
         assert rows[1]["symbol"] == "PEER"
         assert rows[0]["market_cap_b"] == 1000.0
         assert rows[0]["revenue_growth_pct"] == 40.0
+
+    def test_fetch_peer_symbols_web_search_filters_junk_and_sector_mismatch(self, monkeypatch):
+        """Web-search peer discovery should keep only real, sector-matching
+        competitors and drop stopword noise and cross-sector false positives
+        (the bug this replaces: Yahoo's recommendation endpoint pairing PEGA
+        with an unrelated fleet-payments company)."""
+        from src.stock_analysis.tools import _http, yf_summaries as ys
+
+        html = b"""
+        <div class="result">
+          <a class="result__a">GWRE and PRGS are top PEGA competitors</a>
+          <a class="result__snippet">Also mentioned: WEX and THE market</a>
+        </div>
+        """
+
+        class _Resp:
+            content = html
+
+            def raise_for_status(self):
+                pass
+
+        monkeypatch.setattr(_http, "get", lambda *a, **k: _Resp())
+
+        class _FakeYFTicker:
+            def __init__(self, sym):
+                self._sym = sym
+
+            @property
+            def info(self):
+                data = {
+                    "GWRE": {"marketCap": 1e10, "sector": "Technology"},
+                    "PRGS": {"marketCap": 2e9, "sector": "Technology"},
+                    "WEX": {"marketCap": 5e9, "sector": "Financial Services"},
+                }
+                return data.get(self._sym, {})
+
+        class _FakeYF:
+            Ticker = _FakeYFTicker
+
+        import sys
+        monkeypatch.setitem(sys.modules, "yfinance", _FakeYF)
+
+        peers = ys.fetch_peer_symbols("PEGA", sector="Technology", limit=4)
+
+        assert "GWRE" in peers
+        assert "PRGS" in peers
+        assert "WEX" not in peers  # sector mismatch — not a real peer
+        assert "THE" not in peers  # stopword, not a ticker
 
     def test_search_interest_absent_pytrends_is_graceful(self, monkeypatch):
         import builtins
