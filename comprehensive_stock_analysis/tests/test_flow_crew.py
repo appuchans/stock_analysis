@@ -104,6 +104,29 @@ class TestAnalyzeStockStateReset:
         assert first["symbol"] == "AAPL"
         assert second["symbol"] == "MSFT"
 
+    def test_stage_errors_mark_the_result_as_failed(self, monkeypatch):
+        flow = self._make_flow()
+
+        def _kickoff_with_stage_error(inputs=None, **kwargs):
+            flow.state.errors.append("risk: LLM provider unavailable")
+
+        monkeypatch.setattr(flow, "kickoff", _kickoff_with_stage_error)
+
+        result = flow.analyze_stock("AAPL")
+
+        assert result["status"] == "failed"
+        assert result["error"] == "risk: LLM provider unavailable"
+        assert result["errors"] == ["risk: LLM provider unavailable"]
+
+    def test_invalid_symbol_fails_before_kickoff(self, monkeypatch):
+        flow = self._make_flow()
+        monkeypatch.setattr(flow, "kickoff", pytest.fail)
+
+        result = flow.analyze_stock("../outside")
+
+        assert result["status"] == "failed"
+        assert "symbol must be" in result["error"]
+
 
 class TestSynthesizeRecommendationFailure:
     """A recommendation-crew failure must degrade gracefully (matching

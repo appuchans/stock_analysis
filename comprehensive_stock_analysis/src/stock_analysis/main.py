@@ -230,6 +230,8 @@ Examples:
 
     if len(args.symbol) == 1:
         results = app.analyze_stock(args.symbol[0])
+        if s["failed"]:
+            sys.exit(1)
     else:
         results = app.analyze_multiple_stocks(args.symbol)
 

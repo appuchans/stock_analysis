@@ -1,6 +1,6 @@
 """Portfolio-level analysis across multiple stocks."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -25,6 +25,7 @@ class PortfolioAnalysisTool(BaseTool):
         symbols: List[str],
         period: str = "1y",
         risk_free_rate: float = 0.02,
+        weights: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         try:
             if len(symbols) < 2:
@@ -45,7 +46,17 @@ class PortfolioAnalysisTool(BaseTool):
             individual = self._individual_metrics(returns, risk_free_rate)
             equal_weights = {s: round(1.0 / len(available), 4) for s in available}
             mv_weights = self._min_variance_weights(returns)
-            portfolio_metrics = self._portfolio_metrics(returns, mv_weights, risk_free_rate)
+            if weights is not None:
+                if set(weights) != set(available):
+                    return {"error": "User-supplied weights must match available price-data symbols"}
+                portfolio_weights = {symbol: float(weights[symbol]) for symbol in available}
+                allocation_method = "user_supplied"
+            else:
+                portfolio_weights = mv_weights
+                allocation_method = "minimum_variance_proxy"
+            portfolio_metrics = self._portfolio_metrics(
+                returns, portfolio_weights, risk_free_rate
+            )
 
             return {
                 "symbols": available,
@@ -54,6 +65,8 @@ class PortfolioAnalysisTool(BaseTool):
                 "individual_metrics": individual,
                 "equal_weight_allocation": equal_weights,
                 "min_variance_weights": mv_weights,
+                "portfolio_weights": portfolio_weights,
+                "allocation_method": allocation_method,
                 "portfolio_metrics": portfolio_metrics,
             }
 

@@ -1,18 +1,10 @@
 """Path helpers with a containment guard against directory traversal."""
 
-import re
 from pathlib import Path
 from typing import Optional
 
 from ..config.settings import settings
-
-_SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
-
-
-def safe_symbol(symbol: str) -> Optional[str]:
-    """Return the normalized symbol, or None if it isn't a valid ticker."""
-    s = (symbol or "").strip().upper()
-    return s if _SYMBOL_RE.match(s) else None
+from ..symbols import safe_symbol
 
 
 def reports_root() -> Path:

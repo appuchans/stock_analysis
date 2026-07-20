@@ -28,6 +28,7 @@ from ..agents import (
 from ..config.loader import config_loader
 from ..config.settings import settings
 from ..models.stock_data import InvestmentRecommendation
+from ..symbols import normalize_symbol
 from .event_listener import (  # noqa: F401 — registers event handlers on import
     event_listener,
 )
@@ -37,7 +38,7 @@ _logger = logging.getLogger(__name__)
 
 def _report_path(symbol: str, filename: str) -> str:
     """Build an output path inside the configured reports directory."""
-    return str(Path(settings.report_output_dir) / symbol / filename)
+    return str(Path(settings.report_output_dir) / normalize_symbol(symbol) / filename)
 
 
 def _strip_md_fences(text: str) -> str:
@@ -805,6 +806,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
     ) -> Dict[str, Any]:
         """Run the full flow for a single stock or ETF."""
         try:
+            symbol = normalize_symbol(symbol)
             from .. import token_meter
             from ..llm_budget import reset as _reset_llm_budget
             from ..llm_budget import used as _llm_calls_used
@@ -837,12 +839,15 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 }
             )
             token_meter.check_alert()
+            errors = list(self.state.errors)
             return {
                 "symbol": symbol,
                 "analysis_depth": analysis_depth,
                 "report": self.state.report,
                 "recommendation": self.state.recommendation,
-                "status": "completed",
+                "status": "failed" if errors else "completed",
+                "error": "; ".join(errors) if errors else None,
+                "errors": errors,
                 "token_usage": token_meter.snapshot(),
                 "llm_calls": _llm_calls_used(),
                 "timestamp": datetime.now().isoformat(),

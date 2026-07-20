@@ -123,6 +123,23 @@ class TestPortfolioAnalyzeEndpoint:
         assert _args[1] == "1y"
         assert _args[2] == pytest.approx(0.02)
 
+    def test_custom_weights_are_forwarded(self, mock_portfolio_tool):
+        weights = {"AAPL": 0.7, "MSFT": 0.3}
+        resp = client.post(
+            "/api/portfolio/analyze",
+            json={"symbols": ["AAPL", "MSFT"], "weights": weights},
+        )
+        assert resp.status_code == 200
+        _args, _kwargs = mock_portfolio_tool.call_args
+        assert _args[3] == weights
+
+    def test_weights_must_match_symbols(self):
+        resp = client.post(
+            "/api/portfolio/analyze",
+            json={"symbols": ["AAPL", "MSFT"], "weights": {"AAPL": 1.0}},
+        )
+        assert resp.status_code == 422
+
 
 # ── Watchlist ──────────────────────────────────────────────────────────────────
 

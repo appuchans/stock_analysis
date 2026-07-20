@@ -192,6 +192,21 @@ def test_check_and_dispatch_fires_on_recommendation_flip(_temp_reports, tmp_path
     assert "recommendation changed" in log[0]["reason"]
 
 
+def test_recommendation_flip_without_confidence_still_dispatches(_temp_reports, monkeypatch):
+    from src.stock_analysis.web import alerts
+
+    sent = []
+    monkeypatch.setattr(alerts, "_send_email", lambda subject, body: sent.append(body))
+    monkeypatch.setattr(alerts, "_send_webhook", lambda payload: sent.append(payload))
+
+    alerts.check_and_dispatch(
+        "MSFT", {"recommendation": "Sell"}, {"recommendation": "Buy"}
+    )
+
+    assert "confidence N/A" in sent[0]
+    assert sent[1]["new_confidence"] is None
+
+
 def test_check_and_dispatch_fires_on_confidence_drop(_temp_reports, tmp_path):
     from src.stock_analysis.web.alerts import check_and_dispatch, get_alert_log
     new_rec = dict(_REC_BUY, confidence=0.50)

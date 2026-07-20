@@ -111,19 +111,17 @@ class Settings(BaseSettings):
     @field_validator("llm_provider")
     @classmethod
     def validate_llm_provider(cls, v: str) -> str:
+        """Normalise the provider name — not a whitelist.
+
+        BaseAgent._build_llm resolves any provider via LiteLLM's generic
+        "<provider>/<model>" convention (config/llm_config.yaml's
+        provider_prefixes just documents known ones; unlisted providers fall
+        back to that same convention), so this must not reject providers the
+        rest of the system already supports.
+        """
         if not v:
             return v  # empty = defer to llm_config.yaml
-        valid = {
-            "openai", "anthropic", "ollama", "azure",
-            "groq", "mistral", "cohere", "bedrock",
-            "huggingface", "vertexai",
-        }
-        if v.lower() not in valid:
-            raise ValueError(
-                f"LLM_PROVIDER must be one of {sorted(valid)} (got '{v}'). "
-                "Add custom providers to config/llm_config.yaml provider_prefixes."
-            )
-        return v.lower()
+        return v.strip().lower()
 
     model_config = {
         "env_file": ".env",

@@ -7,6 +7,7 @@ InvestmentRecommendation, and the calculators use the RiskLevel /
 RecommendationType enums.
 """
 
+import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
@@ -171,6 +172,26 @@ class InvestmentRecommendation(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="Timestamp of the recommendation",
     )
+
+    @field_validator("target_price", "stop_loss", mode="before")
+    @classmethod
+    def _coerce_price(cls, v: object) -> object:
+        """Tolerate LLM prose in the numeric price fields.
+
+        The advisor frequently returns values like "115 (percentage-based
+        target)" or "Not determinable without current price" here. Extract a
+        leading numeric value when one is present, otherwise treat the field as
+        unset (None) — so a single non-numeric price never rejects the entire
+        recommendation and forces the whole report to an N/A rating.
+        """
+        if v is None or isinstance(v, (int, float, Decimal)):
+            return v
+        if isinstance(v, str):
+            match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", v)
+            if match is None:
+                return None
+            return Decimal(match.group(0).replace(",", ""))
+        return v
 
     @field_validator("confidence")
     @classmethod

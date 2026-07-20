@@ -118,8 +118,8 @@ def check_and_dispatch(
     body = (
         f"Symbol: {symbol}\n"
         f"Change: {reason_str}\n"
-        f"Previous: {old_r} (confidence {old_c:.0%})\n"
-        f"Current:  {new_r} (confidence {new_c:.0%})\n"
+        f"Previous: {old_r} (confidence {_format_confidence(old_c)})\n"
+        f"Current:  {new_r} (confidence {_format_confidence(new_c)})\n"
     )
     _send_email(subject, body)
     _send_webhook(entry)
@@ -131,6 +131,11 @@ def _to_float(v: Any) -> Optional[float]:
         return None if f != f else f
     except (TypeError, ValueError):
         return None
+
+
+def _format_confidence(value: Optional[float]) -> str:
+    """Format an optional recommendation confidence for a notification."""
+    return f"{value:.0%}" if value is not None else "N/A"
 
 
 def get_alert_log() -> List[Dict[str, Any]]:

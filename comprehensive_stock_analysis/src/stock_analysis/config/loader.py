@@ -60,6 +60,14 @@ class LLMConfig(BaseModel):
         "bedrock": "bedrock/",
         "huggingface": "huggingface/",
         "vertexai": "vertexai/",
+        "gemini": "gemini/",
+        "deepseek": "deepseek/",
+        "openrouter": "openrouter/",
+        "xai": "xai/",
+        "perplexity": "perplexity/",
+        "fireworks_ai": "fireworks_ai/",
+        "together_ai": "together_ai/",
+        "cerebras": "cerebras/",
     })
 
     model_config = {"populate_by_name": True}

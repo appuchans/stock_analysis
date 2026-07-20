@@ -1,8 +1,11 @@
 """Pydantic request/response models for the web API."""
 
+import math
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from ..symbols import safe_symbol
 
 # Ticker / fund symbol: 1–10 chars, uppercase letters, digits, dot, hyphen.
 _SYMBOL_RE = r"^[A-Z][A-Z0-9.\-]{0,9}$"
@@ -109,10 +112,24 @@ class PortfolioRequest(BaseModel):
     def _check_weights(cls, v: Optional[Dict[str, float]]) -> Optional[Dict[str, float]]:
         if v is None:
             return v
-        total = sum(v.values())
+        normalized = {}
+        for symbol, weight in v.items():
+            normalized_symbol = safe_symbol(symbol)
+            if not normalized_symbol:
+                raise ValueError(f"invalid weight symbol: {symbol!r}")
+            if not math.isfinite(weight) or weight < 0:
+                raise ValueError("weights must be finite, non-negative values")
+            normalized[normalized_symbol] = weight
+        total = sum(normalized.values())
         if abs(total - 1.0) > 0.01:
             raise ValueError(f"weights must sum to 1.0 (got {total:.4f})")
-        return v
+        return normalized
+
+    @model_validator(mode="after")
+    def _weights_match_symbols(self) -> "PortfolioRequest":
+        if self.weights is not None and set(self.weights) != set(self.symbols):
+            raise ValueError("weights must contain exactly the requested symbols")
+        return self
 
 
 class PortfolioResponse(BaseModel):
@@ -122,6 +139,8 @@ class PortfolioResponse(BaseModel):
     individual_metrics: Dict[str, Any]
     equal_weight_allocation: Dict[str, float]
     min_variance_weights: Dict[str, float]
+    portfolio_weights: Dict[str, float]
+    allocation_method: str
     portfolio_metrics: Dict[str, Any]
 
 

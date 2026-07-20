@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Tuple
 from crewai.tools import BaseTool
 
 from ..config.settings import settings
+from ..symbols import normalize_symbol
 
 _logger = logging.getLogger(__name__)
 
@@ -913,6 +914,10 @@ class ReportGeneratorTool(BaseTool):
         asset_type: str = "stock",
     ) -> Dict[str, Any]:
         """Generate a report. analysis_data is a JSON object of analysis results."""
+        try:
+            symbol = normalize_symbol(symbol)
+        except ValueError as exc:
+            return {"error": str(exc)}
         if isinstance(analysis_data, dict):
             data: Dict[str, Any] = analysis_data
         else:
@@ -1539,6 +1544,7 @@ class ReportGeneratorTool(BaseTool):
         repeated-call detection). The generation time is shown inside the
         report itself.
         """
-        output_dir = Path(settings.report_output_dir) / symbol.upper() / "html"
+        symbol = normalize_symbol(symbol)
+        output_dir = Path(settings.report_output_dir) / symbol / "html"
         output_dir.mkdir(parents=True, exist_ok=True)
-        return output_dir / f"{symbol.upper()}_report.{ext}"
+        return output_dir / f"{symbol}_report.{ext}"
