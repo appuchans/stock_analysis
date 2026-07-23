@@ -104,7 +104,9 @@ function startPolling(jobId, symbol) {
     const pct = Math.round((job.progress || 0) * 100);
     $("#progress-bar").style.width = Math.max(pct, 3) + "%";
     $("#progress-pct").textContent = pct + "%";
-    $("#progress-stage").textContent = job.stage || job.state;
+    $("#progress-stage").textContent = job.state === "queued" && job.queue_position > 0
+      ? `Queued — ${job.queue_position} ahead`
+      : (job.stage || job.state);
     if (job.company_name) $("#progress-name").textContent = job.company_name;
     $("#progress-tokens").textContent = fmtNum((job.token_usage || {}).total_tokens || 0, 0);
     $("#progress-calls").textContent = job.llm_calls || 0;

@@ -1,6 +1,6 @@
 // Report view: embed the full HTML report + build the interactive Overview
 // dashboard from chart_data.json using Chart.js, themed to match light/dark.
-import { $, $$, el, fetchJSON, fmtNum, fmtMoney, fmtCompact, badgeClass, theme } from "./util.js";
+import { $, $$, el, fetchJSON, fmtNum, fmtMoney, fmtCompact, badgeClass, theme, timeAgo } from "./util.js";
 
 let charts = [];
 let last = null; // { symbol, chart, rec } — kept so we can re-theme without refetch
@@ -47,12 +47,17 @@ export async function renderReport(symbol) {
     rec = (hist.items || []).find((it) => it.symbol === symbol);
   } catch (_) { /* recommendation banner is best-effort */ }
 
-  last = { symbol, chart, rec };
+  let diff = null;
+  try {
+    diff = await fetchJSON(`/api/reports/${symbol}/diff`);
+  } catch (_) { /* diff panel is best-effort — older reports may lack a prev snapshot */ }
+
+  last = { symbol, chart, rec, diff };
   buildDashboard();
 }
 
 function buildDashboard() {
-  const { symbol, chart, rec } = last;
+  const { symbol, chart, rec, diff } = last;
   const isEtf = chart.asset_type === "etf" || !!chart.etf_profile;
   const company = chart.company || {};
   $("#report-name").textContent = company.name || "";
@@ -64,7 +69,9 @@ function buildDashboard() {
   destroyCharts();
   chartDefaults();
 
+  if (chart.data_fetched_at) host.append(freshnessChip(chart.data_fetched_at));
   if (rec && rec.recommendation) host.append(recBanner(rec));
+  if (diff && diff.has_diff) host.append(diffPanel(diff));
   host.append(isEtf
     ? etfTiles(chart.key_stats || {}, chart.etf_profile || {}, symbol)
     : keyTiles(chart.key_stats || {}, chart.analyst || {}));
@@ -106,6 +113,46 @@ function skeleton() {
 /* ── Building blocks ─────────────────────────────────────────────────────── */
 
 const deltaCls = (v) => (v == null ? "" : v > 0 ? "pos" : v < 0 ? "neg" : "");
+
+function freshnessChip(iso) {
+  const ago = timeAgo(iso);
+  return el("div", { class: "freshness-row" },
+    el("span", { class: "chip" }, `Data as of ${ago || (iso || "").replace("T", " ")}`));
+}
+
+// "What changed since the last run" — built from GET /api/reports/{symbol}/diff.
+function diffPanel(diff) {
+  const rows = [];
+  if (diff.recommendation_changed) {
+    rows.push(diffRow("Recommendation",
+      `${diff.previous?.recommendation || "—"} → ${diff.current?.recommendation || "—"}`, "changed"));
+  }
+  if (diff.target_price_delta != null && Math.abs(diff.target_price_delta) > 0.005) {
+    rows.push(diffRow("Target price",
+      (diff.target_price_delta >= 0 ? "+" : "") + fmtMoney(diff.target_price_delta),
+      deltaCls(diff.target_price_delta)));
+  }
+  if (diff.confidence_delta != null && Math.abs(diff.confidence_delta) > 0.005) {
+    rows.push(diffRow("Confidence",
+      (diff.confidence_delta >= 0 ? "+" : "") + fmtNum(diff.confidence_delta * 100, 0) + "%",
+      deltaCls(diff.confidence_delta)));
+  }
+  (diff.new_risks || []).forEach((r) => rows.push(diffRow("New risk", r, "neg")));
+  (diff.removed_risks || []).forEach((r) => rows.push(diffRow("Resolved risk", r, "pos")));
+  (diff.new_opportunities || []).forEach((o) => rows.push(diffRow("New opportunity", o, "pos")));
+  (diff.removed_opportunities || []).forEach((o) => rows.push(diffRow("Dropped opportunity", o, "")));
+
+  if (!rows.length) return null;
+  return el("div", { class: "panel diff-panel" },
+    el("div", { class: "panel-head" }, el("h3", {}, "What changed since the last run")),
+    el("div", { class: "diff-rows" }, rows));
+}
+
+function diffRow(label, value, cls) {
+  return el("div", { class: "diff-row" },
+    el("span", { class: "diff-label" }, label),
+    el("span", { class: "diff-value " + (cls || "") }, value));
+}
 
 function recBanner(rec) {
   const upside = rec.target_price && rec.current_price

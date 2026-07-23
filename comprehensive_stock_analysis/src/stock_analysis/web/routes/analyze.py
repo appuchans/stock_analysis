@@ -2,19 +2,22 @@
 
 from fastapi import APIRouter, HTTPException
 
-from ..jobs import JobConflictError, manager
-from ..schemas import AnalyzeRequest, AnalyzeResponse, JobState
+from ..jobs import manager
+from ..schemas import AnalyzeRequest, AnalyzeResponse, JobState, QueueResponse
 
 router = APIRouter(prefix="/api", tags=["analyze"])
 
 
 @router.post("/analyze", response_model=AnalyzeResponse, status_code=202)
 def submit_analysis(req: AnalyzeRequest) -> AnalyzeResponse:
-    try:
-        job = manager.submit(req.symbol, req.depth, req.asset_type, req.use_cache)
-    except JobConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+    job = manager.submit(req.symbol, req.depth, req.asset_type, req.use_cache)
     return AnalyzeResponse(job_id=job.id, state=job.state)
+
+
+@router.get("/jobs", response_model=QueueResponse)
+def list_queue() -> QueueResponse:
+    """Active + queued jobs, in run order (for a backlog/queue display)."""
+    return QueueResponse(active_id=manager.active_id, items=manager.queue_view())
 
 
 @router.get("/jobs/{job_id}", response_model=JobState)

@@ -244,6 +244,14 @@ a { color: var(--accent); text-decoration: none; }
 
 /* ── Dashboard ─────────────────────────────────────────────────────────── */
 #dashboard { display: flex; flex-direction: column; gap: 18px; }
+.freshness-row { display: flex; }
+.diff-panel { border-left: 3px solid var(--accent); }
+.diff-rows { display: flex; flex-direction: column; gap: 2px; }
+.diff-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 13.5px; border-bottom: 1px solid var(--border); }
+.diff-row:last-child { border-bottom: none; }
+.diff-label { color: var(--text-3); }
+.diff-value { font-weight: 600; }
+.diff-value.changed { color: var(--accent); }
 .rec-banner {
   display: flex; flex-wrap: wrap; align-items: center; gap: 16px 26px;
   padding: 20px 24px; border-radius: var(--r-lg); border: 1px solid var(--border);
@@ -295,6 +303,36 @@ table.peers tr.subject { background: var(--accent-soft); font-weight: 700; }
 .btn-refresh { color: var(--text-2); }
 .btn-refresh svg { width: 14px; height: 14px; }
 
+/* ── Watchlist ─────────────────────────────────────────────────────────── */
+.watchlist-form { display: grid; grid-template-columns: 1fr 2fr auto; gap: 18px 20px; align-items: end; }
+.table-card { padding: 0; margin-top: 18px; overflow-x: auto; }
+table.wl-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.wl-table th, table.wl-table td { text-align: left; padding: 13px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table.wl-table th { color: var(--text-3); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+table.wl-table td.num { text-align: right; font-feature-settings: "tnum" 1; }
+table.wl-table th:nth-child(3), table.wl-table th:nth-child(4) { text-align: right; }
+tr.wl-row.clickable { cursor: pointer; }
+tr.wl-row.clickable:hover { background: var(--surface-2); }
+.wl-sym { font-weight: 700; }
+.wl-notes { font-size: 12px; color: var(--text-3); margin-top: 2px; white-space: normal; }
+.wl-spark { display: block; width: 90px; height: 26px; }
+.freshness { font-size: 12.5px; }
+.freshness.fresh { color: var(--pos); }
+.freshness.aging { color: var(--warn); }
+.freshness.stale { color: var(--text-3); }
+.wl-actions { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.sk-row { height: 20px; margin: 6px 0; }
+
+/* ── Alerts ────────────────────────────────────────────────────────────── */
+.alert-settings-form { display: flex; flex-direction: column; gap: 14px; }
+.alert-settings-actions { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.alert-log-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.alert-log-item:last-child { border-bottom: none; }
+.alert-log-dot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: 6px; }
+.alert-log-body { flex: 1; min-width: 0; }
+.alert-log-reason { font-size: 13.5px; color: var(--text); }
+.alert-log-meta { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
 /* ── Skeletons / empty ─────────────────────────────────────────────────── */
 .skeleton { background: linear-gradient(90deg, var(--surface-2) 25%, var(--inset) 37%, var(--surface-2) 63%); background-size: 400% 100%; animation: shimmer 1.4s ease infinite; border-radius: var(--r); }
 .sk-card { height: 150px; }
@@ -304,7 +342,7 @@ table.peers tr.subject { background: var(--accent-soft); font-weight: 700; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 
 /* ── Responsive ────────────────────────────────────────────────────────── */
-@media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } .analyze-form { grid-template-columns: 1fr; } }
+@media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } .analyze-form { grid-template-columns: 1fr; } .watchlist-form { grid-template-columns: 1fr; } }
 @media (max-width: 760px) {
   .sidebar { position: fixed; left: 0; top: 0; z-index: 50; transform: translateX(-100%); transition: transform .25s ease; box-shadow: var(--shadow-lg); }
   .app.sb-open .sidebar { transform: translateX(0); }

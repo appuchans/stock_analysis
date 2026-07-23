@@ -31,6 +31,14 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
           History
         </a>
+        <a href="#/watchlist" data-nav="watchlist" class="sb-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2a9 9 0 1 0 6.32 15.43"/><path d="M22 12A9 9 0 0 0 13 3v9z"/></svg>
+          Watchlist
+        </a>
+        <a href="#/alerts" data-nav="alerts" class="sb-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          Alerts
+        </a>
       </nav>
       <div class="sb-spacer"></div>
       <button id="theme-toggle" class="sb-toggle" type="button">
@@ -152,6 +160,92 @@
           </div>
           <div id="history-grid" class="history-grid"></div>
           <div id="history-empty" class="empty-state hidden">No analyses yet. Run one to get started.</div>
+        </section>
+
+        <!-- Watchlist -->
+        <section id="view-watchlist" class="view">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Watchlist</h1>
+              <p class="page-sub">Symbols you're tracking. Analyze one at a time or all at once.</p>
+            </div>
+            <button id="watchlist-analyze-all" type="button" class="btn btn-primary">Analyze all</button>
+          </div>
+          <div class="card">
+            <form id="watchlist-form" class="watchlist-form" autocomplete="off">
+              <div class="field field-symbol">
+                <label for="watchlist-symbol">Ticker</label>
+                <input id="watchlist-symbol" type="text" placeholder="AAPL" maxlength="10" required />
+              </div>
+              <div class="field">
+                <label for="watchlist-notes">Notes (optional)</label>
+                <input id="watchlist-notes" type="text" placeholder="Why you're watching it" />
+              </div>
+              <button id="watchlist-add-btn" type="submit" class="btn btn-secondary">Add</button>
+            </form>
+          </div>
+          <div class="card table-card">
+            <table class="wl-table">
+              <thead>
+                <tr>
+                  <th>Symbol</th><th>Recommendation</th><th>Confidence</th><th>Price</th>
+                  <th>Trend</th><th>Last analyzed</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="watchlist-body"></tbody>
+            </table>
+          </div>
+          <div id="watchlist-empty" class="empty-state hidden">Your watchlist is empty. Add a symbol above.</div>
+        </section>
+
+        <!-- Alerts -->
+        <section id="view-alerts" class="view">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Alerts</h1>
+              <p class="page-sub">Notifications fired when a recommendation changes materially after a re-analysis.</p>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="panel">
+              <div class="panel-head"><h3>Notification settings</h3></div>
+              <form id="alert-settings-form" class="alert-settings-form" autocomplete="off">
+                <div class="field">
+                  <label for="alert-email">Alert email</label>
+                  <input id="alert-email" type="email" placeholder="you@example.com" />
+                </div>
+                <div class="field">
+                  <label for="alert-smtp-host">SMTP host</label>
+                  <input id="alert-smtp-host" type="text" placeholder="smtp.gmail.com" />
+                </div>
+                <div class="field">
+                  <label for="alert-smtp-port">SMTP port</label>
+                  <input id="alert-smtp-port" type="number" placeholder="587" />
+                </div>
+                <div class="field">
+                  <label for="alert-smtp-user">SMTP user</label>
+                  <input id="alert-smtp-user" type="text" placeholder="you@gmail.com" />
+                </div>
+                <div class="field">
+                  <label for="alert-smtp-password">SMTP password</label>
+                  <input id="alert-smtp-password" type="password" placeholder="•••••••• (leave blank to keep)" />
+                </div>
+                <div class="field">
+                  <label for="alert-webhook">Webhook URL (optional)</label>
+                  <input id="alert-webhook" type="url" placeholder="https://…" />
+                </div>
+                <div class="alert-settings-actions">
+                  <button type="submit" class="btn btn-primary btn-sm">Save settings</button>
+                  <span id="alert-settings-status" class="muted"></span>
+                </div>
+              </form>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><h3>Recent alerts</h3></div>
+              <div id="alerts-log"></div>
+              <div id="alerts-empty" class="empty-state hidden">No alerts fired yet.</div>
+            </div>
+          </div>
         </section>
       </main>
     </div>

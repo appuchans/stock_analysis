@@ -5,7 +5,7 @@ import re
 from fastapi import APIRouter, HTTPException
 
 from .. import db
-from ..jobs import JobConflictError, manager
+from ..jobs import manager
 from ..schemas import (
     _SYMBOL_RE,
     WatchlistAddRequest,
@@ -46,17 +46,17 @@ def remove_from_watchlist(symbol: str) -> None:
 
 @router.post("/watchlist/analyze", status_code=202)
 def analyze_watchlist(req: WatchlistAnalyzeRequest) -> dict:
+    """Enqueue every watchlist symbol. The single-worker queue (see jobs.py)
+    runs them one at a time in order; this just submits them all at once
+    instead of only the first."""
     symbols = [row["symbol"] for row in db.list_symbols()]
     if not symbols:
         raise HTTPException(status_code=400, detail="watchlist is empty")
-    first = symbols[0]
-    rest = symbols[1:]
-    try:
-        job = manager.submit(first, req.depth, "auto", req.use_cache)
-    except JobConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-    result: dict = {"queued": [first], "job_id": job.id, "state": job.state}
-    if rest:
-        result["skipped"] = rest
-        result["reason"] = "one at a time"
-    return result
+    jobs = [
+        manager.submit(sym, req.depth, "auto", req.use_cache, origin="watchlist")
+        for sym in symbols
+    ]
+    return {
+        "queued": [j.symbol for j in jobs],
+        "job_ids": [j.id for j in jobs],
+    }

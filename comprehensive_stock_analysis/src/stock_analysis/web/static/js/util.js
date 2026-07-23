@@ -99,6 +99,19 @@ export function fmtMoney(v) {
   return v === null || v === undefined || Number.isNaN(v) ? "—" : "$" + fmtCompact(v);
 }
 
+// Relative time ("2h ago") from an ISO timestamp, for freshness indicators.
+export function timeAgo(iso) {
+  if (!iso) return null;
+  const then = new Date(iso.replace(" ", "T"));
+  if (Number.isNaN(then.getTime())) return null;
+  const mins = Math.round((Date.now() - then.getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
+}
+
 export function badgeClass(rec) {
   const r = (rec || "").toLowerCase();
   if (r.includes("buy")) return "badge-buy";

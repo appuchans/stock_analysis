@@ -38,10 +38,12 @@ class JobState(BaseModel):
     company_name: Optional[str] = None
     depth: str
     asset_type: str
-    state: Literal["queued", "running", "completed", "failed", "aborted"]
+    origin: str = "manual"
+    state: Literal["queued", "running", "completed", "failed", "aborted", "interrupted"]
     stage: Optional[str] = None
     activity: Optional[str] = None
     progress: float = 0.0
+    queue_position: int = 0
     token_usage: Dict[str, int] = Field(default_factory=dict)
     llm_calls: int = 0
     error: Optional[str] = None
@@ -55,6 +57,20 @@ class JobState(BaseModel):
 class AnalyzeResponse(BaseModel):
     job_id: str
     state: str
+
+
+class QueueItem(BaseModel):
+    id: str
+    symbol: str
+    depth: str
+    origin: str = "manual"
+    state: str
+    created_at: Optional[str] = None
+
+
+class QueueResponse(BaseModel):
+    active_id: Optional[str] = None
+    items: List[QueueItem]
 
 
 class HistoryItem(BaseModel):
@@ -201,6 +217,20 @@ class AlertItem(BaseModel):
 
 class AlertsResponse(BaseModel):
     items: List[AlertItem]
+
+
+class RecHistoryItem(BaseModel):
+    recorded_at: str
+    recommendation: Optional[str] = None
+    target_price: Optional[float] = None
+    stop_loss: Optional[float] = None
+    confidence: Optional[float] = None
+    price_at_rec: Optional[float] = None
+
+
+class RecHistoryResponse(BaseModel):
+    symbol: str
+    items: List[RecHistoryItem]
 
 
 class AlertSettingsRequest(BaseModel):

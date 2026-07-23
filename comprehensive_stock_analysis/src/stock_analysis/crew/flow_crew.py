@@ -359,6 +359,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             chart["sentiment_history"] = self._update_sentiment_history(
                 chart.get("sentiment_snapshot") or {}
             )
+            # The original fetch time (survives cache hits) — drives the
+            # dashboard's data-freshness indicator.
+            chart["data_fetched_at"] = bundle.get("data_fetched_at")
             _write_report_file(sym, f"{sym}_chart_data.json", json.dumps(chart, indent=2))
 
     def _fetch_structured_uncached(self) -> Dict[str, Any]:
@@ -530,6 +533,11 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         except Exception as exc:
             _logger.warning("Chart data generation failed: %s", exc)
 
+        # Recorded once here (not at apply time) so it survives a cache hit and
+        # always reflects when the underlying data was actually pulled — the
+        # UI's freshness indicator would be misleading if this were stamped on
+        # every cache-hit apply instead of the real network fetch.
+        bundle["data_fetched_at"] = datetime.now().isoformat(timespec="seconds")
         return bundle
 
     def _update_sentiment_history(self, snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:

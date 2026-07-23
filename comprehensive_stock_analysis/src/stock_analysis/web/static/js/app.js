@@ -3,8 +3,13 @@ import { $, $$ } from "./util.js";
 import { initAnalyzeForm, refreshSymbol } from "./analyze.js";
 import { renderReport } from "./dashboard.js";
 import { loadHistory } from "./history.js";
+import { loadWatchlist } from "./watchlist.js";
+import { loadAlerts } from "./alerts.js";
 
-const VIEWS = { new: "view-new", report: "view-report", history: "view-history" };
+const VIEWS = {
+  new: "view-new", report: "view-report", history: "view-history",
+  watchlist: "view-watchlist", alerts: "view-alerts",
+};
 
 function showView(name) {
   for (const id of Object.values(VIEWS)) $("#" + id)?.classList.remove("is-active");
@@ -17,6 +22,8 @@ function route() {
   const [view, arg] = (location.hash || "#/new").slice(2).split("/");
   if (view === "report" && arg) { showView("report"); renderReport(arg); }
   else if (view === "history") { showView("history"); loadHistory(); }
+  else if (view === "watchlist") { showView("watchlist"); loadWatchlist(); }
+  else if (view === "alerts") { showView("alerts"); loadAlerts(); }
   else showView("new");
 }
 

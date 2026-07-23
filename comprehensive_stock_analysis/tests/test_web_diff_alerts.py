@@ -39,8 +39,13 @@ _REC_SELL = {
 
 @pytest.fixture(autouse=True)
 def _temp_reports(monkeypatch, tmp_path):
+    from src.stock_analysis.web import db as db_mod
+
     monkeypatch.setattr(settings_mod.settings, "report_output_dir", str(tmp_path))
     monkeypatch.setattr(settings_mod.settings, "data_output_dir", str(tmp_path / "data"))
+    # alerts.py now persists through db.py (app.db) rather than a JSON file;
+    # reset the init flag so each test gets a fresh DB in its own tmp_path.
+    monkeypatch.setattr(db_mod, "_initialized", False)
     yield tmp_path
 
 
@@ -241,18 +246,38 @@ def test_save_alert_settings_endpoint(_temp_reports):
     r = client.post("/api/settings/alerts", json={"alert_email": "test@example.com"})
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
-    # Verify the in-memory setting was updated
-    assert settings_mod.settings.alert_email == "test@example.com"
+    # Settings persist in settings_kv (app.db), not on the live Settings object,
+    # so they survive a restart — verify via the read-back endpoint.
+    got = client.get("/api/settings/alerts").json()
+    assert got["alert_email"] == "test@example.com"
 
 
-def test_alert_log_capped_at_50(_temp_reports):
+def test_save_alert_settings_persists_across_get_calls(_temp_reports):
+    from src.stock_analysis.web import db as db_mod
+
+    client.post("/api/settings/alerts", json={"alert_webhook_url": "https://example.com/hook"})
+    assert db_mod.get_setting("alert_webhook_url") == "https://example.com/hook"
+
+
+def test_alert_log_is_not_capped(_temp_reports):
+    """The old JSON-file log capped at 50 entries; the SQLite-backed log keeps
+    everything and the API paginates via ?limit instead."""
     from src.stock_analysis.web.alerts import _append_alert, get_alert_log
     for i in range(60):
-        _append_alert({"symbol": f"S{i}", "fired_at": "2026-01-01", "reason": "x"})
-    log = get_alert_log()
-    assert len(log) == 50
+        _append_alert({"symbol": f"S{i}", "fired_at": f"2026-01-01T00:{i:02d}:00", "reason": "x"})
+    log = get_alert_log(limit=1000)
+    assert len(log) == 60
     # Most recent entry should be first (last appended = S59)
     assert log[0]["symbol"] == "S59"
+
+
+def test_alerts_endpoint_respects_limit(_temp_reports):
+    from src.stock_analysis.web.alerts import _append_alert
+    for i in range(10):
+        _append_alert({"symbol": f"S{i}", "fired_at": f"2026-01-01T00:{i:02d}:00", "reason": "x"})
+    r = client.get("/api/alerts?limit=3")
+    assert r.status_code == 200
+    assert len(r.json()) == 3
 
 
 # ── _paths helpers ─────────────────────────────────────────────────────────────

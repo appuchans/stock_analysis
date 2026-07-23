@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from .. import _paths
+from ..schemas import RecHistoryResponse, RecommendationDiff
 
 router = APIRouter(prefix="/api/reports", tags=["results"])
 
@@ -31,7 +32,7 @@ def report_chart(symbol: str) -> FileResponse:
     return FileResponse(path, media_type="application/json")
 
 
-@router.get("/{symbol}/diff")
+@router.get("/{symbol}/diff", response_model=RecommendationDiff)
 def recommendation_diff(symbol: str) -> Dict[str, Any]:
     sym = _paths.safe_symbol(symbol)
     if sym is None:
@@ -93,3 +94,16 @@ def recommendation_diff(symbol: str) -> Dict[str, Any]:
         "new_opportunities": [o for o in cur_opps if o not in prev_opps],
         "removed_opportunities": [o for o in prev_opps if o not in cur_opps],
     }
+
+
+@router.get("/{symbol}/rec-history", response_model=RecHistoryResponse)
+def rec_history(symbol: str) -> Dict[str, Any]:
+    """Every past recommendation snapshot for *symbol*, oldest first — the raw
+    series a scorecard ("was the advisor right?") is built from."""
+    sym = _paths.safe_symbol(symbol)
+    if sym is None:
+        raise HTTPException(status_code=400, detail="invalid symbol")
+
+    from .. import db
+
+    return {"symbol": sym, "items": db.list_rec_history(sym)}

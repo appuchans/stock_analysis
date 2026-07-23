@@ -1,5 +1,6 @@
 """FastAPI application for the local stock-analysis web UI."""
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -13,7 +14,26 @@ _WEB_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _WEB_DIR / "static"
 _INDEX = _WEB_DIR / "templates" / "index.html"
 
-app = FastAPI(title="Stock Analysis", docs_url="/api/docs", openapi_url="/api/openapi.json")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # Resume any jobs still queued when the process last stopped.
+    manager.recover()
+    # Backfill rec_history from pre-existing report snapshots (idempotent —
+    # cheap no-op after the first run once every row already exists).
+    try:
+        from .reports_index import backfill_rec_history
+
+        backfill_rec_history()
+    except Exception:
+        pass  # best-effort; never block startup
+    yield
+
+
+app = FastAPI(
+    title="Stock Analysis", docs_url="/api/docs", openapi_url="/api/openapi.json",
+    lifespan=_lifespan,
+)
 
 app.include_router(analyze.router)
 app.include_router(history.router)

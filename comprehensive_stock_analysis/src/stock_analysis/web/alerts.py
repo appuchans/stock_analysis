@@ -1,74 +1,91 @@
-"""Alert dispatcher and in-process alert log."""
+"""Alert dispatcher and alert log/settings persistence (SQLite-backed).
 
-import json
+Settings saved via ``POST /api/settings/alerts`` are persisted in the
+``settings_kv`` table (see ``web/db.py``) so they survive a restart; ``.env``
+values (``config/settings.py``) remain the fallback for anything never
+overridden through the UI.
+"""
+
 import logging
 import smtplib
 from datetime import datetime
 from email.mime.text import MIMEText
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..config.settings import settings
 
 _logger = logging.getLogger(__name__)
-_MAX_LOG = 50
+
+# settings_kv keys, mirroring the Settings fields they can override.
+_SETTINGS_FIELDS = (
+    "alert_email",
+    "alert_smtp_host",
+    "alert_smtp_port",
+    "alert_smtp_user",
+    "alert_smtp_password",
+    "alert_webhook_url",
+)
 
 
-def _log_path() -> Path:
-    return Path(settings.data_output_dir) / "alert_log.json"
+def _resolved_setting(key: str) -> str:
+    """A persisted override (from the web UI) wins; otherwise fall back to
+    the .env-backed Settings value."""
+    from . import db
+
+    override = db.get_setting(key)
+    if override is not None:
+        return override
+    return str(getattr(settings, key, "") or "")
 
 
-def _read_log() -> List[Dict[str, Any]]:
+def get_alert_settings() -> Dict[str, Any]:
+    """Resolved alert settings (persisted override > .env default)."""
+    raw = {k: _resolved_setting(k) for k in _SETTINGS_FIELDS}
     try:
-        p = _log_path()
-        if p.exists():
-            return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-    return []
+        raw["alert_smtp_port"] = int(raw["alert_smtp_port"]) if raw["alert_smtp_port"] else 587
+    except ValueError:
+        raw["alert_smtp_port"] = 587
+    return raw
 
 
-def _write_log(entries: List[Dict[str, Any]]) -> None:
-    try:
-        p = _log_path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(entries, indent=2), encoding="utf-8")
-    except Exception as exc:
-        _logger.debug("alert log write failed: %s", exc)
+def save_alert_settings(values: Dict[str, Optional[str]]) -> None:
+    """Persist any non-None fields to settings_kv (partial update)."""
+    from . import db
 
-
-def _append_alert(entry: Dict[str, Any]) -> None:
-    log = _read_log()
-    log.insert(0, entry)
-    _write_log(log[:_MAX_LOG])
+    for key in _SETTINGS_FIELDS:
+        val = values.get(key)
+        if val is not None:
+            db.set_setting(key, str(val))
 
 
 def _send_email(subject: str, body: str) -> None:
-    if not settings.alert_email or not settings.alert_smtp_user:
+    cfg = get_alert_settings()
+    if not cfg["alert_email"] or not cfg["alert_smtp_user"]:
         return
     try:
         msg = MIMEText(body)
         msg["Subject"] = subject
-        msg["From"] = settings.alert_smtp_user
-        msg["To"] = settings.alert_email
-        with smtplib.SMTP(settings.alert_smtp_host, settings.alert_smtp_port, timeout=10) as s:
+        msg["From"] = cfg["alert_smtp_user"]
+        msg["To"] = cfg["alert_email"]
+        with smtplib.SMTP(cfg["alert_smtp_host"], cfg["alert_smtp_port"], timeout=10) as s:
             s.ehlo()
             s.starttls()
-            s.login(settings.alert_smtp_user, settings.alert_smtp_password)
-            s.sendmail(settings.alert_smtp_user, [settings.alert_email], msg.as_string())
-        _logger.info("alert email sent to %s", settings.alert_email)
+            s.login(cfg["alert_smtp_user"], cfg["alert_smtp_password"])
+            s.sendmail(cfg["alert_smtp_user"], [cfg["alert_email"]], msg.as_string())
+        _logger.info("alert email sent to %s", cfg["alert_email"])
     except Exception as exc:
         _logger.warning("alert email failed: %s", exc)
 
 
 def _send_webhook(payload: Dict[str, Any]) -> None:
-    if not settings.alert_webhook_url:
+    cfg = get_alert_settings()
+    if not cfg["alert_webhook_url"]:
         return
     try:
         from ..tools._http import SESSION
 
-        SESSION.post(settings.alert_webhook_url, json=payload, timeout=10)
-        _logger.info("alert webhook sent to %s", settings.alert_webhook_url)
+        SESSION.post(cfg["alert_webhook_url"], json=payload, timeout=10)
+        _logger.info("alert webhook sent to %s", cfg["alert_webhook_url"])
     except Exception as exc:
         _logger.warning("alert webhook failed: %s", exc)
 
@@ -125,6 +142,15 @@ def check_and_dispatch(
     _send_webhook(entry)
 
 
+def _append_alert(entry: Dict[str, Any]) -> None:
+    try:
+        from . import db
+
+        db.append_alert(entry)
+    except Exception as exc:
+        _logger.debug("alert log write failed: %s", exc)
+
+
 def _to_float(v: Any) -> Optional[float]:
     try:
         f = float(v)
@@ -138,5 +164,20 @@ def _format_confidence(value: Optional[float]) -> str:
     return f"{value:.0%}" if value is not None else "N/A"
 
 
-def get_alert_log() -> List[Dict[str, Any]]:
-    return _read_log()
+def get_alert_log(limit: int = 200) -> List[Dict[str, Any]]:
+    from . import db
+
+    rows = db.list_alerts(limit=limit)
+    # Normalize key names to what the API layer already expects.
+    return [
+        {
+            "symbol": r["symbol"],
+            "fired_at": r["fired_at"],
+            "reason": r["reason"],
+            "old_recommendation": r["old_recommendation"],
+            "new_recommendation": r["new_recommendation"],
+            "old_confidence": r["old_confidence"],
+            "new_confidence": r["new_confidence"],
+        }
+        for r in rows
+    ]

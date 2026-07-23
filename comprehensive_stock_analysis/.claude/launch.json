@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "source .venv/bin/activate && python -m stock_analysis.web"],
+      "port": 8000
+    }
+  ]
+}

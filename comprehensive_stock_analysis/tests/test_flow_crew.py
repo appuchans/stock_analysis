@@ -166,3 +166,58 @@ class TestSynthesizeRecommendationFailure:
         flow.synthesize_recommendation()
 
         assert written == []
+
+
+class TestChartDataFreshnessTimestamp:
+    """chart_data.json carries a `data_fetched_at` timestamp so the web UI can
+    show how stale the underlying data is. It must be stamped once at the real
+    network fetch (inside the cached bundle) — not re-stamped on every apply —
+    so a 24h-cached bundle still reports its true (older) fetch time instead of
+    looking freshly pulled."""
+
+    def _make_flow(self) -> StockAnalysisFlow:
+        flow = StockAnalysisFlow(use_data_cache=False, asset_type="stock")
+        flow.state.symbol = "AAPL"
+        return flow
+
+    def test_apply_structured_bundle_propagates_fetch_timestamp_into_chart(self, monkeypatch):
+        flow = self._make_flow()
+        written = []
+        monkeypatch.setattr(
+            flow_crew, "_write_report_file",
+            lambda symbol, filename, content: written.append((symbol, filename, content)),
+        )
+        # sentiment_history recomputation touches disk; keep it inert for this test.
+        monkeypatch.setattr(flow, "_update_sentiment_history", lambda snapshot: [])
+
+        bundle = {
+            "structured": {}, "technical_summary": None,
+            "chart": {"asset_type": "stock", "company": {"name": "Apple"}},
+            "data_fetched_at": "2026-07-20T10:00:00",
+        }
+        flow._apply_structured_bundle(bundle)
+
+        assert len(written) == 1
+        _symbol, filename, content = written[0]
+        assert filename == "AAPL_chart_data.json"
+        import json as _json
+        chart = _json.loads(content)
+        assert chart["data_fetched_at"] == "2026-07-20T10:00:00"
+
+    def test_apply_structured_bundle_handles_missing_timestamp(self, monkeypatch):
+        """Older cached bundles (pre-dating this field) must not crash — the
+        chip is simply omitted by the frontend when the value is falsy."""
+        flow = self._make_flow()
+        written = []
+        monkeypatch.setattr(
+            flow_crew, "_write_report_file",
+            lambda symbol, filename, content: written.append((symbol, filename, content)),
+        )
+        monkeypatch.setattr(flow, "_update_sentiment_history", lambda snapshot: [])
+
+        bundle = {"structured": {}, "technical_summary": None, "chart": {"asset_type": "stock"}}
+        flow._apply_structured_bundle(bundle)
+
+        import json as _json
+        chart = _json.loads(written[0][2])
+        assert chart["data_fetched_at"] is None

@@ -80,6 +80,59 @@ def write_run_status(symbol: str, status: str) -> None:
         _logger.debug("could not write run status for %s: %s", symbol, exc)
 
 
+def backfill_rec_history() -> int:
+    """One-time capture of pre-existing recommendation snapshots into
+    rec_history, for reports that were generated before that table existed
+    (or by the CLI, which never went through the web job path). Best-effort
+    and idempotent — ``db.record_recommendation`` de-dupes on (symbol,
+    recorded_at), and file mtime stands in for a real timestamp since these
+    older snapshots never recorded one.
+
+    Called once at web app startup; cheap on repeat runs since every row it
+    would insert already exists after the first pass.
+    """
+    from . import db
+
+    root = _paths.reports_root()
+    if not root.exists():
+        return 0
+
+    inserted = 0
+    for child in root.iterdir():
+        if not child.is_dir():
+            continue
+        sym = _paths.safe_symbol(child.name)
+        if not sym:
+            continue
+        chart = _read_json(_paths.chart_path(sym))
+        price = ((chart.get("key_stats") or {}).get("current_price"))
+        for path in (_paths.prev_recommendation_path(sym), _paths.recommendation_path(sym)):
+            if path is None or not path.exists():
+                continue
+            rec = _read_json(path)
+            if not rec:
+                continue
+            try:
+                mtime = path.stat().st_mtime
+                recorded_at = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
+            except OSError:
+                continue
+            # Only the current (non-_prev) snapshot's price is known; an older
+            # _prev snapshot's contemporaneous price was never captured.
+            is_current = path.name.endswith("_investment_recommendation.json")
+            db.record_recommendation(
+                symbol=sym,
+                recorded_at=recorded_at,
+                recommendation=rec.get("recommendation"),
+                target_price=_num(rec.get("target_price")),
+                stop_loss=_num(rec.get("stop_loss")),
+                confidence=_num(rec.get("confidence")),
+                price_at_rec=_num(price) if is_current else None,
+            )
+            inserted += 1
+    return inserted
+
+
 def list_reports() -> List[Dict[str, Any]]:
     """One entry per symbol that has a report or a run-status marker, newest first.
 
