@@ -806,11 +806,11 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
     ) -> Dict[str, Any]:
         """Run the full flow for a single stock or ETF."""
         try:
-            symbol = normalize_symbol(symbol)
             from .. import token_meter
             from ..llm_budget import reset as _reset_llm_budget
             from ..llm_budget import used as _llm_calls_used
 
+            symbol = normalize_symbol(symbol)
             _reset_llm_budget()
             token_meter.reset()
             # Explicitly clear mutable state so repeated calls on the same
