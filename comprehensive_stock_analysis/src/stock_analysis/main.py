@@ -13,7 +13,9 @@ from .crew.flow_crew import StockAnalysisFlow
 _logger = logging.getLogger(__name__)
 
 
-def _print_token_usage(symbol: str, token_usage: Dict[str, Any], llm_calls: int = 0) -> None:
+def _print_token_usage(
+    symbol: str, token_usage: Dict[str, Any], llm_calls: int = 0
+) -> None:
     """Print token usage (and LLM call count) to console and log file."""
     if not token_usage:
         return
@@ -23,12 +25,44 @@ def _print_token_usage(symbol: str, token_usage: Dict[str, Any], llm_calls: int 
     cached = token_usage.get("cached_prompt_tokens") or 0
     calls_str = f"  LLM calls: {llm_calls}" if llm_calls else ""
     cached_str = f"  (cached prompt: {cached:,})" if cached else ""
-    line = f"  Tokens — input: {inp:,}  output: {out:,}  total: {total:,}{cached_str}{calls_str}"
+    line = (
+        f"  Tokens — input: {inp:,}  output: {out:,}  "
+        f"total: {total:,}{cached_str}{calls_str}"
+    )
     print(line, flush=True)
     _logger.info(
         "[token-usage] symbol=%s input=%d output=%d total=%d cached=%d llm_calls=%d",
-        symbol, inp, out, total, cached, llm_calls,
+        symbol,
+        inp,
+        out,
+        total,
+        cached,
+        llm_calls,
     )
+
+
+def _print_tool_usage(symbol: str, tool_usage: Dict[str, Any]) -> None:
+    """Print per-tool call counts, error counts, cache hits, and latency."""
+    if not tool_usage or not isinstance(tool_usage, dict) or not tool_usage:
+        return
+    lines = ["  Tools:"]
+    for tool_name in sorted(tool_usage.keys()):
+        stats = tool_usage[tool_name]
+        calls = stats.get("calls", 0)
+        errors = stats.get("errors", 0)
+        cache_hits = stats.get("cache_hits", 0)
+        duration_ms = stats.get("total_duration_ms", 0)
+        error_str = f", {errors} error{'s' if errors != 1 else ''}" if errors else ""
+        cache_str = f", {cache_hits} cached" if cache_hits else ""
+        duration_str = f", {duration_ms:.0f}ms" if duration_ms else ""
+        calls_label = "call" if calls == 1 else "calls"
+        tool_line = (
+            f"    {tool_name}: {calls} {calls_label}"
+            f"{error_str}{cache_str}{duration_str}"
+        )
+        lines.append(tool_line)
+    print("\n".join(lines), flush=True)
+    _logger.info("[tool-usage] symbol=%s tools=%s", symbol, tool_usage)
 
 
 class StockAnalysisApp:
@@ -63,15 +97,24 @@ class StockAnalysisApp:
     def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:
         print(f"\nStarting analysis for {symbol}…")
         try:
-            result = self.crew.analyze_stock(symbol, analysis_depth=self.depth, **kwargs)
+            result = self.crew.analyze_stock(
+                symbol, analysis_depth=self.depth, **kwargs
+            )
             if result["status"] == "completed":
                 _print_token_usage(
-                    symbol, result.get("token_usage") or {}, result.get("llm_calls") or 0
+                    symbol,
+                    result.get("token_usage") or {},
+                    result.get("llm_calls") or 0,
                 )
+                _print_tool_usage(symbol, result.get("tool_usage") or {})
                 report_path = result.get("report_path")
                 if not report_path:
-                    report_dir = Path(settings.report_output_dir) / symbol.upper() / "html"
-                    reports = sorted(report_dir.glob("*.html")) if report_dir.exists() else []
+                    report_dir = (
+                        Path(settings.report_output_dir) / symbol.upper() / "html"
+                    )
+                    reports = (
+                        sorted(report_dir.glob("*.html")) if report_dir.exists() else []
+                    )
                     report_path = reports[-1] if reports else None
                 if report_path:
                     print(f"  Report: {report_path}")
@@ -92,7 +135,9 @@ class StockAnalysisApp:
                 "timestamp": datetime.now().isoformat(),
             }
 
-    def analyze_multiple_stocks(self, symbols: List[str], **kwargs: Any) -> Dict[str, Any]:
+    def analyze_multiple_stocks(
+        self, symbols: List[str], **kwargs: Any
+    ) -> Dict[str, Any]:
         print(f"Analysing {len(symbols)} stocks: {', '.join(symbols)}")
         results: Dict[str, Any] = {}
         for symbol in symbols:
@@ -102,9 +147,14 @@ class StockAnalysisApp:
         print(f"\nSummary — completed: {completed}, failed: {failed}")
         return {
             "results": results,
-            "summary": {"total": len(symbols), "completed": completed, "failed": failed},
+            "summary": {
+                "total": len(symbols),
+                "completed": completed,
+                "failed": failed,
+            },
             "timestamp": datetime.now().isoformat(),
         }
+
 
 def _rotate_if_large(path: Path, max_bytes: int = 5_000_000) -> None:
     """Size-based rotation: keep one .old generation, never grow unbounded."""
@@ -207,7 +257,9 @@ Examples:
     _rotate_if_large(log_path)
     _rotate_if_large(Path(str(log_path) + ".txt"))  # CrewAI output_log_file
     _file_handler = logging.FileHandler(log_path, encoding="utf-8")
-    _file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    _file_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    )
     _file_handler.addFilter(_drop_noise)
     logging.getLogger().addHandler(_file_handler)
     logging.getLogger().setLevel(getattr(logging, settings.log_level, logging.INFO))
@@ -215,6 +267,7 @@ Examples:
 
     # Fail fast on missing credentials before any data is fetched.
     from .agents.base_agent import preflight_llm_credentials
+
     problems = preflight_llm_credentials(args.llm_provider)
     if problems:
         print("Configuration error — cannot start analysis:")
@@ -224,7 +277,10 @@ Examples:
         sys.exit(2)
 
     app = StockAnalysisApp(
-        args.llm_provider, args.model, args.depth, args.asset_type,
+        args.llm_provider,
+        args.model,
+        args.depth,
+        args.asset_type,
         use_data_cache=not args.no_cache,
     )
 

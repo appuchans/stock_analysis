@@ -214,6 +214,11 @@ recommendation:
 
     Analyses to draw from:
     {analyses_summary}
+
+    Historical Context:
+    {historical_context}
+    State whether your recommendation is consistent with, or a departure from,
+    the prior calls recorded above, and explain why.
   expected_output: >-
     Investment recommendation: type, target price, stop-loss, time horizon,
     confidence, reasoning, risks, opportunities.

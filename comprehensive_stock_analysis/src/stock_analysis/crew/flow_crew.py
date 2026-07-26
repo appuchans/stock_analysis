@@ -94,14 +94,20 @@ def _step_callback(step_output: Any) -> None:
     _logger.info("[flow-step] %s", str(step_output)[:200])
 
 
-def _run_crew(agents_list: list, tasks_list: list, inputs: dict, log_suffix: str = "") -> Any:
+def _run_crew(
+    agents_list: list, tasks_list: list, inputs: dict, log_suffix: str = ""
+) -> Any:
     """Helper: build and kick off a mini crew, returning the raw result.
 
     `log_suffix` (typically the stage key) routes concurrent stage crews to
     their own log file, avoiding interleaved writes to the shared crew log
     when several stages run at once.
     """
-    log_file = f"{settings.crew_log_file}.{log_suffix}" if log_suffix else settings.crew_log_file
+    log_file = (
+        f"{settings.crew_log_file}.{log_suffix}"
+        if log_suffix
+        else settings.crew_log_file
+    )
     c = Crew(
         agents=agents_list,
         tasks=tasks_list,
@@ -139,7 +145,11 @@ def _narrative_guardrail(output: Any) -> Tuple[bool, Any]:
     etc.) so minor LLM phrasing variation doesn't trigger a spurious retry.
     """
     text = _strip_md_fences(str(getattr(output, "raw", output)))
-    headings = [l.strip() for l in text.splitlines() if l.strip().startswith("## ")]
+    headings = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip().startswith("## ")
+    ]
     first_lower = headings[0].lower() if headings else ""
     # Accept "## Investment Thesis", "## Investment Overview/Analysis/Summary",
     # and "## Executive Summary" as valid opening headings.
@@ -285,8 +295,45 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             "industry": "etf_holdings_analysis",
             "competitor": "etf_peer_analysis",
         }
-        slug = etf_map.get(key, f"{key}_analysis") if self._is_etf else f"{key}_analysis"
+        slug = (
+            etf_map.get(key, f"{key}_analysis") if self._is_etf else f"{key}_analysis"
+        )
         return f"{self.state.symbol}_{slug}.md"
+
+    def _format_historical_context(self) -> str:
+        """Format past recommendations for this symbol as LLM context.
+
+        Queries web.db.rec_history for the last ~5 prior analyses. Returns a
+        formatted block (dates, recommendations, confidence, target prices) or
+        a fallback string if no history exists. Always succeeds—any DB errors
+        degrade gracefully, so a DB-less CLI run is unaffected.
+
+        Note: only the web-UI job path (web/jobs.py) writes to rec_history
+        today; pure CLI usage will see empty history until a web run occurs.
+        """
+        try:
+            from ..web import db
+
+            history = db.list_rec_history(self.state.symbol)
+            if not history:
+                return f"No prior analysis on record for {self.state.symbol}."
+            # Take last 5 entries, format compactly
+            recent = history[-5:]
+            lines = [f"Prior analyses for {self.state.symbol} (newest first):"]
+            for entry in reversed(recent):
+                date = entry.get("recorded_at", "?")[:10]
+                rec = entry.get("recommendation", "?")
+                conf = entry.get("confidence", "?")
+                target = entry.get("target_price", "?")
+                price_at_rec = entry.get("price_at_rec", "?")
+                lines.append(
+                    f"  {date}: {rec} (confidence: {conf}), target: {target}, "
+                    f"price: {price_at_rec}"
+                )
+            return "\n".join(lines)
+        except Exception as exc:
+            _logger.debug("Could not fetch recommendation history: %s", exc)
+            return f"No prior analysis on record for {self.state.symbol}."
 
     # ── stage 1: data collection ──────────────────────────────────────────────
 
@@ -354,7 +401,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         self.state.data["structured"] = structured
         if bundle.get("technical_summary") is not None:
             self.state.data["technical_summary"] = bundle["technical_summary"]
-        _logger.info("[collect_data] structured blocks for %s: %s", sym, list(structured.keys()))
+        _logger.info(
+            "[collect_data] structured blocks for %s: %s", sym, list(structured.keys())
+        )
 
         chart = bundle.get("chart")
         if chart:
@@ -367,7 +416,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             # The original fetch time (survives cache hits) — drives the
             # dashboard's data-freshness indicator.
             chart["data_fetched_at"] = bundle.get("data_fetched_at")
-            _write_report_file(sym, f"{sym}_chart_data.json", json.dumps(chart, indent=2))
+            _write_report_file(
+                sym, f"{sym}_chart_data.json", json.dumps(chart, indent=2)
+            )
 
     def _fetch_structured_uncached(self) -> Dict[str, Any]:
         """Fetch all structured data with one shared Ticker + parallel summarizers.
@@ -434,7 +485,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             if fetched.get(key):
                 structured[key] = fetched[key]
 
-        headlines = [n.get("title", "") for n in (yf_result.get("recent_news") or [])[:10]]
+        headlines = [
+            n.get("title", "") for n in (yf_result.get("recent_news") or [])[:10]
+        ]
         structured["sentiment"] = {
             "social": fetched.get("social") or {"note": "social sources unavailable"},
             "options_positioning": fetched.get("options") or {"available": False},
@@ -449,7 +502,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
 
         self._enrich_with_premium_providers(sym, structured)
 
-        bundle: Dict[str, Any] = {"structured": structured, "technical_summary": technical_summary}
+        bundle: Dict[str, Any] = {
+            "structured": structured,
+            "technical_summary": technical_summary,
+        }
 
         # Chart data for the HTML report (1y weekly closes + quarterly revenue)
         try:
@@ -469,7 +525,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 chart["etf_profile"] = structured["etf_profile"]
             if hist is not None and not hist.empty:
                 chart["price_history"] = [
-                    {"date": idx.date().isoformat(), "close": round(float(row["Close"]), 2)}
+                    {
+                        "date": idx.date().isoformat(),
+                        "close": round(float(row["Close"]), 2),
+                    }
                     for idx, row in hist.iterrows()
                     if row["Close"] == row["Close"]
                 ]
@@ -513,7 +572,8 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             search = sent.get("search_interest") or {}
             chart["sentiment_snapshot"] = {
                 "stocktwits_bullish_pct": st.get("bullish_ratio_pct"),
-                "stocktwits_labeled": (st.get("bullish") or 0) + (st.get("bearish") or 0),
+                "stocktwits_labeled": (st.get("bullish") or 0)
+                + (st.get("bearish") or 0),
                 "watchers": st.get("watchers"),
                 "put_call_oi_ratio": opt.get("put_call_oi_ratio"),
                 "short_pct_of_float": si.get("short_pct_of_float"),
@@ -547,7 +607,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         bundle["data_fetched_at"] = datetime.now().isoformat(timespec="seconds")
         return bundle
 
-    def _enrich_with_premium_providers(self, symbol: str, structured: Dict[str, Any]) -> None:
+    def _enrich_with_premium_providers(
+        self, symbol: str, structured: Dict[str, Any]
+    ) -> None:
         """Deepen ``structured`` in place with FMP data when an API key is
         configured (10y statements, estimate revisions, an earnings-call
         transcript excerpt, and insider-trade detail) — a no-op when FMP
@@ -574,9 +636,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
 
             estimates = ROUTER.get_estimates(symbol)
             if is_capable(estimates) and estimates.get("estimate_revisions"):
-                structured.setdefault("analyst", {})["estimate_revisions"] = (
-                    estimates["estimate_revisions"]
-                )
+                structured.setdefault("analyst", {})["estimate_revisions"] = estimates[
+                    "estimate_revisions"
+                ]
 
             transcript = ROUTER.get_transcript(symbol)
             if is_capable(transcript):
@@ -592,12 +654,17 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 etf_holdings = ROUTER.get_etf_holdings(symbol)
                 if is_capable(etf_holdings):
                     structured["etf_portfolio"] = {
-                        **(structured.get("etf_portfolio") or {}), **etf_holdings,
+                        **(structured.get("etf_portfolio") or {}),
+                        **etf_holdings,
                     }
         except Exception as exc:  # defense in depth — must never abort the fetch
-            _logger.warning("Premium provider enrichment failed for %s: %s", symbol, exc)
+            _logger.warning(
+                "Premium provider enrichment failed for %s: %s", symbol, exc
+            )
 
-    def _update_sentiment_history(self, snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _update_sentiment_history(
+        self, snapshot: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """Append today's sentiment snapshot to the per-symbol history file.
 
         Enables trend statements like 'retail bullishness up from 62% to 82%
@@ -606,7 +673,8 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         import datetime as _dt
 
         path = (
-            Path(settings.data_output_dir) / f"{self.state.symbol.upper()}_sentiment_history.json"
+            Path(settings.data_output_dir)
+            / f"{self.state.symbol.upper()}_sentiment_history.json"
         )
         history: List[Dict[str, Any]] = []
         try:
@@ -683,7 +751,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
 
     def _desc_technical(self, brief: bool = False, backtest: bool = False) -> str:
         t = self._prompts["technical"]
-        desc = (t["brief"] if brief else t["comprehensive"]) + " " + t["indicators_source"]
+        desc = (
+            (t["brief"] if brief else t["comprehensive"]) + " " + t["indicators_source"]
+        )
         if backtest:
             desc += " " + t["backtest_addendum"]
         return desc
@@ -696,7 +766,6 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         return spec["description"] if isinstance(spec, dict) else str(spec)
 
     def _stages_for(self, depth: str) -> List[Tuple[type, str, str]]:
-        sym = self.state.symbol
         stages: List[Tuple[type, str, str]] = []
         # Investor-first report: technical analysis only runs in deep mode and is
         # framed as a timing footnote; the standard path covers ownership instead.
@@ -708,10 +777,14 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                     self._desc_technical(brief=False, backtest=True),
                 )
             )
-        stages.append((FundamentalAnalystAgent, "fundamental", self._desc_for("fundamental")))
+        stages.append(
+            (FundamentalAnalystAgent, "fundamental", self._desc_for("fundamental"))
+        )
         if depth in ("standard", "deep"):
             if not self._is_etf:
-                stages.append((FundamentalAnalystAgent, "ownership", self._desc_for("ownership")))
+                stages.append(
+                    (FundamentalAnalystAgent, "ownership", self._desc_for("ownership"))
+                )
             stages += [
                 (RiskAnalystAgent, "risk", self._desc_for("risk")),
                 (SentimentAnalystAgent, "sentiment", self._desc_for("sentiment")),
@@ -772,13 +845,18 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             agent=agent,
             output_pydantic=InvestmentRecommendation,
         )
-        inputs = dict(self._inputs(), analyses_summary=context_summary)
+        inputs = dict(
+            self._inputs(),
+            analyses_summary=context_summary,
+            historical_context=self._format_historical_context(),
+        )
         try:
             result = _run_crew([agent], [t], inputs)
             rec_text = _result_str(result)
         except Exception as exc:
             _logger.warning(
-                "Recommendation crew failed for %s: %s; report will fall back to N/A rating",
+                "Recommendation crew failed for %s: %s; "
+                "report will fall back to N/A rating",
                 self.state.symbol,
                 exc,
             )
@@ -818,7 +896,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             "recommendation": self.state.recommendation,
         }
         summary = "\n".join(
-            f"### {k}\n{v.get('result', 'N/A')[:3000]}" for k, v in all_analyses.items() if v
+            f"### {k}\n{v.get('result', 'N/A')[:3000]}"
+            for k, v in all_analyses.items()
+            if v
         )
 
         rep = self._prompts["report"]
@@ -839,7 +919,8 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             narrative = _strip_md_fences(_result_str(result))
         except Exception as exc:
             _logger.warning(
-                "Report crew failed for %s: %s; HTML will fall back to the executive summary",
+                "Report crew failed for %s: %s; "
+                "HTML will fall back to the executive summary",
                 sym,
                 exc,
             )
@@ -850,7 +931,8 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             _write_report_file(sym, f"{sym}_comprehensive_report.md", narrative)
         else:
             _logger.warning(
-                "Narrative still malformed; HTML will fall back to the executive summary"
+                "Narrative still malformed; "
+                "HTML will fall back to the executive summary"
             )
             self.state.report = narrative
 
@@ -871,13 +953,14 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
     ) -> Dict[str, Any]:
         """Run the full flow for a single stock or ETF."""
         try:
-            from .. import token_meter
+            from .. import token_meter, tool_telemetry
             from ..llm_budget import reset as _reset_llm_budget
             from ..llm_budget import used as _llm_calls_used
 
             symbol = normalize_symbol(symbol)
             _reset_llm_budget()
             token_meter.reset()
+            tool_telemetry.reset()
             # Explicitly clear mutable state so repeated calls on the same
             # flow instance never bleed results from a prior symbol into the next.
             self.state.errors = []
@@ -893,7 +976,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             self.state.competitor = {}
             self.state.economic = {}
             resolved_type = self._resolve_asset_type(symbol)
-            result = self.kickoff(
+            self.kickoff(
                 inputs={
                     "symbol": symbol,
                     "analysis_depth": analysis_depth,
@@ -914,6 +997,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 "error": "; ".join(errors) if errors else None,
                 "errors": errors,
                 "token_usage": token_meter.snapshot(),
+                "tool_usage": tool_telemetry.snapshot(),
                 "llm_calls": _llm_calls_used(),
                 "timestamp": datetime.now().isoformat(),
             }

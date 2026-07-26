@@ -21,6 +21,7 @@ _KNOWN_INPUTS = {
     "statements_10y_data",  # deep runs only, when FMP_API_KEY is configured
     "transcript_data",      # deep runs only, when FMP_API_KEY is configured
     "analyses_summary",   # passed by synthesize_recommendation / generate_report
+    "historical_context",  # passed by synthesize_recommendation from past rec_history
     "analysis_key",       # passed per stage by _run_stages
 }
 
