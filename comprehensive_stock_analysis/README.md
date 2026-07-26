@@ -96,6 +96,11 @@ disable. A one-time sweep keeps the disk cache bounded.
   free-data calls, so a momentary blip becomes a success instead of a Data Gap.
 - **Per-run token + LLM-call accounting** printed at the end of each run; set
   `LLM_TOKEN_ALERT` to log a WARNING when a run's token total exceeds a threshold.
+- **Tool telemetry** — per-tool call counts, error counts, cache-hit rate, and latency
+  tracked via CrewAI event listeners and displayed at run completion for performance tuning.
+- **Historical recommendation context** — the investment advisor receives the last 5 prior
+  calls for each symbol (dates, recommendations, confidence, targets) and is asked to
+  explain whether the current thesis is consistent with past calls or represents a reversal.
 
 ---
 
@@ -163,6 +168,13 @@ python -m stock_analysis.web --port 9000  # custom port
 - **History** — a gallery of every past analysis with recommendation/status badges, price
   sparklines, key stats, and a per-card **Refresh**. Aborted/failed runs are shown with their status;
   cards are ordered by true analysis time (newest first).
+- **Portfolio** — track positions (FIFO cost basis, avg cost, qty, realized P&L), import from CSV,
+  compare performance vs. a benchmark (e.g. SPY), and view live-updated totals.
+- **Watchlist** — save symbols for quick re-analysis; badge shows the latest recommendation.
+- **Automation** — set cron schedules to re-analyze symbols on a recurring basis, or data-only
+  refreshes (zero LLM calls); create alert rules (price thresholds, recommendation changes,
+  stop-loss/target hits) that dispatch via email, webhook, or app log.
+- **Alerts Log** — history of every rule trigger with the recommendation state change and timestamp.
 
 Design notes: single-user, localhost-only, **one analysis at a time** (runs are serialized because
 `token_meter`/`llm_budget` are process-global). A second concurrent submit returns HTTP 409. The
@@ -269,15 +281,21 @@ comprehensive_stock_analysis/
 ├── src/stock_analysis/
 │   ├── agents/          # 11 specialist agents (extend BaseAgent)
 │   ├── config/          # agents.yaml, flow_tasks.yaml, llm_config.yaml, settings.py, loader.py
-│   ├── crew/            # flow_crew.py (event-driven parallel Flow pipeline)
+│   ├── crew/            # flow_crew.py (event-driven parallel Flow pipeline), event_listener.py
 │   ├── models/          # Pydantic v2 data models
 │   ├── llm_budget.py    # hard per-run LLM-call cap (safety stop)
 │   ├── token_meter.py   # per-run token accounting + quota alert
+│   ├── tool_telemetry.py# per-tool call/error/cache/latency tracking
 │   ├── web/             # FastAPI UI: app, jobs (single-worker queue), progress, routes, static/, templates/
+│   │                    #   db.py (SQLite: watchlist, jobs, rec_history, alerts, schedules, rules, transactions)
+│   │                    #   scheduler.py (APScheduler: recurring re-analysis + price polling)
+│   │                    #   rules.py (alert trigger evaluation: price + post-run)
+│   │                    #   alerts.py (email/webhook/log dispatch)
 │   └── tools/           # data collection, summarizers, sentiment, analysis,
 │                        #   calculation, cache (3-tier), _http (shared session),
-│                        #   backtest, portfolio, SVG charts, report
-├── tests/               # network-free test suite
+│                        #   backtest, portfolio, portfolio_ledger (FIFO ledger),
+│                        #   providers (FMP/Polygon/yfinance router), SVG charts, report
+├── tests/               # network-free test suite (19+ new tests for telemetry + history)
 ├── docs/
 ├── docker-compose.yml
 ├── Dockerfile           # non-root, healthcheck
