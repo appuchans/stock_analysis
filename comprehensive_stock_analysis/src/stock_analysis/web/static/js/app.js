@@ -5,10 +5,11 @@ import { renderReport } from "./dashboard.js";
 import { loadHistory } from "./history.js";
 import { loadWatchlist } from "./watchlist.js";
 import { loadAlerts } from "./alerts.js";
+import { loadAutomation } from "./automation.js";
 
 const VIEWS = {
   new: "view-new", report: "view-report", history: "view-history",
-  watchlist: "view-watchlist", alerts: "view-alerts",
+  watchlist: "view-watchlist", alerts: "view-alerts", automation: "view-automation",
 };
 
 function showView(name) {
@@ -24,6 +25,7 @@ function route() {
   else if (view === "history") { showView("history"); loadHistory(); }
   else if (view === "watchlist") { showView("watchlist"); loadWatchlist(); }
   else if (view === "alerts") { showView("alerts"); loadAlerts(); }
+  else if (view === "automation") { showView("automation"); loadAutomation(); }
   else showView("new");
 }
 

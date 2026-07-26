@@ -221,3 +221,139 @@ class TestChartDataFreshnessTimestamp:
         import json as _json
         chart = _json.loads(written[0][2])
         assert chart["data_fetched_at"] is None
+
+
+class TestPremiumProviderEnrichment:
+    """_enrich_with_premium_providers deepens structured data with FMP when
+    configured, but must be a strict no-op otherwise: no FMP key, no
+    non-deep depth, and no provider exception may ever break the fetch."""
+
+    def _make_flow(self, *, depth: str = "deep", is_etf: bool = False) -> StockAnalysisFlow:
+        flow = StockAnalysisFlow(use_data_cache=False, asset_type="etf" if is_etf else "stock")
+        flow.state.symbol = "AAPL"
+        flow.state.analysis_depth = depth
+        flow.state.asset_type = "etf" if is_etf else "stock"  # _is_etf reads state, not the ctor arg
+        return flow
+
+    def test_noop_without_fmp_key(self, monkeypatch):
+        from src.stock_analysis.config.settings import settings
+
+        monkeypatch.setattr(settings, "fmp_api_key", None)
+        flow = self._make_flow()
+        structured: dict = {}
+        flow._enrich_with_premium_providers("AAPL", structured)
+        assert structured == {}
+
+    def test_noop_for_non_deep_depth_even_with_key(self, monkeypatch):
+        from src.stock_analysis.config.settings import settings
+
+        monkeypatch.setattr(settings, "fmp_api_key", "test-key")
+        flow = self._make_flow(depth="standard")
+        structured: dict = {}
+        flow._enrich_with_premium_providers("AAPL", structured)
+        assert structured == {}
+
+    def test_deep_with_key_adds_statements_estimates_transcript_insider(self, monkeypatch):
+        from src.stock_analysis.config.settings import settings
+        from src.stock_analysis.tools.providers.router import ROUTER
+
+        monkeypatch.setattr(settings, "fmp_api_key", "test-key")
+        monkeypatch.setattr(ROUTER, "get_statements", lambda symbol, years=10: {
+            "years_available": 10, "source": "fmp",
+        })
+        monkeypatch.setattr(ROUTER, "get_estimates", lambda symbol: {
+            "estimate_revisions": [{"fiscal_year": "2026"}], "source": "fmp",
+        })
+        monkeypatch.setattr(ROUTER, "get_transcript", lambda symbol: {
+            "content_excerpt": "...", "source": "fmp",
+        })
+        monkeypatch.setattr(ROUTER, "get_insider_trades", lambda symbol: {
+            "insider_trades": [{"reporting_name": "Jane Doe"}], "source": "fmp",
+        })
+
+        flow = self._make_flow()
+        structured: dict = {"analyst": {"price_targets": {}}, "ownership": {"insider_pct": 5}}
+        flow._enrich_with_premium_providers("AAPL", structured)
+
+        assert structured["statements_10y"]["years_available"] == 10
+        assert structured["analyst"]["estimate_revisions"][0]["fiscal_year"] == "2026"
+        assert structured["analyst"]["price_targets"] == {}  # existing keys preserved
+        assert structured["transcript"]["content_excerpt"] == "..."
+        assert structured["ownership"]["insider_trades_detail"][0]["reporting_name"] == "Jane Doe"
+        assert structured["ownership"]["insider_pct"] == 5  # existing keys preserved
+
+    def test_etf_holdings_only_enriched_for_etfs(self, monkeypatch):
+        from src.stock_analysis.config.settings import settings
+        from src.stock_analysis.tools.providers.router import ROUTER
+
+        monkeypatch.setattr(settings, "fmp_api_key", "test-key")
+        for method in ("get_statements", "get_estimates", "get_transcript", "get_insider_trades"):
+            monkeypatch.setattr(ROUTER, method, lambda *a, **k: {})
+        called = []
+        monkeypatch.setattr(ROUTER, "get_etf_holdings", lambda symbol: (
+            called.append(symbol) or {"top_holdings": [{"name": "AAPL"}], "source": "fmp"}
+        ))
+
+        stock_flow = self._make_flow(is_etf=False)
+        stock_flow._enrich_with_premium_providers("SPY", {})
+        assert called == []
+
+        etf_flow = self._make_flow(is_etf=True)
+        structured: dict = {}
+        etf_flow._enrich_with_premium_providers("SPY", structured)
+        assert called == ["SPY"]
+        assert structured["etf_portfolio"]["top_holdings"][0]["name"] == "AAPL"
+
+    def test_provider_exception_never_propagates(self, monkeypatch):
+        from src.stock_analysis.config.settings import settings
+        from src.stock_analysis.tools.providers.router import ROUTER
+
+        monkeypatch.setattr(settings, "fmp_api_key", "test-key")
+        monkeypatch.setattr(
+            ROUTER, "get_statements",
+            lambda symbol, years=10: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+        flow = self._make_flow()
+        structured: dict = {}
+        flow._enrich_with_premium_providers("AAPL", structured)  # must not raise
+        assert structured == {}
+
+    def test_incapable_results_are_not_merged(self, monkeypatch):
+        """An error/empty result from a provider must leave structured
+        untouched rather than merging a partial/error payload in."""
+        from src.stock_analysis.config.settings import settings
+        from src.stock_analysis.tools.providers.router import ROUTER
+
+        monkeypatch.setattr(settings, "fmp_api_key", "test-key")
+        monkeypatch.setattr(ROUTER, "get_statements", lambda symbol, years=10: {"error": "rate limited"})
+        monkeypatch.setattr(ROUTER, "get_estimates", lambda symbol: {})
+        monkeypatch.setattr(ROUTER, "get_transcript", lambda symbol: {})
+        monkeypatch.setattr(ROUTER, "get_insider_trades", lambda symbol: {})
+
+        flow = self._make_flow()
+        structured: dict = {}
+        flow._enrich_with_premium_providers("AAPL", structured)
+        assert structured == {}
+
+
+class TestInputsSurfacesPremiumDataBlobs:
+    def _make_flow(self) -> StockAnalysisFlow:
+        flow = StockAnalysisFlow(use_data_cache=False, asset_type="stock")
+        flow.state.symbol = "AAPL"
+        return flow
+
+    def test_missing_premium_data_falls_back_to_not_available(self):
+        flow = self._make_flow()
+        inputs = flow._inputs()
+        assert "Not available" in inputs["statements_10y_data"]
+        assert "Not available" in inputs["transcript_data"]
+
+    def test_present_premium_data_is_serialized(self):
+        flow = self._make_flow()
+        flow.state.data["structured"] = {
+            "statements_10y": {"years_available": 10},
+            "transcript": {"content_excerpt": "management commentary"},
+        }
+        inputs = flow._inputs()
+        assert "10" in inputs["statements_10y_data"]
+        assert "management commentary" in inputs["transcript_data"]

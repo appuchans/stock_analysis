@@ -97,10 +97,22 @@ def check_and_dispatch(
 ) -> None:
     """Compare new vs previous recommendation and fire an alert if warranted.
 
-    Triggers on:
+    Built-in triggers (always on, zero configuration):
     - Recommendation flip (e.g. Buy -> Sell)
     - Confidence drop > 0.2
+
+    Additionally evaluates any user-configured rules (web/rules.py) for this
+    symbol — target/stop-loss hits, and custom-threshold recommendation-change
+    / confidence-drop rules — regardless of whether the built-in triggers
+    above fired.
     """
+    try:
+        from . import rules as rules_mod
+
+        rules_mod.evaluate_post_run_rules(symbol, new_rec, prev_rec)
+    except Exception as exc:
+        _logger.debug("rule evaluation failed for %s: %s", symbol, exc)
+
     if not new_rec or not prev_rec:
         return
 

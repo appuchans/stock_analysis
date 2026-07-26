@@ -242,6 +242,11 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         base["financials_data"] = _blob("financials")
         base["ownership_data"] = _blob("ownership")
         base["sentiment_data"] = _blob("sentiment", 6000)
+        # Only ever populated on deep runs with an FMP key configured
+        # (_enrich_with_premium_providers) — "Not available" otherwise, same
+        # as every other side-channel above.
+        base["statements_10y_data"] = _blob("statements_10y")
+        base["transcript_data"] = _blob("transcript", 6000)
 
         return base
 
@@ -442,6 +447,8 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         if fetched.get("peers"):
             structured["peers"] = fetched["peers"]
 
+        self._enrich_with_premium_providers(sym, structured)
+
         bundle: Dict[str, Any] = {"structured": structured, "technical_summary": technical_summary}
 
         # Chart data for the HTML report (1y weekly closes + quarterly revenue)
@@ -539,6 +546,56 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # every cache-hit apply instead of the real network fetch.
         bundle["data_fetched_at"] = datetime.now().isoformat(timespec="seconds")
         return bundle
+
+    def _enrich_with_premium_providers(self, symbol: str, structured: Dict[str, Any]) -> None:
+        """Deepen ``structured`` in place with FMP data when an API key is
+        configured (10y statements, estimate revisions, an earnings-call
+        transcript excerpt, and insider-trade detail) — a no-op when FMP
+        isn't configured, and gated to deep runs only since the transcript
+        excerpt alone roughly doubles prompt volume for that stage.
+
+        Never raises: provider methods already degrade to ``{}``/``{"error"}``
+        internally, so a bad key or an outage just means this contributes
+        nothing beyond what the keyless yfinance summarizers already added.
+        """
+        if self.state.analysis_depth != "deep":
+            return
+        from ..config.settings import settings
+
+        if not settings.fmp_api_key:
+            return
+        from ..tools.providers import ROUTER
+        from ..tools.providers.base import is_capable
+
+        try:
+            statements = ROUTER.get_statements(symbol, years=10)
+            if is_capable(statements):
+                structured["statements_10y"] = statements
+
+            estimates = ROUTER.get_estimates(symbol)
+            if is_capable(estimates) and estimates.get("estimate_revisions"):
+                structured.setdefault("analyst", {})["estimate_revisions"] = (
+                    estimates["estimate_revisions"]
+                )
+
+            transcript = ROUTER.get_transcript(symbol)
+            if is_capable(transcript):
+                structured["transcript"] = transcript
+
+            insider = ROUTER.get_insider_trades(symbol)
+            if is_capable(insider) and insider.get("insider_trades"):
+                structured.setdefault("ownership", {})["insider_trades_detail"] = (
+                    insider["insider_trades"]
+                )
+
+            if self._is_etf:
+                etf_holdings = ROUTER.get_etf_holdings(symbol)
+                if is_capable(etf_holdings):
+                    structured["etf_portfolio"] = {
+                        **(structured.get("etf_portfolio") or {}), **etf_holdings,
+                    }
+        except Exception as exc:  # defense in depth — must never abort the fetch
+            _logger.warning("Premium provider enrichment failed for %s: %s", symbol, exc)
 
     def _update_sentiment_history(self, snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Append today's sentiment snapshot to the per-symbol history file.

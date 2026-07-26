@@ -14,9 +14,9 @@ class PortfolioAnalysisTool(BaseTool):
     name: str = "Portfolio Analysis Tool"
     description: str = (
         "Given a list of stock symbols, calculates the portfolio correlation matrix, "
-        "per-stock risk/return metrics, equal-weight allocation, minimum-variance weights "
-        "(an inverse-variance-weighted proxy that ignores cross-asset covariance/correlation, "
-        "not a true covariance-based minimum-variance optimization), "
+        "per-stock risk/return metrics, equal-weight allocation, true covariance-based "
+        "minimum-variance weights (long-only, fully invested, solved via SLSQP; falls back "
+        "to an inverse-variance proxy only if the optimizer fails to converge), "
         "and combined portfolio risk metrics."
     )
 
@@ -45,7 +45,7 @@ class PortfolioAnalysisTool(BaseTool):
             correlation = returns.corr().round(4).to_dict()
             individual = self._individual_metrics(returns, risk_free_rate)
             equal_weights = {s: round(1.0 / len(available), 4) for s in available}
-            mv_weights = self._min_variance_weights(returns)
+            mv_weights, mv_is_proxy = self._min_variance_weights(returns)
             if weights is not None:
                 if set(weights) != set(available):
                     return {"error": "User-supplied weights must match available price-data symbols"}
@@ -53,7 +53,7 @@ class PortfolioAnalysisTool(BaseTool):
                 allocation_method = "user_supplied"
             else:
                 portfolio_weights = mv_weights
-                allocation_method = "minimum_variance_proxy"
+                allocation_method = "minimum_variance_proxy" if mv_is_proxy else "minimum_variance"
             portfolio_metrics = self._portfolio_metrics(
                 returns, portfolio_weights, risk_free_rate
             )
@@ -92,8 +92,46 @@ class PortfolioAnalysisTool(BaseTool):
             }
         return metrics
 
-    def _min_variance_weights(self, returns: pd.DataFrame) -> Dict[str, float]:
-        """Inverse-variance weighting as a simple proxy for minimum-variance allocation."""
+    def _min_variance_weights(self, returns: pd.DataFrame) -> tuple:
+        """True covariance-based minimum-variance weights: minimize w^T Σ w
+        subject to sum(w) = 1 and w >= 0 (long-only, fully invested), solved
+        via SLSQP. Falls back to the inverse-variance proxy (which ignores
+        cross-asset covariance entirely) only if the optimizer fails to
+        converge — e.g. a near-singular covariance matrix from very few
+        return observations.
+
+        Returns (weights, is_proxy).
+        """
+        cov = returns.cov().values
+        n = cov.shape[0]
+        try:
+            from scipy.optimize import minimize
+
+            def _objective(w: np.ndarray) -> float:
+                return float(w @ cov @ w)
+
+            result = minimize(
+                _objective,
+                x0=np.full(n, 1.0 / n),
+                method="SLSQP",
+                bounds=[(0.0, 1.0)] * n,
+                constraints=[{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}],
+                options={"maxiter": 500, "ftol": 1e-12},
+            )
+            if not result.success or not np.isfinite(result.x).all():
+                raise RuntimeError(result.message)
+            w = np.clip(result.x, 0.0, None)
+            total = w.sum()
+            if total <= 0:
+                raise RuntimeError("optimizer converged to a degenerate all-zero allocation")
+            w = w / total
+            return {col: round(float(v), 4) for col, v in zip(returns.columns, w)}, False
+        except Exception:
+            return self._min_variance_weights_proxy(returns), True
+
+    def _min_variance_weights_proxy(self, returns: pd.DataFrame) -> Dict[str, float]:
+        """Inverse-variance weighting — ignores cross-asset covariance entirely.
+        Used only as a fallback when the real optimization fails to converge."""
         var = returns.var().clip(lower=1e-8)  # floor near-zero variance to avoid inf weights
         inv_var = 1.0 / var
         weights = inv_var / inv_var.sum()

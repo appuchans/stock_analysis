@@ -258,3 +258,151 @@ class AlertSettingsResponse(BaseModel):
     alert_smtp_user: str
     alert_smtp_password_set: bool
     alert_webhook_url: str
+
+
+class ScheduleCreateRequest(BaseModel):
+    target: str  # "watchlist" or a specific symbol
+    cron_expr: str
+    depth: Literal["quick", "standard", "deep"] = "standard"
+    use_cache: bool = False
+    monitor_only: bool = False
+
+    @field_validator("target")
+    @classmethod
+    def _validate_target(cls, v: str) -> str:
+        import re
+
+        v = (v or "").strip().upper()
+        if v == "WATCHLIST":
+            return "watchlist"
+        if not re.match(_SYMBOL_RE, v):
+            raise ValueError("target must be 'watchlist' or a valid ticker symbol")
+        return v
+
+    @field_validator("cron_expr")
+    @classmethod
+    def _validate_cron(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("cron_expr is required")
+        return v.strip()
+
+
+class ScheduleItem(BaseModel):
+    id: str
+    target: str
+    cron_expr: str
+    depth: str
+    use_cache: bool
+    monitor_only: bool
+    enabled: bool
+    created_at: str
+    last_run_at: Optional[str] = None
+    last_result: Optional[str] = None
+
+    @field_validator("use_cache", "monitor_only", "enabled", mode="before")
+    @classmethod
+    def _int_to_bool(cls, v: Any) -> bool:
+        return bool(v)
+
+
+_RULE_TYPES = (
+    "price_above", "price_below", "pct_move_day", "target_price_hit",
+    "stop_loss_hit", "recommendation_changed", "confidence_dropped",
+    "earnings_within_days",
+)
+
+
+class RuleCreateRequest(BaseModel):
+    symbol: str
+    rule_type: Literal[_RULE_TYPES]  # type: ignore[valid-type]
+    threshold: Optional[float] = None
+    cooldown_min: int = Field(60, ge=1, le=1440)
+
+    @field_validator("symbol")
+    @classmethod
+    def _validate_symbol(cls, v: str) -> str:
+        s = safe_symbol(v)
+        if not s:
+            raise ValueError("invalid symbol")
+        return s
+
+    @model_validator(mode="after")
+    def _threshold_required_for_price_rules(self) -> "RuleCreateRequest":
+        needs_threshold = {"price_above", "price_below", "pct_move_day", "earnings_within_days"}
+        if self.rule_type in needs_threshold and self.threshold is None:
+            raise ValueError(f"rule_type {self.rule_type!r} requires a threshold")
+        return self
+
+
+class RuleItem(BaseModel):
+    id: str
+    symbol: str
+    rule_type: str
+    threshold: Optional[float] = None
+    cooldown_min: int
+    enabled: bool
+    created_at: str
+    last_fired_at: Optional[str] = None
+
+    @field_validator("enabled", mode="before")
+    @classmethod
+    def _int_to_bool(cls, v: Any) -> bool:
+        return bool(v)
+
+
+class TransactionCreateRequest(BaseModel):
+    symbol: str
+    side: Literal["buy", "sell"]
+    qty: float = Field(..., gt=0)
+    price: float = Field(..., ge=0)
+    fees: float = Field(0.0, ge=0)
+    date: str
+    note: str = ""
+
+    @field_validator("symbol")
+    @classmethod
+    def _validate_symbol(cls, v: str) -> str:
+        s = safe_symbol(v)
+        if not s:
+            raise ValueError("invalid symbol")
+        return s
+
+    @field_validator("date")
+    @classmethod
+    def _validate_date(cls, v: str) -> str:
+        from datetime import date as _date
+
+        try:
+            _date.fromisoformat(v[:10])
+        except ValueError:
+            raise ValueError("date must be an ISO date (YYYY-MM-DD)")
+        return v
+
+
+class TransactionItem(BaseModel):
+    id: int
+    symbol: str
+    side: str
+    qty: float
+    price: float
+    fees: float
+    date: str
+    note: str = ""
+    created_at: str
+
+
+class CSVImportRequest(BaseModel):
+    csv: str
+
+
+class CSVImportResponse(BaseModel):
+    imported: int
+
+
+class PositionItem(BaseModel):
+    symbol: str
+    qty: float
+    avg_cost: float
+    cost_basis_total: float
+    realized_pnl: float
+    lots: List[Dict[str, Any]]

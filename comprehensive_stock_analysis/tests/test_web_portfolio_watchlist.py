@@ -140,6 +140,44 @@ class TestPortfolioAnalyzeEndpoint:
         )
         assert resp.status_code == 422
 
+    def test_defaults_to_holdings_weights_when_all_symbols_are_held(self, mock_portfolio_tool):
+        from src.stock_analysis.web import db
+
+        db.add_transaction({"symbol": "AAPL", "side": "buy", "qty": 10, "price": 100.0,
+                             "fees": 0, "date": "2026-01-01"})
+        db.add_transaction({"symbol": "MSFT", "side": "buy", "qty": 5, "price": 200.0,
+                             "fees": 0, "date": "2026-01-01"})
+        # cost basis: AAPL $1000, MSFT $1000 -> 50/50
+        resp = client.post("/api/portfolio/analyze", json={"symbols": ["AAPL", "MSFT"]})
+        assert resp.status_code == 200
+        _args, _kwargs = mock_portfolio_tool.call_args
+        assert _args[3] == {"AAPL": 0.5, "MSFT": 0.5}
+
+    def test_falls_back_to_optimizer_when_not_all_symbols_held(self, mock_portfolio_tool):
+        from src.stock_analysis.web import db
+
+        db.add_transaction({"symbol": "AAPL", "side": "buy", "qty": 10, "price": 100.0,
+                             "fees": 0, "date": "2026-01-01"})
+        # MSFT is not held — holdings weighting must not apply.
+        resp = client.post("/api/portfolio/analyze", json={"symbols": ["AAPL", "MSFT"]})
+        assert resp.status_code == 200
+        _args, _kwargs = mock_portfolio_tool.call_args
+        assert _args[3] is None
+
+    def test_explicit_weights_override_holdings(self, mock_portfolio_tool):
+        from src.stock_analysis.web import db
+
+        db.add_transaction({"symbol": "AAPL", "side": "buy", "qty": 10, "price": 100.0,
+                             "fees": 0, "date": "2026-01-01"})
+        db.add_transaction({"symbol": "MSFT", "side": "buy", "qty": 5, "price": 200.0,
+                             "fees": 0, "date": "2026-01-01"})
+        resp = client.post("/api/portfolio/analyze", json={
+            "symbols": ["AAPL", "MSFT"], "weights": {"AAPL": 0.9, "MSFT": 0.1},
+        })
+        assert resp.status_code == 200
+        _args, _kwargs = mock_portfolio_tool.call_args
+        assert _args[3] == {"AAPL": 0.9, "MSFT": 0.1}
+
 
 # ── Watchlist ──────────────────────────────────────────────────────────────────
 

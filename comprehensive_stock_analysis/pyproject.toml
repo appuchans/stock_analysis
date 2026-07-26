@@ -56,6 +56,7 @@ dependencies = [
     # Local web UI (FastAPI backend + no-build frontend)
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.27.0",
+    "apscheduler>=3.10.0",
 ]
 
 [project.optional-dependencies]

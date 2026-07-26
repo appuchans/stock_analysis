@@ -88,9 +88,14 @@ fundamental:
     3. Execution Track Record — use the earnings beat/miss history in {collected_data}.
     4. Financial Performance — use the 3-year statements in {financials_data}:
        revenue trajectory and YoY growth, margins, free cash flow, buybacks,
-       balance-sheet strength.
+       balance-sheet strength. Where a longer history is available in
+       {statements_10y_data}, use it to judge whether the recent trend is a
+       durable multi-year pattern or a short-term blip.
     5. Valuation — current multiples vs the growth outlook; compare your view with
        the street consensus in {analyst_data} (price targets, EPS estimates, revisions).
+    6. Management Commentary — if a recent earnings-call excerpt is available in
+       {transcript_data}, note anything management said that changes or confirms
+       the thesis above (guidance tone, one-off items, capital-allocation plans).
     Lead with narrative; cite the fiscal period of every figure.
   etf: >-
     Analyze the ETF profile of {symbol}: expense ratio, AUM, NAV, 1Y/3Y/5Y

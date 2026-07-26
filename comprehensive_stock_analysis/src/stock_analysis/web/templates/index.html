@@ -39,6 +39,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           Alerts
         </a>
+        <a href="#/automation" data-nav="automation" class="sb-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Automation
+        </a>
       </nav>
       <div class="sb-spacer"></div>
       <button id="theme-toggle" class="sb-toggle" type="button">
@@ -246,6 +250,91 @@
               <div id="alerts-empty" class="empty-state hidden">No alerts fired yet.</div>
             </div>
           </div>
+        </section>
+
+        <!-- Automation -->
+        <section id="view-automation" class="view">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Automation</h1>
+              <p class="page-sub">Scheduled re-analysis and custom alert rules — all run through the same queue as manual analyses.</p>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><h3>Scheduled re-analysis</h3></div>
+            <p class="panel-sub">Runs on a cron schedule. "Monitor" schedules refresh data only (no LLM calls); full schedules queue a real analysis and respect the daily LLM-call cap.</p>
+            <form id="schedule-form" class="automation-form" autocomplete="off">
+              <div class="field">
+                <label for="schedule-target-mode">Target</label>
+                <select id="schedule-target-mode" onchange="document.getElementById('schedule-symbol-field').classList.toggle('hidden', this.value==='watchlist')">
+                  <option value="watchlist">Whole watchlist</option>
+                  <option value="symbol">Specific symbol</option>
+                </select>
+              </div>
+              <div class="field hidden" id="schedule-symbol-field">
+                <label for="schedule-symbol">Symbol</label>
+                <input id="schedule-symbol" type="text" placeholder="AAPL" maxlength="10" />
+              </div>
+              <div class="field">
+                <label for="schedule-cron-preset">Frequency</label>
+                <select id="schedule-cron-preset"></select>
+              </div>
+              <div class="field hidden" id="schedule-cron-custom-field">
+                <label for="schedule-cron-custom">Cron expression</label>
+                <input id="schedule-cron-custom" type="text" placeholder="0 18 * * 1-5" />
+              </div>
+              <div class="field">
+                <label for="schedule-depth">Depth</label>
+                <select id="schedule-depth">
+                  <option value="quick">Quick</option>
+                  <option value="standard" selected>Standard</option>
+                  <option value="deep">Deep</option>
+                </select>
+              </div>
+              <label class="check"><input id="schedule-use-cache" type="checkbox" /> Use cached data</label>
+              <label class="check"><input id="schedule-monitor-only" type="checkbox" /> Monitor only (no LLM calls)</label>
+              <button type="submit" class="btn btn-secondary">Add schedule</button>
+            </form>
+          </div>
+          <div class="card table-card">
+            <table class="wl-table">
+              <thead><tr><th>Target</th><th>Cron</th><th>Depth</th><th>Last run</th><th>Result</th><th></th></tr></thead>
+              <tbody id="schedule-body"></tbody>
+            </table>
+          </div>
+          <div id="schedule-empty" class="empty-state hidden">No schedules yet.</div>
+
+          <div class="panel" style="margin-top:24px">
+            <div class="panel-head"><h3>Alert rules</h3></div>
+            <p class="panel-sub">Price rules are checked every 15 minutes; recommendation/target/stop-loss rules are checked right after each analysis.</p>
+            <form id="rule-form" class="automation-form" autocomplete="off">
+              <div class="field">
+                <label for="rule-symbol">Symbol</label>
+                <input id="rule-symbol" type="text" placeholder="AAPL" maxlength="10" required />
+              </div>
+              <div class="field">
+                <label for="rule-type">Condition</label>
+                <select id="rule-type"></select>
+              </div>
+              <div class="field" id="rule-threshold-field">
+                <label for="rule-threshold">Threshold <span id="rule-threshold-unit" class="muted"></span></label>
+                <input id="rule-threshold" type="number" step="any" />
+              </div>
+              <div class="field">
+                <label for="rule-cooldown">Cooldown (min)</label>
+                <input id="rule-cooldown" type="number" value="60" min="1" />
+              </div>
+              <button type="submit" class="btn btn-secondary">Add rule</button>
+            </form>
+          </div>
+          <div class="card table-card">
+            <table class="wl-table">
+              <thead><tr><th>Symbol</th><th>Condition</th><th>Threshold</th><th>Cooldown</th><th>Last fired</th><th></th></tr></thead>
+              <tbody id="rule-body"></tbody>
+            </table>
+          </div>
+          <div id="rule-empty" class="empty-state hidden">No alert rules yet.</div>
         </section>
       </main>
     </div>

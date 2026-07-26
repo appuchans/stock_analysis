@@ -61,6 +61,15 @@ When a source is unavailable, agents are instructed to cover that angle qualitat
 (web search or general knowledge, explicitly qualified) — reports never contain raw
 error messages or HTTP status codes.
 
+**Optional premium providers** (`tools/providers/`) — the app is 100% functional without
+these; set an API key in `.env` and the provider router prefers it automatically, falling
+back to the free sources above for anything it doesn't cover:
+- **Financial Modeling Prep** (`FMP_API_KEY`) — 10-year statements, analyst estimate
+  revisions, earnings-call transcript excerpts, insider-trade detail, ETF holdings. Only
+  used on **deep**-depth runs (a transcript excerpt alone roughly doubles prompt size).
+- **Polygon.io** (`POLYGON_API_KEY`) — quotes and daily bars with unlimited API calls,
+  preferred over yfinance whenever set (matters once anything polls prices on a schedule).
+
 ### Output rigor
 Every specialist report must cite each number with its period and source, disclose
 methodology (VaR confidence/horizon, beta window, DCF assumptions), and end with a
@@ -101,6 +110,8 @@ Set at minimum one LLM key in `.env`:
 ```
 OPENAI_API_KEY=sk-...        # or ANTHROPIC_API_KEY
 FRED_API_KEY=demo            # optional; "demo" gives rate-limited access
+FMP_API_KEY=...              # optional — deepens deep-depth runs (10y statements, transcripts, insider detail)
+POLYGON_API_KEY=...          # optional — preferred quote/bars source when set (unlimited calls)
 ```
 
 Run:
@@ -206,6 +217,8 @@ Central LLM defaults and per-agent overrides. Priority: constructor args > agent
 |---|---|---|
 | `LLM_PROVIDER` / `LLM_MODEL` | from llm_config.yaml | Global LLM override |
 | `FRED_API_KEY` | `demo` | FRED economic data |
+| `FMP_API_KEY` | unset | Optional — Financial Modeling Prep. Deepens **deep**-depth runs with 10y statements, estimate revisions, an earnings-call transcript excerpt, and insider-trade detail (`tools/providers/`). Fully optional; everything works without it. |
+| `POLYGON_API_KEY` | unset | Optional — Polygon.io. Preferred for quotes/bars when set (unlimited calls, unlike yfinance); falls back to yfinance otherwise. |
 | `SEC_EDGAR_ENABLED` | `true` | Toggle SEC filing collection |
 | `RSS_FEEDS_ENABLED` | `true` | Toggle news collection |
 | `WEB_SCRAPING_ENABLED` | `true` | Toggle DuckDuckGo search |

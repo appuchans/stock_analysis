@@ -7,8 +7,9 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import scheduler
 from .jobs import manager
-from .routes import alerts, analyze, history, portfolio, results, watchlist
+from .routes import alerts, analyze, automation, history, portfolio, providers, results, watchlist
 
 _WEB_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _WEB_DIR / "static"
@@ -27,7 +28,9 @@ async def _lifespan(_app: FastAPI):
         backfill_rec_history()
     except Exception:
         pass  # best-effort; never block startup
+    scheduler.start()
     yield
+    scheduler.stop()
 
 
 app = FastAPI(
@@ -41,6 +44,8 @@ app.include_router(results.router)
 app.include_router(alerts.router)
 app.include_router(portfolio.router)
 app.include_router(watchlist.router)
+app.include_router(providers.router)
+app.include_router(automation.router)
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 

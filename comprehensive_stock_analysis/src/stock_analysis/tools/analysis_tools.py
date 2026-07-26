@@ -220,9 +220,15 @@ class TechnicalAnalysisTool(BaseTool):
 
         buy_count = 0
         sell_count = 0
+        # Counts groups actually evaluated (data present), not assumed to be
+        # all 4 — a missing indicator must drop out of the total instead of
+        # silently inflating neutral_signals for a group that was never
+        # evaluated at all.
+        evaluated_groups = 0
 
         # RSI signals
         if indicators.get("rsi") is not None:
+            evaluated_groups += 1
             if indicators["rsi"] < 30:
                 buy_count += 1
             elif indicators["rsi"] > 70:
@@ -230,6 +236,7 @@ class TechnicalAnalysisTool(BaseTool):
 
         # MACD signals
         if indicators.get("macd") is not None and indicators.get("macd_signal") is not None:
+            evaluated_groups += 1
             if indicators["macd"] > indicators["macd_signal"]:
                 buy_count += 1
             else:
@@ -237,6 +244,7 @@ class TechnicalAnalysisTool(BaseTool):
 
         # Moving average signals
         if indicators.get("sma_20") is not None and indicators.get("sma_50") is not None:
+            evaluated_groups += 1
             if indicators["sma_20"] > indicators["sma_50"]:
                 buy_count += 1
             else:
@@ -247,6 +255,7 @@ class TechnicalAnalysisTool(BaseTool):
             indicators.get("stochastic_k") is not None
             and indicators.get("stochastic_d") is not None
         ):
+            evaluated_groups += 1
             if indicators["stochastic_k"] > indicators["stochastic_d"]:
                 buy_count += 1
             else:
@@ -254,7 +263,7 @@ class TechnicalAnalysisTool(BaseTool):
 
         signals["buy_signals"] = buy_count
         signals["sell_signals"] = sell_count
-        signals["neutral_signals"] = 4 - buy_count - sell_count
+        signals["neutral_signals"] = evaluated_groups - buy_count - sell_count
 
         # Calculate signal strength
         total_signals = buy_count + sell_count
@@ -691,28 +700,42 @@ class RiskAnalysisTool(BaseTool):
 
     def _analyze_credit_risk(self, fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze credit risk."""
-        debt_to_equity = fundamental_data.get("debt_to_equity") or 0
-        interest_coverage = fundamental_data.get("interest_coverage") or 0
-        current_ratio = fundamental_data.get("current_ratio") or 0
+        debt_to_equity = fundamental_data.get("debt_to_equity")
+        interest_coverage = fundamental_data.get("interest_coverage")
+        current_ratio = fundamental_data.get("current_ratio")
 
-        # Credit risk score
-        credit_score = 0
-        if debt_to_equity <= 0.5:
-            credit_score += 1
-        elif debt_to_equity <= 1.0:
-            credit_score += 0.5
+        # Credit risk score — each metric contributes only when actually
+        # present, so a missing value is excluded rather than silently
+        # defaulted to 0 (which would score debt_to_equity as excellent and
+        # interest_coverage as terrible for the exact same "no data" state).
+        score = 0.0
+        total_metrics = 0
 
-        if interest_coverage >= 5:
-            credit_score += 1
-        elif interest_coverage >= 2.5:
-            credit_score += 0.5
+        if debt_to_equity is not None:
+            total_metrics += 1
+            if debt_to_equity <= 0.5:
+                score += 1
+            elif debt_to_equity <= 1.0:
+                score += 0.5
 
-        if current_ratio >= 1.5:
-            credit_score += 1
-        elif current_ratio >= 1.0:
-            credit_score += 0.5
+        if interest_coverage is not None:
+            total_metrics += 1
+            if interest_coverage >= 5:
+                score += 1
+            elif interest_coverage >= 2.5:
+                score += 0.5
 
-        risk_level = "Low" if credit_score >= 2.5 else "Medium" if credit_score >= 1.5 else "High"
+        if current_ratio is not None:
+            total_metrics += 1
+            if current_ratio >= 1.5:
+                score += 1
+            elif current_ratio >= 1.0:
+                score += 0.5
+
+        credit_score = (score / total_metrics) if total_metrics else 0.0
+        risk_level = (
+            "Low" if credit_score >= 0.8333 else "Medium" if credit_score >= 0.5 else "High"
+        )
 
         return {
             "debt_to_equity": debt_to_equity,
@@ -724,25 +747,29 @@ class RiskAnalysisTool(BaseTool):
 
     def _analyze_liquidity_risk(self, fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze liquidity risk."""
-        current_ratio = fundamental_data.get("current_ratio") or 0
-        quick_ratio = fundamental_data.get("quick_ratio") or 0
-        cash_ratio = fundamental_data.get("cash_ratio") or 0
+        current_ratio = fundamental_data.get("current_ratio")
+        quick_ratio = fundamental_data.get("quick_ratio")
+        cash_ratio = fundamental_data.get("cash_ratio")
 
-        # Liquidity risk score
-        liquidity_score = 0
-        if current_ratio >= 2.0:
-            liquidity_score += 1
-        elif current_ratio >= 1.5:
-            liquidity_score += 0.5
+        score = 0.0
+        total_metrics = 0
 
-        if quick_ratio >= 1.0:
-            liquidity_score += 1
-        elif quick_ratio >= 0.5:
-            liquidity_score += 0.5
+        if current_ratio is not None:
+            total_metrics += 1
+            if current_ratio >= 2.0:
+                score += 1
+            elif current_ratio >= 1.5:
+                score += 0.5
 
-        risk_level = (
-            "Low" if liquidity_score >= 2.0 else "Medium" if liquidity_score >= 1.0 else "High"
-        )
+        if quick_ratio is not None:
+            total_metrics += 1
+            if quick_ratio >= 1.0:
+                score += 1
+            elif quick_ratio >= 0.5:
+                score += 0.5
+
+        liquidity_score = (score / total_metrics) if total_metrics else 0.0
+        risk_level = "Low" if liquidity_score >= 1.0 else "Medium" if liquidity_score >= 0.5 else "High"
 
         return {
             "current_ratio": current_ratio,
@@ -757,29 +784,38 @@ class RiskAnalysisTool(BaseTool):
         # This is a simplified operational risk analysis
         # In practice, this would involve more complex metrics
 
-        revenue_growth = fundamental_data.get("revenue_growth") or 0
-        earnings_growth = fundamental_data.get("earnings_growth") or 0
-        roe = fundamental_data.get("roe") or 0
+        revenue_growth = fundamental_data.get("revenue_growth")
+        earnings_growth = fundamental_data.get("earnings_growth")
+        roe = fundamental_data.get("roe")
 
         # Operational risk score (yfinance returns fractions: 10% = 0.10)
-        operational_score = 0
-        if revenue_growth >= 0.10:
-            operational_score += 1
-        elif revenue_growth >= 0.05:
-            operational_score += 0.5
+        score = 0.0
+        total_metrics = 0
 
-        if earnings_growth >= 0.15:
-            operational_score += 1
-        elif earnings_growth >= 0.10:
-            operational_score += 0.5
+        if revenue_growth is not None:
+            total_metrics += 1
+            if revenue_growth >= 0.10:
+                score += 1
+            elif revenue_growth >= 0.05:
+                score += 0.5
 
-        if roe >= 0.15:
-            operational_score += 1
-        elif roe >= 0.10:
-            operational_score += 0.5
+        if earnings_growth is not None:
+            total_metrics += 1
+            if earnings_growth >= 0.15:
+                score += 1
+            elif earnings_growth >= 0.10:
+                score += 0.5
 
+        if roe is not None:
+            total_metrics += 1
+            if roe >= 0.15:
+                score += 1
+            elif roe >= 0.10:
+                score += 0.5
+
+        operational_score = (score / total_metrics) if total_metrics else 0.0
         risk_level = (
-            "Low" if operational_score >= 2.5 else "Medium" if operational_score >= 1.5 else "High"
+            "Low" if operational_score >= 0.8333 else "Medium" if operational_score >= 0.5 else "High"
         )
 
         return {

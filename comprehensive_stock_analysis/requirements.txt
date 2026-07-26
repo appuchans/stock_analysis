@@ -37,6 +37,7 @@ redis>=5.0.0
 # Local web UI (FastAPI backend + no-build frontend; `python -m stock_analysis.web`)
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
+apscheduler>=3.10.0  # in-process scheduler for watchlist re-analysis + alert rules
 
 # Development and testing
 pytest>=7.4.0

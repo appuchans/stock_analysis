@@ -305,6 +305,12 @@ table.peers tr.subject { background: var(--accent-soft); font-weight: 700; }
 
 /* ── Watchlist ─────────────────────────────────────────────────────────── */
 .watchlist-form { display: grid; grid-template-columns: 1fr 2fr auto; gap: 18px 20px; align-items: end; }
+
+/* ── Automation ────────────────────────────────────────────────────────── */
+.automation-form { display: flex; flex-wrap: wrap; gap: 16px 20px; align-items: end; margin-top: 4px; }
+.automation-form .field { min-width: 160px; }
+.automation-form .check { padding-bottom: 12px; }
+.automation-form code { font-size: 12.5px; background: var(--surface-2); padding: 2px 6px; border-radius: 5px; }
 .table-card { padding: 0; margin-top: 18px; overflow-x: auto; }
 table.wl-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 table.wl-table th, table.wl-table td { text-align: left; padding: 13px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; }

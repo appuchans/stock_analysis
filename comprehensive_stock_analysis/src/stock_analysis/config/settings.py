@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     # Required by SEC EDGAR terms of service — set to a real contact email.
     # A warning is logged at startup if the placeholder default is still in use.
     sec_edgar_email: str = Field("contact@example.com", validation_alias="SEC_EDGAR_EMAIL")
+    # Optional premium providers (tools/providers/) — the app is fully
+    # functional without these; when set, the provider router prefers them
+    # for the capabilities they cover and falls back to yfinance otherwise.
+    fmp_api_key: Optional[str] = Field(None, validation_alias="FMP_API_KEY")
+    polygon_api_key: Optional[str] = Field(None, validation_alias="POLYGON_API_KEY")
 
     # ── Application ───────────────────────────────────────────────────────────
     debug: bool = Field(False, validation_alias="DEBUG")

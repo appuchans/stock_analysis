@@ -90,6 +90,43 @@ CREATE TABLE IF NOT EXISTS settings_kv (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+CREATE TABLE IF NOT EXISTS schedules (
+    id            TEXT PRIMARY KEY,
+    target        TEXT NOT NULL,               -- 'watchlist' or a specific symbol
+    cron_expr     TEXT NOT NULL,                -- 5-field cron, e.g. "0 18 * * 1-5"
+    depth         TEXT NOT NULL DEFAULT 'standard',
+    use_cache     INTEGER NOT NULL DEFAULT 0,
+    monitor_only  INTEGER NOT NULL DEFAULT 0,   -- data-only refresh; skip the LLM pipeline
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL,
+    last_run_at   TEXT,
+    last_result   TEXT
+);
+CREATE TABLE IF NOT EXISTS rules (
+    id            TEXT PRIMARY KEY,
+    symbol        TEXT NOT NULL,
+    rule_type     TEXT NOT NULL,   -- price_above|price_below|pct_move_day|target_price_hit|
+                                    -- stop_loss_hit|recommendation_changed|confidence_dropped|
+                                    -- earnings_within_days
+    threshold     REAL,
+    cooldown_min  INTEGER NOT NULL DEFAULT 60,
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL,
+    last_fired_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rules_symbol ON rules(symbol);
+CREATE TABLE IF NOT EXISTS transactions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol     TEXT NOT NULL,
+    side       TEXT NOT NULL,      -- 'buy' or 'sell'
+    qty        REAL NOT NULL,
+    price      REAL NOT NULL,
+    fees       REAL NOT NULL DEFAULT 0,
+    date       TEXT NOT NULL,      -- transaction date (ISO), not created_at
+    note       TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_transactions_symbol ON transactions(symbol);
 """
 
 
@@ -219,6 +256,20 @@ def queued_jobs() -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def scheduled_llm_calls_today() -> int:
+    """Total llm_calls spent by scheduled-origin jobs today (UTC) — the input
+    to the daily_llm_call_cap governor (manual runs are exempt by design)."""
+    _ensure()
+    today_prefix = _now_iso()[:10]
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(llm_calls), 0) AS total FROM jobs "
+            "WHERE origin = 'scheduled' AND created_at LIKE ?",
+            (today_prefix + "%",),
+        ).fetchone()
+    return int(row["total"]) if row else 0
+
+
 def mark_orphaned_running() -> int:
     """A row left in 'running' means the process died mid-run: mark interrupted."""
     _ensure()
@@ -319,6 +370,168 @@ def all_settings() -> Dict[str, str]:
     with _connect() as conn:
         rows = conn.execute("SELECT key, value FROM settings_kv").fetchall()
     return {r["key"]: r["value"] for r in rows}
+
+
+# ── Schedules ────────────────────────────────────────────────────────────────
+def add_schedule(schedule: Dict[str, Any]) -> None:
+    _ensure()
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO schedules "
+            "(id, target, cron_expr, depth, use_cache, monitor_only, enabled, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                schedule["id"], schedule["target"], schedule["cron_expr"],
+                schedule.get("depth", "standard"), int(schedule.get("use_cache", 0)),
+                int(schedule.get("monitor_only", 0)), int(schedule.get("enabled", 1)),
+                schedule.get("created_at") or _now_iso(),
+            ),
+        )
+        conn.commit()
+
+
+def list_schedules() -> List[Dict[str, Any]]:
+    _ensure()
+    with _connect() as conn:
+        rows = conn.execute("SELECT * FROM schedules ORDER BY created_at ASC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_schedule(schedule_id: str) -> Optional[Dict[str, Any]]:
+    _ensure()
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM schedules WHERE id = ?", (schedule_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def set_schedule_enabled(schedule_id: str, enabled: bool) -> bool:
+    _ensure()
+    with _connect() as conn:
+        cursor = conn.execute(
+            "UPDATE schedules SET enabled = ? WHERE id = ?", (int(enabled), schedule_id)
+        )
+        conn.commit()
+        return cursor.rowcount == 1
+
+
+def delete_schedule(schedule_id: str) -> bool:
+    _ensure()
+    with _connect() as conn:
+        cursor = conn.execute("DELETE FROM schedules WHERE id = ?", (schedule_id,))
+        conn.commit()
+        return cursor.rowcount == 1
+
+
+def record_schedule_run(schedule_id: str, result: str) -> None:
+    _ensure()
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE schedules SET last_run_at = ?, last_result = ? WHERE id = ?",
+            (_now_iso(), result, schedule_id),
+        )
+        conn.commit()
+
+
+# ── Alert rules ──────────────────────────────────────────────────────────────
+def add_rule(rule: Dict[str, Any]) -> None:
+    _ensure()
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO rules (id, symbol, rule_type, threshold, cooldown_min, enabled, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                rule["id"], rule["symbol"], rule["rule_type"], rule.get("threshold"),
+                int(rule.get("cooldown_min", 60)), int(rule.get("enabled", 1)),
+                rule.get("created_at") or _now_iso(),
+            ),
+        )
+        conn.commit()
+
+
+def list_rules(symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    _ensure()
+    with _connect() as conn:
+        if symbol:
+            rows = conn.execute(
+                "SELECT * FROM rules WHERE symbol = ? ORDER BY created_at ASC", (symbol,)
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM rules ORDER BY created_at ASC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_rule(rule_id: str) -> Optional[Dict[str, Any]]:
+    _ensure()
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM rules WHERE id = ?", (rule_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def set_rule_enabled(rule_id: str, enabled: bool) -> bool:
+    _ensure()
+    with _connect() as conn:
+        cursor = conn.execute("UPDATE rules SET enabled = ? WHERE id = ?", (int(enabled), rule_id))
+        conn.commit()
+        return cursor.rowcount == 1
+
+
+def delete_rule(rule_id: str) -> bool:
+    _ensure()
+    with _connect() as conn:
+        cursor = conn.execute("DELETE FROM rules WHERE id = ?", (rule_id,))
+        conn.commit()
+        return cursor.rowcount == 1
+
+
+def record_rule_fired(rule_id: str) -> None:
+    _ensure()
+    with _connect() as conn:
+        conn.execute("UPDATE rules SET last_fired_at = ? WHERE id = ?", (_now_iso(), rule_id))
+        conn.commit()
+
+
+# ── Transactions (portfolio holdings ledger) ──────────────────────────────────
+def add_transaction(tx: Dict[str, Any]) -> int:
+    _ensure()
+    with _connect() as conn:
+        cursor = conn.execute(
+            "INSERT INTO transactions (symbol, side, qty, price, fees, date, note, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                tx["symbol"], tx["side"], float(tx["qty"]), float(tx["price"]),
+                float(tx.get("fees") or 0), tx["date"], tx.get("note", ""),
+                tx.get("created_at") or _now_iso(),
+            ),
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+
+def add_transactions(txs: List[Dict[str, Any]]) -> int:
+    """Bulk insert (CSV import). Returns the number of rows inserted."""
+    for tx in txs:
+        add_transaction(tx)
+    return len(txs)
+
+
+def list_transactions(symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    _ensure()
+    with _connect() as conn:
+        if symbol:
+            rows = conn.execute(
+                "SELECT * FROM transactions WHERE symbol = ? ORDER BY date ASC, id ASC", (symbol,)
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM transactions ORDER BY date ASC, id ASC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_transaction(tx_id: int) -> bool:
+    _ensure()
+    with _connect() as conn:
+        cursor = conn.execute("DELETE FROM transactions WHERE id = ?", (tx_id,))
+        conn.commit()
+        return cursor.rowcount == 1
 
 
 try:
