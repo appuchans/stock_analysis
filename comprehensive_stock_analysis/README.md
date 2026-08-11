@@ -267,8 +267,10 @@ pytest tests/test_cache.py         # 3-tier cache + cross-run reuse + --no-cache
 pytest tests/test_observability.py # token meter, credential preflight, HTTP session
 ```
 
-CI (`.github/workflows/ci.yml`) runs the suite on every push/PR; style and type checks
-(`black`, `isort`, `flake8`, `mypy`) run as advisory steps. **Run against the project's
+CI (`.github/workflows/ci.yml`) runs the suite on every push/PR. Formatting checks
+(`black`, `isort`) are **blocking** — fix drift with `black src/ tests/` and
+`isort src/ tests/`. `flake8` and `mypy` remain advisory while their backlogs are worked
+through (see `docs/PHASES.md`). **Run against the project's
 virtualenv** — `python3` on a dev machine may resolve to a different interpreter with a
 different CrewAI version (the project targets `crewai==1.14.5`).
 

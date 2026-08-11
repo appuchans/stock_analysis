@@ -42,15 +42,22 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install lint tools
-        run: pip install black isort flake8 mypy
-      # Style/type checks are advisory for now — promote to required by removing
-      # continue-on-error once the tree is verified clean.
+        # black/isort are pinned because they are blocking: an unpinned
+        # formatter release would fail CI on a version bump alone, with no
+        # code change. Bump these deliberately, reformatting in the same PR.
+        run: pip install black==26.5.1 isort==8.0.1 flake8 mypy
+
+      # Formatting is blocking as of the one-time reformat pass — the tree is
+      # clean, so any failure here is real drift. Run `black src/ tests/` and
+      # `isort src/ tests/` to fix.
       - name: black
-        continue-on-error: true
         run: black --check src/ tests/
       - name: isort
-        continue-on-error: true
         run: isort --check-only src/ tests/
+
+      # Still advisory: flake8 has a backlog of ~204 findings and mypy has
+      # never been run clean. Promote each by removing continue-on-error once
+      # its backlog is worked through (see docs/PHASES.md).
       - name: flake8
         continue-on-error: true
         run: flake8 src/
