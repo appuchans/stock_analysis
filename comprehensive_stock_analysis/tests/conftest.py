@@ -14,6 +14,7 @@ def _clear_tool_caches():
         if d:
             import glob
             import os
+
             for f in glob.glob(os.path.join(os.path.dirname(d), "*.json")):
                 try:
                     os.remove(f)

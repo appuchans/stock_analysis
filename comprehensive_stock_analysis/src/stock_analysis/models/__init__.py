@@ -2,11 +2,11 @@
 
 from .stock_data import (
     CompanyInfo,
-    MarketData,
-    FundamentalData,
-    NewsData,
     EconomicData,
+    FundamentalData,
     InvestmentRecommendation,
+    MarketData,
+    NewsData,
     RecommendationType,
     RiskLevel,
 )

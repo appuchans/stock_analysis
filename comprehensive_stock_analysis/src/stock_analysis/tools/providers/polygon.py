@@ -40,14 +40,18 @@ class PolygonProvider(base.ProviderBase):
             prev = ticker.get("prevDay") or {}
             price = day.get("c") or (ticker.get("lastTrade") or {}).get("p")
             prev_close = prev.get("c")
-            return {
-                "symbol": symbol,
-                "price": price,
-                "previous_close": prev_close,
-                "change_pct": ticker.get("todaysChangePerc"),
-                "volume": day.get("v"),
-                "source": self.name,
-            } if price is not None else {}
+            return (
+                {
+                    "symbol": symbol,
+                    "price": price,
+                    "previous_close": prev_close,
+                    "change_pct": ticker.get("todaysChangePerc"),
+                    "volume": day.get("v"),
+                    "source": self.name,
+                }
+                if price is not None
+                else {}
+            )
         except Exception as exc:
             _logger.warning("Polygon get_quote failed for %s: %s", symbol, exc)
             return {"error": str(exc)}
@@ -56,7 +60,9 @@ class PolygonProvider(base.ProviderBase):
         try:
             data = self._get(
                 f"/v2/aggs/ticker/{symbol}/range/1/day/{start}/{end}",
-                adjusted="true", sort="asc", limit=5000,
+                adjusted="true",
+                sort="asc",
+                limit=5000,
             )
             results = (data or {}).get("results") or []
             if not results:
@@ -65,9 +71,14 @@ class PolygonProvider(base.ProviderBase):
 
             bars = [
                 {
-                    "date": datetime.fromtimestamp(r["t"] / 1000, tz=timezone.utc).strftime("%Y-%m-%d"),
-                    "open": r.get("o"), "high": r.get("h"), "low": r.get("l"),
-                    "close": r.get("c"), "volume": r.get("v"),
+                    "date": datetime.fromtimestamp(
+                        r["t"] / 1000, tz=timezone.utc
+                    ).strftime("%Y-%m-%d"),
+                    "open": r.get("o"),
+                    "high": r.get("h"),
+                    "low": r.get("l"),
+                    "close": r.get("c"),
+                    "volume": r.get("v"),
                 }
                 for r in results
             ]
@@ -94,8 +105,11 @@ class PolygonProvider(base.ProviderBase):
                 price = day.get("c") or (t.get("lastTrade") or {}).get("p")
                 if sym and price is not None:
                     out[sym] = {
-                        "symbol": sym, "price": price, "previous_close": prev.get("c"),
-                        "change_pct": t.get("todaysChangePerc"), "source": self.name,
+                        "symbol": sym,
+                        "price": price,
+                        "previous_close": prev.get("c"),
+                        "change_pct": t.get("todaysChangePerc"),
+                        "source": self.name,
                     }
             return out
         except Exception as exc:

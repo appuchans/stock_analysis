@@ -111,7 +111,9 @@ def bar_chart_svg(
 ) -> str:
     """Bar chart. Vertical by default; horizontal for long category labels."""
     data = [
-        (html.escape(str(l), quote=True), float(v)) for l, v in zip(labels, values) if v is not None
+        (html.escape(str(l), quote=True), float(v))
+        for l, v in zip(labels, values)
+        if v is not None
     ]
     if not data:
         return ""

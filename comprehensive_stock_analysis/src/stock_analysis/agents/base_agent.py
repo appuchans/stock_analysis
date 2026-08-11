@@ -12,7 +12,9 @@ from ..llm_budget import check_and_increment
 
 # Matches OpenAI's 400 when a model only accepts the default temperature, e.g.
 # "Unsupported value: 'temperature' does not support 0 with this model."
-_TEMPERATURE_UNSUPPORTED_RE = re.compile(r"'temperature'\s+does not support", re.IGNORECASE)
+_TEMPERATURE_UNSUPPORTED_RE = re.compile(
+    r"'temperature'\s+does not support", re.IGNORECASE
+)
 
 # Providers that authenticate with a single API-key env var (LiteLLM's own
 # naming), checked directly via os.environ since Settings only models the two
@@ -64,10 +66,9 @@ def _with_llm_param_fallbacks(llm: Any) -> Any:
         if llm.temperature is not None and _TEMPERATURE_UNSUPPORTED_RE.search(msg):
             llm.temperature = None
             return True
-        if (
-            llm.additional_params.get("reasoning_effort") != "none"
-            and _REASONING_EFFORT_TOOLS_UNSUPPORTED_RE.search(msg)
-        ):
+        if llm.additional_params.get(
+            "reasoning_effort"
+        ) != "none" and _REASONING_EFFORT_TOOLS_UNSUPPORTED_RE.search(msg):
             # crewai's native OpenAICompletion class only forwards the
             # `reasoning_effort` *field* when its own is_o1_model check
             # matches (a hardcoded `"o1" in model.lower()` substring test
@@ -167,11 +168,19 @@ def preflight_llm_credentials(provider_override: Optional[str] = None) -> List[s
     for p in sorted(providers):
         p = p.lower()
         if p == "openai" and not settings.openai_api_key:
-            problems.append("provider 'openai' is selected but OPENAI_API_KEY is not set")
+            problems.append(
+                "provider 'openai' is selected but OPENAI_API_KEY is not set"
+            )
         elif p == "anthropic" and not settings.anthropic_api_key:
-            problems.append("provider 'anthropic' is selected but ANTHROPIC_API_KEY is not set")
-        elif p in _PROVIDER_API_KEY_ENV and not os.environ.get(_PROVIDER_API_KEY_ENV[p]):
-            problems.append(f"provider '{p}' is selected but {_PROVIDER_API_KEY_ENV[p]} is not set")
+            problems.append(
+                "provider 'anthropic' is selected but ANTHROPIC_API_KEY is not set"
+            )
+        elif p in _PROVIDER_API_KEY_ENV and not os.environ.get(
+            _PROVIDER_API_KEY_ENV[p]
+        ):
+            problems.append(
+                f"provider '{p}' is selected but {_PROVIDER_API_KEY_ENV[p]} is not set"
+            )
         # ollama, azure, bedrock, vertexai, and any other unlisted provider use
         # multi-value or credential-file auth (or need no key) — validated by
         # LiteLLM/the provider SDK at call time instead of here.
@@ -239,13 +248,27 @@ class BaseAgent:
 
         # 3. Apply llm_config.yaml per-agent overrides
         agent_yaml = llm_file_cfg.agents.get(self.agent_name) or {}
-        for key in ("provider", "model", "temperature", "max_tokens", "timeout", "max_retries"):
+        for key in (
+            "provider",
+            "model",
+            "temperature",
+            "max_tokens",
+            "timeout",
+            "max_retries",
+        ):
             if agent_yaml.get(key) is not None:
                 resolved[key] = agent_yaml[key]
 
         # 4. Apply agents.yaml llm_config block (provider/model/temperature/max_tokens)
         agent_block = self.config.llm_config or {}
-        for key in ("provider", "model", "temperature", "max_tokens", "timeout", "max_retries"):
+        for key in (
+            "provider",
+            "model",
+            "temperature",
+            "max_tokens",
+            "timeout",
+            "max_retries",
+        ):
             if agent_block.get(key) is not None:
                 resolved[key] = agent_block[key]
 
@@ -275,11 +298,13 @@ class BaseAgent:
         # Validate API key before attempting to construct the LLM
         if provider == "openai" and not settings.openai_api_key:
             raise ValueError(
-                "OPENAI_API_KEY is not set. " "Set it in .env or as an environment variable."
+                "OPENAI_API_KEY is not set. "
+                "Set it in .env or as an environment variable."
             )
         if provider == "anthropic" and not settings.anthropic_api_key:
             raise ValueError(
-                "ANTHROPIC_API_KEY is not set. " "Set it in .env or as an environment variable."
+                "ANTHROPIC_API_KEY is not set. "
+                "Set it in .env or as an environment variable."
             )
 
         # Build the LiteLLM model string: "<prefix><model>"
@@ -310,7 +335,11 @@ class BaseAgent:
                     api_key=(
                         settings.openai_api_key
                         if provider == "openai"
-                        else settings.anthropic_api_key if provider == "anthropic" else None
+                        else (
+                            settings.anthropic_api_key
+                            if provider == "anthropic"
+                            else None
+                        )
                     ),
                 )
             )
@@ -352,7 +381,9 @@ class BaseAgent:
         agent_block = self.config.llm_config or {}
         if agent_block.get("reasoning"):
             kwargs["reasoning"] = True
-            kwargs["max_reasoning_attempts"] = agent_block.get("max_reasoning_attempts", 3)
+            kwargs["max_reasoning_attempts"] = agent_block.get(
+                "max_reasoning_attempts", 3
+            )
         return Agent(**kwargs)
 
     # ── Public helpers ────────────────────────────────────────────────────────

@@ -55,12 +55,18 @@ class FMPProvider(base.ProviderBase):
 
     def get_daily_bars(self, symbol: str, start: str, end: str) -> Dict[str, Any]:
         try:
-            data = self._get(f"historical-price-full/{symbol}", **{"from": start, "to": end})
+            data = self._get(
+                f"historical-price-full/{symbol}", **{"from": start, "to": end}
+            )
             rows = (data or {}).get("historical") or []
             bars = [
                 {
-                    "date": r.get("date"), "open": r.get("open"), "high": r.get("high"),
-                    "low": r.get("low"), "close": r.get("close"), "volume": r.get("volume"),
+                    "date": r.get("date"),
+                    "open": r.get("open"),
+                    "high": r.get("high"),
+                    "low": r.get("low"),
+                    "close": r.get("close"),
+                    "volume": r.get("volume"),
                 }
                 for r in reversed(rows)  # FMP returns newest-first
             ]
@@ -71,9 +77,15 @@ class FMPProvider(base.ProviderBase):
 
     def get_statements(self, symbol: str, years: int = 10) -> Dict[str, Any]:
         try:
-            income = self._get(f"income-statement/{symbol}", period="annual", limit=years)
-            balance = self._get(f"balance-sheet-statement/{symbol}", period="annual", limit=years)
-            cashflow = self._get(f"cash-flow-statement/{symbol}", period="annual", limit=years)
+            income = self._get(
+                f"income-statement/{symbol}", period="annual", limit=years
+            )
+            balance = self._get(
+                f"balance-sheet-statement/{symbol}", period="annual", limit=years
+            )
+            cashflow = self._get(
+                f"cash-flow-statement/{symbol}", period="annual", limit=years
+            )
             if not (income or balance or cashflow):
                 return {}
             return {
@@ -81,20 +93,25 @@ class FMPProvider(base.ProviderBase):
                 "years_available": len(income or []),
                 "income_statement": [
                     {
-                        "fiscal_year": r.get("calendarYear"), "revenue": r.get("revenue"),
-                        "net_income": r.get("netIncome"), "eps": r.get("eps"),
+                        "fiscal_year": r.get("calendarYear"),
+                        "revenue": r.get("revenue"),
+                        "net_income": r.get("netIncome"),
+                        "eps": r.get("eps"),
                         "operating_income": r.get("operatingIncome"),
                         "gross_profit": r.get("grossProfit"),
-                    } for r in (income or [])
+                    }
+                    for r in (income or [])
                 ],
                 "balance_sheet": [
                     {
-                        "fiscal_year": r.get("calendarYear"), "total_assets": r.get("totalAssets"),
+                        "fiscal_year": r.get("calendarYear"),
+                        "total_assets": r.get("totalAssets"),
                         "total_liabilities": r.get("totalLiabilities"),
                         "total_equity": r.get("totalStockholdersEquity"),
                         "cash_and_equivalents": r.get("cashAndCashEquivalents"),
                         "total_debt": r.get("totalDebt"),
-                    } for r in (balance or [])
+                    }
+                    for r in (balance or [])
                 ],
                 "cash_flow": [
                     {
@@ -102,7 +119,8 @@ class FMPProvider(base.ProviderBase):
                         "operating_cash_flow": r.get("operatingCashFlow"),
                         "free_cash_flow": r.get("freeCashFlow"),
                         "capital_expenditure": r.get("capitalExpenditure"),
-                    } for r in (cashflow or [])
+                    }
+                    for r in (cashflow or [])
                 ],
                 "source": self.name,
             }
@@ -126,7 +144,11 @@ class FMPProvider(base.ProviderBase):
                 }
                 for r in data
             ]
-            return {"symbol": symbol, "estimate_revisions": revisions, "source": self.name}
+            return {
+                "symbol": symbol,
+                "estimate_revisions": revisions,
+                "source": self.name,
+            }
         except Exception as exc:
             _logger.warning("FMP get_estimates failed for %s: %s", symbol, exc)
             return {"error": str(exc)}
@@ -142,12 +164,16 @@ class FMPProvider(base.ProviderBase):
             year, quarter = latest.get("year"), latest.get("quarter")
             if year is None or quarter is None:
                 return {}
-            full = self._get(f"earning_call_transcript/{symbol}", year=year, quarter=quarter)
+            full = self._get(
+                f"earning_call_transcript/{symbol}", year=year, quarter=quarter
+            )
             if not full:
                 return {}
             content = full[0].get("content") or ""
             return {
-                "symbol": symbol, "year": year, "quarter": quarter,
+                "symbol": symbol,
+                "year": year,
+                "quarter": quarter,
                 "date": full[0].get("date"),
                 # Full transcripts run tens of thousands of characters — cap
                 # what gets carried into an LLM prompt (report_tools' report
@@ -184,10 +210,13 @@ class FMPProvider(base.ProviderBase):
             earnings = self._get(f"historical/earning_calendar/{symbol}")
             next_earnings: Optional[Dict[str, Any]] = None
             today = date.today().isoformat()
-            for r in reversed(earnings or []):  # oldest-first -> walk to find next future date
+            for r in reversed(
+                earnings or []
+            ):  # oldest-first -> walk to find next future date
                 if (r.get("date") or "") >= today:
                     next_earnings = {
-                        "date": r.get("date"), "time": r.get("time"),
+                        "date": r.get("date"),
+                        "time": r.get("time"),
                         "eps_estimated": r.get("epsEstimated"),
                         "revenue_estimated": r.get("revenueEstimated"),
                     }

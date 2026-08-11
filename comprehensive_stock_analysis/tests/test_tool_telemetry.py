@@ -97,7 +97,9 @@ class TestToolTelemetryThreadSafety:
         # Exact counts depend on thread interleaving, so we just verify some happened
         assert snap["ToolA"]["errors"] > 0
         assert snap["ToolB"]["errors"] > 0
-        assert snap["ToolA"]["errors"] >= snap["ToolB"]["errors"]  # ToolA has more calls
+        assert (
+            snap["ToolA"]["errors"] >= snap["ToolB"]["errors"]
+        )  # ToolA has more calls
 
 
 class TestToolTelemetrySnapshot:

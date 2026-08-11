@@ -33,22 +33,44 @@ class _FakeTicker:
 
 def _analyst_ticker():
     return _FakeTicker(
-        analyst_price_targets={"current": 100.0, "low": 90.0, "mean": 120.0,
-                               "median": 118.0, "high": 150.0},
-        recommendations=pd.DataFrame({
-            "period": ["0m", "-1m"],
-            "strongBuy": [10, 9], "buy": [40, 41], "hold": [5, 5],
-            "sell": [1, 1], "strongSell": [0, 0],
-        }),
+        analyst_price_targets={
+            "current": 100.0,
+            "low": 90.0,
+            "mean": 120.0,
+            "median": 118.0,
+            "high": 150.0,
+        },
+        recommendations=pd.DataFrame(
+            {
+                "period": ["0m", "-1m"],
+                "strongBuy": [10, 9],
+                "buy": [40, 41],
+                "hold": [5, 5],
+                "sell": [1, 1],
+                "strongSell": [0, 0],
+            }
+        ),
         upgrades_downgrades=pd.DataFrame(
-            {"Firm": ["Acme"], "ToGrade": ["Buy"], "FromGrade": ["Hold"],
-             "Action": ["up"], "currentPriceTarget": [130.0]},
-            index=pd.DatetimeIndex([pd.Timestamp.now() - pd.Timedelta(days=10)],
-                                   name="GradeDate"),
+            {
+                "Firm": ["Acme"],
+                "ToGrade": ["Buy"],
+                "FromGrade": ["Hold"],
+                "Action": ["up"],
+                "currentPriceTarget": [130.0],
+            },
+            index=pd.DatetimeIndex(
+                [pd.Timestamp.now() - pd.Timedelta(days=10)], name="GradeDate"
+            ),
         ),
         earnings_estimate=pd.DataFrame(
-            {"avg": [2.0], "low": [1.8], "high": [2.3], "yearAgoEps": [1.0],
-             "numberOfAnalysts": [40], "growth": [1.0]},
+            {
+                "avg": [2.0],
+                "low": [1.8],
+                "high": [2.3],
+                "yearAgoEps": [1.0],
+                "numberOfAnalysts": [40],
+                "growth": [1.0],
+            },
             index=pd.Index(["0q"], name="period"),
         ),
         revenue_estimate=pd.DataFrame(
@@ -82,22 +104,34 @@ class TestOwnership:
         ticker = _FakeTicker(
             major_holders=pd.DataFrame(
                 {"Value": [0.04, 0.71, 0.74, 7000.0]},
-                index=["insidersPercentHeld", "institutionsPercentHeld",
-                       "institutionsFloatPercentHeld", "institutionsCount"],
+                index=[
+                    "insidersPercentHeld",
+                    "institutionsPercentHeld",
+                    "institutionsFloatPercentHeld",
+                    "institutionsCount",
+                ],
             ),
-            institutional_holders=pd.DataFrame({
-                "Holder": ["Big Fund"], "pctHeld": [0.08],
-                "Value": [400_000_000_000],
-            }),
-            insider_transactions=pd.DataFrame({
-                "Shares": [1000, 2000],
-                "Value": [100000, 0],
-                "Text": ["Sale at price 100", "Purchase at price 90"],
-                "Insider": ["CEO A", "CFO B"],
-                "Position": ["CEO", "CFO"],
-                "Transaction": ["", ""],
-                "Start Date": [pd.Timestamp("2026-06-01"), pd.Timestamp("2026-05-20")],
-            }),
+            institutional_holders=pd.DataFrame(
+                {
+                    "Holder": ["Big Fund"],
+                    "pctHeld": [0.08],
+                    "Value": [400_000_000_000],
+                }
+            ),
+            insider_transactions=pd.DataFrame(
+                {
+                    "Shares": [1000, 2000],
+                    "Value": [100000, 0],
+                    "Text": ["Sale at price 100", "Purchase at price 90"],
+                    "Insider": ["CEO A", "CFO B"],
+                    "Position": ["CEO", "CFO"],
+                    "Transaction": ["", ""],
+                    "Start Date": [
+                        pd.Timestamp("2026-06-01"),
+                        pd.Timestamp("2026-05-20"),
+                    ],
+                }
+            ),
         )
         out = summarize_ownership(ticker)
         assert out["holders_breakdown"]["insider_pct"] == 4.0
@@ -143,10 +177,22 @@ class TestOptionsSentiment:
 
     def test_put_call_ratio(self):
         class _Chain:
-            calls = pd.DataFrame({"strike": [100.0], "openInterest": [200],
-                                  "volume": [100], "impliedVolatility": [0.4]})
-            puts = pd.DataFrame({"strike": [100.0], "openInterest": [100],
-                                 "volume": [50], "impliedVolatility": [0.45]})
+            calls = pd.DataFrame(
+                {
+                    "strike": [100.0],
+                    "openInterest": [200],
+                    "volume": [100],
+                    "impliedVolatility": [0.4],
+                }
+            )
+            puts = pd.DataFrame(
+                {
+                    "strike": [100.0],
+                    "openInterest": [100],
+                    "volume": [50],
+                    "impliedVolatility": [0.45],
+                }
+            )
 
         future = (pd.Timestamp.now() + pd.Timedelta(days=21)).strftime("%Y-%m-%d")
         ticker = _FakeTicker(
@@ -165,7 +211,9 @@ class TestDividendsAndETF:
         idx = pd.DatetimeIndex([pd.Timestamp("2026-03-11"), pd.Timestamp("2026-06-04")])
         ticker = _FakeTicker(
             dividends=pd.Series([0.01, 0.25], index=idx),
-            splits=pd.Series([10.0], index=pd.DatetimeIndex([pd.Timestamp("2024-06-10")])),
+            splits=pd.Series(
+                [10.0], index=pd.DatetimeIndex([pd.Timestamp("2024-06-10")])
+            ),
         )
         out = summarize_dividends_splits(ticker)
         assert out["recent_dividends"][-1] == {"date": "2026-06-04", "amount": 0.25}
@@ -202,13 +250,16 @@ class TestInvestorFeatureSummarizers:
 
     def test_catalysts_from_calendar(self):
         import datetime
-        ticker = _FakeTicker(calendar={
-            "Earnings Date": [datetime.date(2026, 8, 26)],
-            "Earnings Average": 2.07925,
-            "Revenue Average": 91_728_642_100,
-            "Ex-Dividend Date": datetime.date(2026, 6, 3),
-            "Dividend Date": datetime.date(2026, 6, 25),
-        })
+
+        ticker = _FakeTicker(
+            calendar={
+                "Earnings Date": [datetime.date(2026, 8, 26)],
+                "Earnings Average": 2.07925,
+                "Revenue Average": 91_728_642_100,
+                "Ex-Dividend Date": datetime.date(2026, 6, 3),
+                "Dividend Date": datetime.date(2026, 6, 25),
+            }
+        )
         from src.stock_analysis.tools.yf_summaries import summarize_catalysts
 
         out = summarize_catalysts(ticker)
@@ -219,6 +270,7 @@ class TestInvestorFeatureSummarizers:
 
     def test_catalysts_raising_ticker(self):
         from src.stock_analysis.tools.yf_summaries import summarize_catalysts
+
         assert summarize_catalysts(_RaisingTicker()) == {}
 
     def test_peers_with_mocked_endpoint(self, monkeypatch):
@@ -233,9 +285,14 @@ class TestInvestorFeatureSummarizers:
 
                 @property
                 def info(self):
-                    return {"marketCap": 1e12, "shortName": f"{self._sym} Co",
-                            "trailingPE": 30.0, "forwardPE": 25.0,
-                            "revenueGrowth": 0.4, "operatingMargins": 0.5}
+                    return {
+                        "marketCap": 1e12,
+                        "shortName": f"{self._sym} Co",
+                        "trailingPE": 30.0,
+                        "forwardPE": 25.0,
+                        "revenueGrowth": 0.4,
+                        "operatingMargins": 0.5,
+                    }
 
         out = ys.summarize_peers("SUBJ", yf_module=_YF)
         rows = out["rows"]
@@ -245,12 +302,15 @@ class TestInvestorFeatureSummarizers:
         assert rows[0]["market_cap_b"] == 1000.0
         assert rows[0]["revenue_growth_pct"] == 40.0
 
-    def test_fetch_peer_symbols_web_search_filters_junk_and_sector_mismatch(self, monkeypatch):
+    def test_fetch_peer_symbols_web_search_filters_junk_and_sector_mismatch(
+        self, monkeypatch
+    ):
         """Web-search peer discovery should keep only real, sector-matching
         competitors and drop stopword noise and cross-sector false positives
         (the bug this replaces: Yahoo's recommendation endpoint pairing PEGA
         with an unrelated fleet-payments company)."""
-        from src.stock_analysis.tools import _http, yf_summaries as ys
+        from src.stock_analysis.tools import _http
+        from src.stock_analysis.tools import yf_summaries as ys
 
         html = b"""
         <div class="result">
@@ -284,6 +344,7 @@ class TestInvestorFeatureSummarizers:
             Ticker = _FakeYFTicker
 
         import sys
+
         monkeypatch.setitem(sys.modules, "yfinance", _FakeYF)
 
         peers = ys.fetch_peer_symbols("PEGA", sector="Technology", limit=4)
@@ -295,6 +356,7 @@ class TestInvestorFeatureSummarizers:
 
     def test_search_interest_absent_pytrends_is_graceful(self, monkeypatch):
         import builtins
+
         from src.stock_analysis.tools import yf_summaries as ys
 
         real_import = builtins.__import__

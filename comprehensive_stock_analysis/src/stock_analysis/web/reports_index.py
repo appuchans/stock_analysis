@@ -61,7 +61,8 @@ def _analyzed_at(sym: str, status_data: Dict[str, Any]) -> Optional[str]:
             pass
     return (
         datetime.fromtimestamp(max(mtimes)).isoformat(timespec="seconds")
-        if mtimes else None
+        if mtimes
+        else None
     )
 
 
@@ -73,7 +74,12 @@ def write_run_status(symbol: str, status: str) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            json.dumps({"status": status, "finished_at": datetime.now().isoformat(timespec="seconds")}),
+            json.dumps(
+                {
+                    "status": status,
+                    "finished_at": datetime.now().isoformat(timespec="seconds"),
+                }
+            ),
             encoding="utf-8",
         )
     except OSError as exc:
@@ -105,8 +111,11 @@ def backfill_rec_history() -> int:
         if not sym:
             continue
         chart = _read_json(_paths.chart_path(sym))
-        price = ((chart.get("key_stats") or {}).get("current_price"))
-        for path in (_paths.prev_recommendation_path(sym), _paths.recommendation_path(sym)):
+        price = (chart.get("key_stats") or {}).get("current_price")
+        for path in (
+            _paths.prev_recommendation_path(sym),
+            _paths.recommendation_path(sym),
+        ):
             if path is None or not path.exists():
                 continue
             rec = _read_json(path)
@@ -114,7 +123,9 @@ def backfill_rec_history() -> int:
                 continue
             try:
                 mtime = path.stat().st_mtime
-                recorded_at = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
+                recorded_at = datetime.fromtimestamp(mtime).isoformat(
+                    timespec="seconds"
+                )
             except OSError:
                 continue
             # Only the current (non-_prev) snapshot's price is known; an older
@@ -171,31 +182,33 @@ def list_reports() -> List[Dict[str, Any]]:
         effective_status = status or ("completed" if has_html else "incomplete")
         mtime = _analyzed_at(sym, status_data)
 
-        items.append({
-            "symbol": sym,
-            "name": company.get("name"),
-            "sector": company.get("sector"),
-            "status": effective_status,
-            "asset_type": chart.get("asset_type"),
-            "recommendation": rec.get("recommendation"),
-            "target_price": _num(rec.get("target_price")),
-            "confidence": rec.get("confidence"),
-            "risk_level": rec.get("risk_level"),
-            "current_price": _num(stats.get("current_price")),
-            "market_cap": _num(stats.get("market_cap")),
-            "pe_ratio": _num(stats.get("pe_ratio")),
-            "high_52w": _num(stats.get("high_52w")),
-            "low_52w": _num(stats.get("low_52w")),
-            # ETF-relevant fund facts (None for stocks) for the history card.
-            "aum_bn": _num(etf.get("total_assets_bn")),
-            "expense_ratio": _num(etf.get("expense_ratio")),
-            "distribution_yield": _num(etf.get("distribution_yield")),
-            "ytd_return": _num(etf.get("ytd_return")),
-            "has_html": has_html,
-            "has_chart": bool(chart),
-            "spark": spark,
-            "mtime": mtime,
-        })
+        items.append(
+            {
+                "symbol": sym,
+                "name": company.get("name"),
+                "sector": company.get("sector"),
+                "status": effective_status,
+                "asset_type": chart.get("asset_type"),
+                "recommendation": rec.get("recommendation"),
+                "target_price": _num(rec.get("target_price")),
+                "confidence": rec.get("confidence"),
+                "risk_level": rec.get("risk_level"),
+                "current_price": _num(stats.get("current_price")),
+                "market_cap": _num(stats.get("market_cap")),
+                "pe_ratio": _num(stats.get("pe_ratio")),
+                "high_52w": _num(stats.get("high_52w")),
+                "low_52w": _num(stats.get("low_52w")),
+                # ETF-relevant fund facts (None for stocks) for the history card.
+                "aum_bn": _num(etf.get("total_assets_bn")),
+                "expense_ratio": _num(etf.get("expense_ratio")),
+                "distribution_yield": _num(etf.get("distribution_yield")),
+                "ytd_return": _num(etf.get("ytd_return")),
+                "has_html": has_html,
+                "has_chart": bool(chart),
+                "spark": spark,
+                "mtime": mtime,
+            }
+        )
 
     items.sort(key=lambda it: it.get("mtime") or "", reverse=True)
     return items

@@ -1,11 +1,15 @@
 """Agent for Fundamental Analyst."""
 
-from typing import List, Any, Optional
+from typing import Any, List, Optional
 
-from .base_agent import BaseAgent
 from ..tools.analysis_tools import FundamentalAnalysisTool
 from ..tools.calculation_tools import FinancialCalculatorTool, ValuationCalculatorTool
-from ..tools.company_intel import AnalystDataTool, FinancialStatementsTool, OwnershipTool
+from ..tools.company_intel import (
+    AnalystDataTool,
+    FinancialStatementsTool,
+    OwnershipTool,
+)
+from .base_agent import BaseAgent
 
 
 class FundamentalAnalystAgent(BaseAgent):

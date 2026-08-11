@@ -42,7 +42,9 @@ def get_alert_settings() -> Dict[str, Any]:
     """Resolved alert settings (persisted override > .env default)."""
     raw = {k: _resolved_setting(k) for k in _SETTINGS_FIELDS}
     try:
-        raw["alert_smtp_port"] = int(raw["alert_smtp_port"]) if raw["alert_smtp_port"] else 587
+        raw["alert_smtp_port"] = (
+            int(raw["alert_smtp_port"]) if raw["alert_smtp_port"] else 587
+        )
     except ValueError:
         raw["alert_smtp_port"] = 587
     return raw
@@ -67,7 +69,9 @@ def _send_email(subject: str, body: str) -> None:
         msg["Subject"] = subject
         msg["From"] = cfg["alert_smtp_user"]
         msg["To"] = cfg["alert_email"]
-        with smtplib.SMTP(cfg["alert_smtp_host"], cfg["alert_smtp_port"], timeout=10) as s:
+        with smtplib.SMTP(
+            cfg["alert_smtp_host"], cfg["alert_smtp_port"], timeout=10
+        ) as s:
             s.ehlo()
             s.starttls()
             s.login(cfg["alert_smtp_user"], cfg["alert_smtp_password"])

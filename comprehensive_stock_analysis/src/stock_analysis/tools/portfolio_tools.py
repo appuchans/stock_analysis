@@ -29,15 +29,23 @@ class PortfolioAnalysisTool(BaseTool):
     ) -> Dict[str, Any]:
         try:
             if len(symbols) < 2:
-                return {"error": "At least 2 symbols are required for portfolio analysis"}
+                return {
+                    "error": "At least 2 symbols are required for portfolio analysis"
+                }
 
-            raw = yf.download(symbols, period=period, progress=False, auto_adjust=True)["Close"]
+            raw = yf.download(symbols, period=period, progress=False, auto_adjust=True)[
+                "Close"
+            ]
             if isinstance(raw, pd.Series):
                 raw = raw.to_frame(symbols[0])
 
-            available = [s for s in symbols if s in raw.columns and not raw[s].isna().all()]
+            available = [
+                s for s in symbols if s in raw.columns and not raw[s].isna().all()
+            ]
             if len(available) < 2:
-                return {"error": "Insufficient price data returned for the requested symbols"}
+                return {
+                    "error": "Insufficient price data returned for the requested symbols"
+                }
 
             prices = raw[available].dropna()
             returns = prices.pct_change().dropna()
@@ -48,12 +56,18 @@ class PortfolioAnalysisTool(BaseTool):
             mv_weights, mv_is_proxy = self._min_variance_weights(returns)
             if weights is not None:
                 if set(weights) != set(available):
-                    return {"error": "User-supplied weights must match available price-data symbols"}
-                portfolio_weights = {symbol: float(weights[symbol]) for symbol in available}
+                    return {
+                        "error": "User-supplied weights must match available price-data symbols"
+                    }
+                portfolio_weights = {
+                    symbol: float(weights[symbol]) for symbol in available
+                }
                 allocation_method = "user_supplied"
             else:
                 portfolio_weights = mv_weights
-                allocation_method = "minimum_variance_proxy" if mv_is_proxy else "minimum_variance"
+                allocation_method = (
+                    "minimum_variance_proxy" if mv_is_proxy else "minimum_variance"
+                )
             portfolio_metrics = self._portfolio_metrics(
                 returns, portfolio_weights, risk_free_rate
             )
@@ -123,16 +137,22 @@ class PortfolioAnalysisTool(BaseTool):
             w = np.clip(result.x, 0.0, None)
             total = w.sum()
             if total <= 0:
-                raise RuntimeError("optimizer converged to a degenerate all-zero allocation")
+                raise RuntimeError(
+                    "optimizer converged to a degenerate all-zero allocation"
+                )
             w = w / total
-            return {col: round(float(v), 4) for col, v in zip(returns.columns, w)}, False
+            return {
+                col: round(float(v), 4) for col, v in zip(returns.columns, w)
+            }, False
         except Exception:
             return self._min_variance_weights_proxy(returns), True
 
     def _min_variance_weights_proxy(self, returns: pd.DataFrame) -> Dict[str, float]:
         """Inverse-variance weighting — ignores cross-asset covariance entirely.
         Used only as a fallback when the real optimization fails to converge."""
-        var = returns.var().clip(lower=1e-8)  # floor near-zero variance to avoid inf weights
+        var = returns.var().clip(
+            lower=1e-8
+        )  # floor near-zero variance to avoid inf weights
         inv_var = 1.0 / var
         weights = inv_var / inv_var.sum()
         return {k: round(float(v), 4) for k, v in weights.items()}

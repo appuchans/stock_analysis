@@ -21,7 +21,9 @@ def _simulate_new_process():
 
 
 def test_set_then_get_roundtrips_via_disk():
-    cache.set_cached("structured", "AAPL", {"price": 100, "blocks": ["a", "b"]}, ttl=3600)
+    cache.set_cached(
+        "structured", "AAPL", {"price": 100, "blocks": ["a", "b"]}, ttl=3600
+    )
     _simulate_new_process()
     got = cache.get_cached("structured", "AAPL")
     assert got == {"price": 100, "blocks": ["a", "b"]}

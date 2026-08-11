@@ -52,7 +52,9 @@ class ProviderRouter:
         fmp = _fmp()
         return ([fmp] if fmp else []) + [self._yfinance]
 
-    def _try(self, chain: List[base.ProviderBase], method: str, *args: Any) -> Dict[str, Any]:
+    def _try(
+        self, chain: List[base.ProviderBase], method: str, *args: Any
+    ) -> Dict[str, Any]:
         last: Dict[str, Any] = {}
         for provider in chain:
             fn = getattr(provider, method, None)

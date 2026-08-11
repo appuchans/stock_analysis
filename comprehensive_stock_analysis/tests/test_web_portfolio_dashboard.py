@@ -31,16 +31,25 @@ class TestDashboardEmpty:
 
 class TestDashboardWithHoldings:
     def _seed(self):
-        client.post("/api/portfolio/transactions", json={
-            "symbol": "AAPL", "side": "buy", "qty": 10, "price": 100.0, "date": "2026-01-01",
-        })
+        client.post(
+            "/api/portfolio/transactions",
+            json={
+                "symbol": "AAPL",
+                "side": "buy",
+                "qty": 10,
+                "price": 100.0,
+                "date": "2026-01-01",
+            },
+        )
 
     def test_positions_enriched_with_live_quote(self, monkeypatch):
         from src.stock_analysis.tools.providers.router import ROUTER
 
         self._seed()
         monkeypatch.setattr(ROUTER, "get_batch_quotes", lambda syms: {})
-        monkeypatch.setattr(ROUTER, "get_quote", lambda sym: {"price": 150.0, "change_pct": 2.5})
+        monkeypatch.setattr(
+            ROUTER, "get_quote", lambda sym: {"price": 150.0, "change_pct": 2.5}
+        )
 
         with patch("yfinance.download", side_effect=RuntimeError("no network in test")):
             resp = client.get("/api/portfolio/dashboard")
@@ -77,10 +86,14 @@ class TestDashboardWithHoldings:
         from src.stock_analysis.tools.providers.router import ROUTER
 
         self._seed()
-        monkeypatch.setattr(ROUTER, "get_batch_quotes", lambda syms: {"AAPL": {"price": 200.0}})
+        monkeypatch.setattr(
+            ROUTER, "get_batch_quotes", lambda syms: {"AAPL": {"price": 200.0}}
+        )
 
         def _should_not_be_called(sym):
-            raise AssertionError("get_quote must not be called when batch already has this symbol")
+            raise AssertionError(
+                "get_quote must not be called when batch already has this symbol"
+            )
 
         monkeypatch.setattr(ROUTER, "get_quote", _should_not_be_called)
         with patch("yfinance.download", side_effect=RuntimeError("no network in test")):
@@ -101,7 +114,9 @@ class TestDashboardWithHoldings:
         assert pos["market_value"] is None
         assert pos["weight"] is None
 
-    def test_value_series_and_benchmark_populated_when_history_available(self, monkeypatch):
+    def test_value_series_and_benchmark_populated_when_history_available(
+        self, monkeypatch
+    ):
         from src.stock_analysis.tools.providers.router import ROUTER
 
         self._seed()
@@ -109,10 +124,13 @@ class TestDashboardWithHoldings:
         monkeypatch.setattr(ROUTER, "get_quote", lambda sym: {"price": 150.0})
 
         dates = pd.date_range("2026-01-01", periods=10, freq="B")
-        close = pd.DataFrame({
-            "AAPL": [100.0 + i for i in range(10)],
-            "SPY": [400.0 + i * 0.5 for i in range(10)],
-        }, index=dates)
+        close = pd.DataFrame(
+            {
+                "AAPL": [100.0 + i for i in range(10)],
+                "SPY": [400.0 + i * 0.5 for i in range(10)],
+            },
+            index=dates,
+        )
         fake_download = pd.concat({"Close": close}, axis=1)
 
         with patch("yfinance.download", return_value=fake_download):

@@ -72,10 +72,14 @@ def start() -> None:
         if row["enabled"]:
             _add_job(row)
     _scheduler.add_job(
-        _poll_price_rules, trigger=IntervalTrigger(minutes=_QUOTE_POLL_MINUTES),
-        id=_QUOTE_POLL_JOB_ID, replace_existing=True,
+        _poll_price_rules,
+        trigger=IntervalTrigger(minutes=_QUOTE_POLL_MINUTES),
+        id=_QUOTE_POLL_JOB_ID,
+        replace_existing=True,
     )
-    _logger.info("scheduler started with %d enabled schedule(s)", len(db.list_schedules()))
+    _logger.info(
+        "scheduler started with %d enabled schedule(s)", len(db.list_schedules())
+    )
 
 
 def stop() -> None:
@@ -90,8 +94,12 @@ def _add_job(row: Dict[str, Any]) -> None:
         return
     trigger = CronTrigger.from_crontab(row["cron_expr"])
     _scheduler.add_job(
-        _fire_schedule, trigger=trigger, id=row["id"], args=[row["id"]],
-        replace_existing=True, misfire_grace_time=3600,
+        _fire_schedule,
+        trigger=trigger,
+        id=row["id"],
+        args=[row["id"]],
+        replace_existing=True,
+        misfire_grace_time=3600,
     )
 
 
@@ -105,14 +113,22 @@ def _remove_job(schedule_id: str) -> None:
 
 # ── CRUD (persist + keep the live scheduler in sync) ──────────────────────────
 def create_schedule(
-    target: str, cron_expr: str, depth: str = "standard",
-    use_cache: bool = False, monitor_only: bool = False,
+    target: str,
+    cron_expr: str,
+    depth: str = "standard",
+    use_cache: bool = False,
+    monitor_only: bool = False,
 ) -> Dict[str, Any]:
     validate_cron(cron_expr)
     row = {
-        "id": uuid.uuid4().hex, "target": target, "cron_expr": cron_expr,
-        "depth": depth, "use_cache": use_cache, "monitor_only": monitor_only,
-        "enabled": True, "created_at": _now_iso(),
+        "id": uuid.uuid4().hex,
+        "target": target,
+        "cron_expr": cron_expr,
+        "depth": depth,
+        "use_cache": use_cache,
+        "monitor_only": monitor_only,
+        "enabled": True,
+        "created_at": _now_iso(),
     }
     db.add_schedule(row)
     _add_job(row)
@@ -172,7 +188,9 @@ def refresh_data_only(symbol: str, use_cache: bool = False) -> bool:
     asset_type = info["asset_type"]
     flow = StockAnalysisFlow(use_data_cache=use_cache, asset_type=asset_type)
     flow.state.symbol = symbol
-    flow.state.asset_type = asset_type  # already resolved above — skip a redundant detect call
+    flow.state.asset_type = (
+        asset_type  # already resolved above — skip a redundant detect call
+    )
     flow.state.analysis_depth = "standard"
     try:
         flow._fetch_structured()
@@ -208,7 +226,9 @@ def _fire_schedule(schedule_id: str) -> None:
 
     queued = []
     for sym in symbols:
-        job = manager.submit(sym, row["depth"], "auto", bool(row["use_cache"]), origin="scheduled")
+        job = manager.submit(
+            sym, row["depth"], "auto", bool(row["use_cache"]), origin="scheduled"
+        )
         queued.append(job.symbol)
     db.record_schedule_run(schedule_id, f"queued: {', '.join(queued)}")
 

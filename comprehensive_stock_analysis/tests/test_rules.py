@@ -80,7 +80,9 @@ class TestEvaluatePriceRulesForSymbol:
         from src.stock_analysis.web import db, rules
 
         rules.create_rule("AAPL", "pct_move_day", threshold=5.0)
-        rules.evaluate_price_rules_for_symbol("AAPL", quote={"price": 100.0, "change_pct": -6.2})
+        rules.evaluate_price_rules_for_symbol(
+            "AAPL", quote={"price": 100.0, "change_pct": -6.2}
+        )
         assert len(db.list_alerts()) == 1
 
     def test_disabled_rule_never_fires(self):
@@ -123,7 +125,8 @@ class TestEvaluateAllPriceRules:
         from src.stock_analysis.web import rules
 
         monkeypatch.setattr(
-            router_mod.ROUTER, "get_batch_quotes",
+            router_mod.ROUTER,
+            "get_batch_quotes",
             lambda syms: (_ for _ in ()).throw(AssertionError("must not be called")),
         )
         assert rules.evaluate_all_price_rules() == 0
@@ -135,9 +138,11 @@ class TestEvaluateAllPriceRules:
         rules.create_rule("AAPL", "price_above", threshold=100.0)
         rules.create_rule("MSFT", "price_above", threshold=200.0)
         monkeypatch.setattr(
-            router_mod.ROUTER, "get_batch_quotes",
+            router_mod.ROUTER,
+            "get_batch_quotes",
             lambda syms: {
-                "AAPL": {"price": 150.0}, "MSFT": {"price": 250.0},
+                "AAPL": {"price": 150.0},
+                "MSFT": {"price": 250.0},
             },
         )
         count = rules.evaluate_all_price_rules()
@@ -150,7 +155,9 @@ class TestEvaluateAllPriceRules:
 
         rules.create_rule("AAPL", "price_above", threshold=100.0)
         monkeypatch.setattr(router_mod.ROUTER, "get_batch_quotes", lambda syms: {})
-        monkeypatch.setattr(router_mod.ROUTER, "get_quote", lambda sym: {"price": 150.0})
+        monkeypatch.setattr(
+            router_mod.ROUTER, "get_quote", lambda sym: {"price": 150.0}
+        )
         rules.evaluate_all_price_rules()
         assert len(db.list_alerts()) == 1
 
@@ -161,7 +168,9 @@ class TestEvaluatePostRunRules:
         from src.stock_analysis.web import db, rules
 
         rules.create_rule("AAPL", "target_price_hit")
-        monkeypatch.setattr(router_mod.ROUTER, "get_quote", lambda sym: {"price": 210.0})
+        monkeypatch.setattr(
+            router_mod.ROUTER, "get_quote", lambda sym: {"price": 210.0}
+        )
         rules.evaluate_post_run_rules("AAPL", {"target_price": 200.0}, None)
         assert len(db.list_alerts()) == 1
 
@@ -170,7 +179,9 @@ class TestEvaluatePostRunRules:
         from src.stock_analysis.web import db, rules
 
         rules.create_rule("AAPL", "target_price_hit")
-        monkeypatch.setattr(router_mod.ROUTER, "get_quote", lambda sym: {"price": 150.0})
+        monkeypatch.setattr(
+            router_mod.ROUTER, "get_quote", lambda sym: {"price": 150.0}
+        )
         rules.evaluate_post_run_rules("AAPL", {"target_price": 200.0}, None)
         assert db.list_alerts() == []
 
@@ -188,7 +199,9 @@ class TestEvaluatePostRunRules:
 
         rules.create_rule("AAPL", "recommendation_changed")
         rules.evaluate_post_run_rules(
-            "AAPL", {"recommendation": "Sell"}, {"recommendation": "Buy"},
+            "AAPL",
+            {"recommendation": "Sell"},
+            {"recommendation": "Buy"},
         )
         assert len(db.list_alerts()) == 1
 
@@ -197,7 +210,9 @@ class TestEvaluatePostRunRules:
 
         rules.create_rule("AAPL", "confidence_dropped", threshold=0.1)
         rules.evaluate_post_run_rules(
-            "AAPL", {"confidence": 0.65}, {"confidence": 0.80},
+            "AAPL",
+            {"confidence": 0.65},
+            {"confidence": 0.80},
         )
         assert len(db.list_alerts()) == 1
 
@@ -218,7 +233,9 @@ class TestAlertsIntegration:
         from src.stock_analysis.web import alerts, db, rules
 
         rules.create_rule("AAPL", "target_price_hit")
-        monkeypatch.setattr(router_mod.ROUTER, "get_quote", lambda sym: {"price": 999.0})
+        monkeypatch.setattr(
+            router_mod.ROUTER, "get_quote", lambda sym: {"price": 999.0}
+        )
 
         alerts.check_and_dispatch(
             "AAPL",
@@ -231,15 +248,20 @@ class TestAlertsIntegration:
         assert len(log) == 1
         assert "target" in log[0]["reason"]
 
-    def test_rule_evaluation_failure_does_not_break_built_in_dispatch(self, monkeypatch):
-        from src.stock_analysis.web import alerts, db, rules as rules_mod
+    def test_rule_evaluation_failure_does_not_break_built_in_dispatch(
+        self, monkeypatch
+    ):
+        from src.stock_analysis.web import alerts, db
+        from src.stock_analysis.web import rules as rules_mod
 
         monkeypatch.setattr(
-            rules_mod, "evaluate_post_run_rules",
+            rules_mod,
+            "evaluate_post_run_rules",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
         )
         alerts.check_and_dispatch(
-            "AAPL", {"recommendation": "Sell", "confidence": 0.5},
+            "AAPL",
+            {"recommendation": "Sell", "confidence": 0.5},
             {"recommendation": "Buy", "confidence": 0.5},
         )
         log = db.list_alerts()

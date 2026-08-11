@@ -68,5 +68,6 @@ def check_alert() -> None:
             _logger.warning(
                 "[token-alert] run used %d tokens, over the %d alert threshold "
                 "(LLM_TOKEN_ALERT) — check for an unexpectedly expensive run",
-                total, threshold,
+                total,
+                threshold,
             )

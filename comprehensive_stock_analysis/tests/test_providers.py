@@ -52,16 +52,25 @@ class TestYFinanceProvider:
                 self.symbol = symbol
                 self.fast_info = _FastInfo(fast_info or {})
 
-        monkeypatch.setattr(mod, "YFinanceProvider", mod.YFinanceProvider)  # no-op, keeps import used
+        monkeypatch.setattr(
+            mod, "YFinanceProvider", mod.YFinanceProvider
+        )  # no-op, keeps import used
         return _T
 
     def test_get_quote_computes_change_pct(self, monkeypatch):
-        from src.stock_analysis.tools.providers.yfinance_provider import YFinanceProvider
+        from src.stock_analysis.tools.providers.yfinance_provider import (
+            YFinanceProvider,
+        )
 
         provider = YFinanceProvider()
-        fake = self._fake_ticker(monkeypatch, fast_info={
-            "last_price": 110.0, "previous_close": 100.0, "last_volume": 5000,
-        })
+        fake = self._fake_ticker(
+            monkeypatch,
+            fast_info={
+                "last_price": 110.0,
+                "previous_close": 100.0,
+                "last_volume": 5000,
+            },
+        )
         monkeypatch.setattr(provider, "_ticker", lambda symbol: fake(symbol))
 
         result = provider.get_quote("AAPL")
@@ -70,19 +79,28 @@ class TestYFinanceProvider:
         assert result["source"] == "yfinance"
 
     def test_get_quote_handles_exception(self, monkeypatch):
-        from src.stock_analysis.tools.providers.yfinance_provider import YFinanceProvider
+        from src.stock_analysis.tools.providers.yfinance_provider import (
+            YFinanceProvider,
+        )
 
         provider = YFinanceProvider()
-        monkeypatch.setattr(provider, "_ticker", lambda symbol: (_ for _ in ()).throw(RuntimeError("boom")))
+        monkeypatch.setattr(
+            provider,
+            "_ticker",
+            lambda symbol: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
         result = provider.get_quote("AAPL")
         assert "error" in result
 
     def test_get_statements_wraps_yf_summaries_and_tags_source(self, monkeypatch):
         from src.stock_analysis.tools import yf_summaries
-        from src.stock_analysis.tools.providers.yfinance_provider import YFinanceProvider
+        from src.stock_analysis.tools.providers.yfinance_provider import (
+            YFinanceProvider,
+        )
 
         monkeypatch.setattr(
-            yf_summaries, "summarize_financial_statements",
+            yf_summaries,
+            "summarize_financial_statements",
             lambda ticker: {"income_statement": {"2025": {"revenue_m": 100}}},
         )
         provider = YFinanceProvider()
@@ -92,14 +110,18 @@ class TestYFinanceProvider:
         assert "income_statement" in result
 
     def test_get_transcript_is_a_capability_gap_not_an_error(self):
-        from src.stock_analysis.tools.providers.yfinance_provider import YFinanceProvider
+        from src.stock_analysis.tools.providers.yfinance_provider import (
+            YFinanceProvider,
+        )
 
         assert YFinanceProvider().get_transcript("AAPL") == {}
 
     def test_get_daily_bars_empty_history_returns_empty_dict(self, monkeypatch):
         import pandas as pd
 
-        from src.stock_analysis.tools.providers.yfinance_provider import YFinanceProvider
+        from src.stock_analysis.tools.providers.yfinance_provider import (
+            YFinanceProvider,
+        )
 
         class _T:
             def history(self, **kwargs):
@@ -112,13 +134,21 @@ class TestYFinanceProvider:
     def test_get_daily_bars_converts_rows(self, monkeypatch):
         import pandas as pd
 
-        from src.stock_analysis.tools.providers.yfinance_provider import YFinanceProvider
+        from src.stock_analysis.tools.providers.yfinance_provider import (
+            YFinanceProvider,
+        )
 
         idx = pd.to_datetime(["2026-01-02", "2026-01-03"])
-        hist = pd.DataFrame({
-            "Open": [10.0, 11.0], "High": [12.0, 13.0], "Low": [9.0, 10.0],
-            "Close": [11.0, 12.0], "Volume": [1000, 2000],
-        }, index=idx)
+        hist = pd.DataFrame(
+            {
+                "Open": [10.0, 11.0],
+                "High": [12.0, 13.0],
+                "Low": [9.0, 10.0],
+                "Close": [11.0, 12.0],
+                "Volume": [1000, 2000],
+            },
+            index=idx,
+        )
 
         class _T:
             def history(self, **kwargs):
@@ -143,10 +173,18 @@ class TestFMPProvider:
         from src.stock_analysis.tools.providers.fmp import FMPProvider
 
         with patch("src.stock_analysis.tools._http.SESSION.get") as mock_get:
-            mock_get.return_value = _mock_response([{
-                "price": 150.0, "previousClose": 145.0, "changesPercentage": 3.4,
-                "volume": 1_000_000, "marketCap": 2.5e12, "pe": 28.5,
-            }])
+            mock_get.return_value = _mock_response(
+                [
+                    {
+                        "price": 150.0,
+                        "previousClose": 145.0,
+                        "changesPercentage": 3.4,
+                        "volume": 1_000_000,
+                        "marketCap": 2.5e12,
+                        "pe": 28.5,
+                    }
+                ]
+            )
             result = FMPProvider("test-key").get_quote("AAPL")
         assert result["price"] == 150.0
         assert result["source"] == "fmp"
@@ -162,19 +200,26 @@ class TestFMPProvider:
     def test_get_quote_http_error_returns_error_dict(self):
         from src.stock_analysis.tools.providers.fmp import FMPProvider
 
-        with patch("src.stock_analysis.tools._http.SESSION.get", side_effect=ConnectionError("down")):
+        with patch(
+            "src.stock_analysis.tools._http.SESSION.get",
+            side_effect=ConnectionError("down"),
+        ):
             result = FMPProvider("test-key").get_quote("AAPL")
         assert "error" in result
 
     def test_get_statements_shapes_three_statements(self):
         from src.stock_analysis.tools.providers.fmp import FMPProvider
 
-        income = [{"calendarYear": "2025", "revenue": 1000, "netIncome": 100, "eps": 5.0}]
+        income = [
+            {"calendarYear": "2025", "revenue": 1000, "netIncome": 100, "eps": 5.0}
+        ]
         balance = [{"calendarYear": "2025", "totalAssets": 5000}]
         cashflow = [{"calendarYear": "2025", "freeCashFlow": 200}]
         with patch("src.stock_analysis.tools._http.SESSION.get") as mock_get:
             mock_get.side_effect = [
-                _mock_response(income), _mock_response(balance), _mock_response(cashflow),
+                _mock_response(income),
+                _mock_response(balance),
+                _mock_response(cashflow),
             ]
             result = FMPProvider("test-key").get_statements("AAPL", years=10)
         assert result["years_available"] == 1
@@ -207,10 +252,12 @@ class TestFMPProvider:
         from src.stock_analysis.tools.providers.fmp import FMPProvider
 
         with patch("src.stock_analysis.tools._http.SESSION.get") as mock_get:
-            mock_get.return_value = _mock_response([
-                {"date": "2099-01-01", "epsEstimated": 1.5},
-                {"date": "2020-01-01", "epsEstimated": 1.0},
-            ])
+            mock_get.return_value = _mock_response(
+                [
+                    {"date": "2099-01-01", "epsEstimated": 1.5},
+                    {"date": "2020-01-01", "epsEstimated": 1.0},
+                ]
+            )
             result = FMPProvider("test-key").get_calendar("AAPL")
         assert result["next_earnings"]["date"] == "2099-01-01"
 
@@ -218,9 +265,15 @@ class TestFMPProvider:
         from src.stock_analysis.tools.providers.fmp import FMPProvider
 
         with patch("src.stock_analysis.tools._http.SESSION.get") as mock_get:
-            mock_get.return_value = _mock_response([
-                {"reportingName": "Jane Doe", "transactionType": "S-Sale", "securitiesTransacted": 1000},
-            ])
+            mock_get.return_value = _mock_response(
+                [
+                    {
+                        "reportingName": "Jane Doe",
+                        "transactionType": "S-Sale",
+                        "securitiesTransacted": 1000,
+                    },
+                ]
+            )
             result = FMPProvider("test-key").get_insider_trades("AAPL")
         assert result["insider_trades"][0]["reporting_name"] == "Jane Doe"
 
@@ -261,12 +314,15 @@ class TestPolygonProvider:
         from src.stock_analysis.tools.providers.polygon import PolygonProvider
 
         with patch("src.stock_analysis.tools._http.SESSION.get") as mock_get:
-            mock_get.return_value = _mock_response({
-                "ticker": {
-                    "day": {"c": 155.0, "v": 900000}, "prevDay": {"c": 150.0},
-                    "todaysChangePerc": 3.33,
+            mock_get.return_value = _mock_response(
+                {
+                    "ticker": {
+                        "day": {"c": 155.0, "v": 900000},
+                        "prevDay": {"c": 150.0},
+                        "todaysChangePerc": 3.33,
+                    }
                 }
-            })
+            )
             result = PolygonProvider("test-key").get_quote("AAPL")
         assert result["price"] == 155.0
         assert result["source"] == "polygon"
@@ -283,10 +339,23 @@ class TestPolygonProvider:
         from src.stock_analysis.tools.providers.polygon import PolygonProvider
 
         with patch("src.stock_analysis.tools._http.SESSION.get") as mock_get:
-            mock_get.return_value = _mock_response({
-                "results": [{"t": 1767225600000, "o": 10, "h": 12, "l": 9, "c": 11, "v": 1000}]
-            })
-            result = PolygonProvider("test-key").get_daily_bars("AAPL", "2026-01-01", "2026-01-31")
+            mock_get.return_value = _mock_response(
+                {
+                    "results": [
+                        {
+                            "t": 1767225600000,
+                            "o": 10,
+                            "h": 12,
+                            "l": 9,
+                            "c": 11,
+                            "v": 1000,
+                        }
+                    ]
+                }
+            )
+            result = PolygonProvider("test-key").get_daily_bars(
+                "AAPL", "2026-01-01", "2026-01-31"
+            )
         assert result["bars"][0]["close"] == 11
         assert result["bars"][0]["date"]  # parsed to a date string
 
@@ -294,12 +363,22 @@ class TestPolygonProvider:
         from src.stock_analysis.tools.providers.polygon import PolygonProvider
 
         with patch("src.stock_analysis.tools._http.SESSION.get") as mock_get:
-            mock_get.return_value = _mock_response({
-                "tickers": [
-                    {"ticker": "AAPL", "day": {"c": 150.0}, "prevDay": {"c": 148.0}},
-                    {"ticker": "MSFT", "day": {"c": 300.0}, "prevDay": {"c": 298.0}},
-                ]
-            })
+            mock_get.return_value = _mock_response(
+                {
+                    "tickers": [
+                        {
+                            "ticker": "AAPL",
+                            "day": {"c": 150.0},
+                            "prevDay": {"c": 148.0},
+                        },
+                        {
+                            "ticker": "MSFT",
+                            "day": {"c": 300.0},
+                            "prevDay": {"c": 298.0},
+                        },
+                    ]
+                }
+            )
             result = PolygonProvider("test-key").get_batch_quotes(["AAPL", "MSFT"])
         assert result["AAPL"]["price"] == 150.0
         assert result["MSFT"]["price"] == 300.0
@@ -336,7 +415,11 @@ class TestProviderRouter:
         from src.stock_analysis.tools.providers.router import ProviderRouter
 
         router = ProviderRouter()
-        monkeypatch.setattr(router._yfinance, "get_quote", lambda symbol: {"price": 1.0, "source": "yfinance"})
+        monkeypatch.setattr(
+            router._yfinance,
+            "get_quote",
+            lambda symbol: {"price": 1.0, "source": "yfinance"},
+        )
         result = router.get_quote("AAPL")
         assert result["source"] == "yfinance"
 
@@ -346,8 +429,10 @@ class TestProviderRouter:
 
         monkeypatch.setattr(settings, "polygon_api_key", "key")
         router = ProviderRouter()
-        with patch("src.stock_analysis.tools.providers.polygon.PolygonProvider.get_quote",
-                   return_value={"price": 2.0, "source": "polygon"}):
+        with patch(
+            "src.stock_analysis.tools.providers.polygon.PolygonProvider.get_quote",
+            return_value={"price": 2.0, "source": "polygon"},
+        ):
             result = router.get_quote("AAPL")
         assert result["source"] == "polygon"
 
@@ -357,9 +442,15 @@ class TestProviderRouter:
 
         monkeypatch.setattr(settings, "polygon_api_key", "key")
         router = ProviderRouter()
-        monkeypatch.setattr(router._yfinance, "get_quote", lambda symbol: {"price": 1.0, "source": "yfinance"})
-        with patch("src.stock_analysis.tools.providers.polygon.PolygonProvider.get_quote",
-                   return_value={"error": "rate limited"}):
+        monkeypatch.setattr(
+            router._yfinance,
+            "get_quote",
+            lambda symbol: {"price": 1.0, "source": "yfinance"},
+        )
+        with patch(
+            "src.stock_analysis.tools.providers.polygon.PolygonProvider.get_quote",
+            return_value={"error": "rate limited"},
+        ):
             result = router.get_quote("AAPL")
         assert result["source"] == "yfinance"
 
@@ -369,8 +460,10 @@ class TestProviderRouter:
 
         monkeypatch.setattr(settings, "fmp_api_key", "key")
         router = ProviderRouter()
-        with patch("src.stock_analysis.tools.providers.fmp.FMPProvider.get_statements",
-                   return_value={"years_available": 10, "source": "fmp"}):
+        with patch(
+            "src.stock_analysis.tools.providers.fmp.FMPProvider.get_statements",
+            return_value={"years_available": 10, "source": "fmp"},
+        ):
             result = router.get_statements("AAPL")
         assert result["source"] == "fmp"
 

@@ -1,12 +1,12 @@
 """Technical Analyst Agent for technical analysis of stocks."""
 
-from typing import List, Any, Optional
+from typing import Any, List, Optional
 
-from .base_agent import BaseAgent
 from ..tools.analysis_tools import TechnicalAnalysisTool
 from ..tools.backtest_tools import BacktestTool
-from ..tools.calculation_tools import TechnicalIndicatorTool, FinancialCalculatorTool
+from ..tools.calculation_tools import FinancialCalculatorTool, TechnicalIndicatorTool
 from ..tools.free_data_collection import YahooFinanceTool
+from .base_agent import BaseAgent
 
 
 class TechnicalAnalystAgent(BaseAgent):

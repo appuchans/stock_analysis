@@ -159,7 +159,9 @@ def _import_legacy_watchlist() -> None:
             src = sqlite3.connect(legacy, timeout=10)
             try:
                 src.row_factory = sqlite3.Row
-                rows = src.execute("SELECT symbol, added_at, notes FROM watchlist").fetchall()
+                rows = src.execute(
+                    "SELECT symbol, added_at, notes FROM watchlist"
+                ).fetchall()
             finally:
                 src.close()
             for r in rows:
@@ -212,7 +214,9 @@ def list_symbols() -> List[Dict[str, str]]:
 def symbol_exists(symbol: str) -> bool:
     _ensure()
     with _connect() as conn:
-        row = conn.execute("SELECT 1 FROM watchlist WHERE symbol = ?", (symbol,)).fetchone()
+        row = conn.execute(
+            "SELECT 1 FROM watchlist WHERE symbol = ?", (symbol,)
+        ).fetchone()
     return row is not None
 
 
@@ -221,9 +225,22 @@ def upsert_job(job: Dict[str, Any]) -> None:
     """Insert or update a job row from a plain dict (best-effort persistence)."""
     _ensure()
     cols = (
-        "id", "symbol", "depth", "asset_type", "use_cache", "origin", "state",
-        "stage", "error", "company_name", "progress", "llm_calls", "total_tokens",
-        "created_at", "started_at", "finished_at",
+        "id",
+        "symbol",
+        "depth",
+        "asset_type",
+        "use_cache",
+        "origin",
+        "state",
+        "stage",
+        "error",
+        "company_name",
+        "progress",
+        "llm_calls",
+        "total_tokens",
+        "created_at",
+        "started_at",
+        "finished_at",
     )
     values = [job.get(c) for c in cols]
     placeholders = ", ".join("?" for _ in cols)
@@ -300,8 +317,15 @@ def record_recommendation(
             "INSERT OR IGNORE INTO rec_history "
             "(symbol, recorded_at, recommendation, target_price, stop_loss, "
             " confidence, price_at_rec) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (symbol, recorded_at, recommendation, target_price, stop_loss,
-             confidence, price_at_rec),
+            (
+                symbol,
+                recorded_at,
+                recommendation,
+                target_price,
+                stop_loss,
+                confidence,
+                price_at_rec,
+            ),
         )
         conn.commit()
 
@@ -350,7 +374,9 @@ def list_alerts(limit: int = 200) -> List[Dict[str, Any]]:
 def get_setting(key: str) -> Optional[str]:
     _ensure()
     with _connect() as conn:
-        row = conn.execute("SELECT value FROM settings_kv WHERE key = ?", (key,)).fetchone()
+        row = conn.execute(
+            "SELECT value FROM settings_kv WHERE key = ?", (key,)
+        ).fetchone()
     return row["value"] if row else None
 
 
@@ -381,9 +407,13 @@ def add_schedule(schedule: Dict[str, Any]) -> None:
             "(id, target, cron_expr, depth, use_cache, monitor_only, enabled, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                schedule["id"], schedule["target"], schedule["cron_expr"],
-                schedule.get("depth", "standard"), int(schedule.get("use_cache", 0)),
-                int(schedule.get("monitor_only", 0)), int(schedule.get("enabled", 1)),
+                schedule["id"],
+                schedule["target"],
+                schedule["cron_expr"],
+                schedule.get("depth", "standard"),
+                int(schedule.get("use_cache", 0)),
+                int(schedule.get("monitor_only", 0)),
+                int(schedule.get("enabled", 1)),
                 schedule.get("created_at") or _now_iso(),
             ),
         )
@@ -393,14 +423,18 @@ def add_schedule(schedule: Dict[str, Any]) -> None:
 def list_schedules() -> List[Dict[str, Any]]:
     _ensure()
     with _connect() as conn:
-        rows = conn.execute("SELECT * FROM schedules ORDER BY created_at ASC").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM schedules ORDER BY created_at ASC"
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_schedule(schedule_id: str) -> Optional[Dict[str, Any]]:
     _ensure()
     with _connect() as conn:
-        row = conn.execute("SELECT * FROM schedules WHERE id = ?", (schedule_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM schedules WHERE id = ?", (schedule_id,)
+        ).fetchone()
     return dict(row) if row else None
 
 
@@ -440,8 +474,12 @@ def add_rule(rule: Dict[str, Any]) -> None:
             "INSERT INTO rules (id, symbol, rule_type, threshold, cooldown_min, enabled, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
-                rule["id"], rule["symbol"], rule["rule_type"], rule.get("threshold"),
-                int(rule.get("cooldown_min", 60)), int(rule.get("enabled", 1)),
+                rule["id"],
+                rule["symbol"],
+                rule["rule_type"],
+                rule.get("threshold"),
+                int(rule.get("cooldown_min", 60)),
+                int(rule.get("enabled", 1)),
                 rule.get("created_at") or _now_iso(),
             ),
         )
@@ -453,10 +491,13 @@ def list_rules(symbol: Optional[str] = None) -> List[Dict[str, Any]]:
     with _connect() as conn:
         if symbol:
             rows = conn.execute(
-                "SELECT * FROM rules WHERE symbol = ? ORDER BY created_at ASC", (symbol,)
+                "SELECT * FROM rules WHERE symbol = ? ORDER BY created_at ASC",
+                (symbol,),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM rules ORDER BY created_at ASC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM rules ORDER BY created_at ASC"
+            ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -470,7 +511,9 @@ def get_rule(rule_id: str) -> Optional[Dict[str, Any]]:
 def set_rule_enabled(rule_id: str, enabled: bool) -> bool:
     _ensure()
     with _connect() as conn:
-        cursor = conn.execute("UPDATE rules SET enabled = ? WHERE id = ?", (int(enabled), rule_id))
+        cursor = conn.execute(
+            "UPDATE rules SET enabled = ? WHERE id = ?", (int(enabled), rule_id)
+        )
         conn.commit()
         return cursor.rowcount == 1
 
@@ -486,7 +529,9 @@ def delete_rule(rule_id: str) -> bool:
 def record_rule_fired(rule_id: str) -> None:
     _ensure()
     with _connect() as conn:
-        conn.execute("UPDATE rules SET last_fired_at = ? WHERE id = ?", (_now_iso(), rule_id))
+        conn.execute(
+            "UPDATE rules SET last_fired_at = ? WHERE id = ?", (_now_iso(), rule_id)
+        )
         conn.commit()
 
 
@@ -498,8 +543,13 @@ def add_transaction(tx: Dict[str, Any]) -> int:
             "INSERT INTO transactions (symbol, side, qty, price, fees, date, note, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                tx["symbol"], tx["side"], float(tx["qty"]), float(tx["price"]),
-                float(tx.get("fees") or 0), tx["date"], tx.get("note", ""),
+                tx["symbol"],
+                tx["side"],
+                float(tx["qty"]),
+                float(tx["price"]),
+                float(tx.get("fees") or 0),
+                tx["date"],
+                tx.get("note", ""),
                 tx.get("created_at") or _now_iso(),
             ),
         )
@@ -519,10 +569,13 @@ def list_transactions(symbol: Optional[str] = None) -> List[Dict[str, Any]]:
     with _connect() as conn:
         if symbol:
             rows = conn.execute(
-                "SELECT * FROM transactions WHERE symbol = ? ORDER BY date ASC, id ASC", (symbol,)
+                "SELECT * FROM transactions WHERE symbol = ? ORDER BY date ASC, id ASC",
+                (symbol,),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM transactions ORDER BY date ASC, id ASC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM transactions ORDER BY date ASC, id ASC"
+            ).fetchall()
     return [dict(r) for r in rows]
 
 

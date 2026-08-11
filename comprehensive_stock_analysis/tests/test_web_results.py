@@ -16,8 +16,12 @@ def _temp_reports(monkeypatch, tmp_path):
     monkeypatch.setattr(settings_mod.settings, "report_output_dir", str(tmp_path))
     sym = "AAPL"
     (tmp_path / sym / "html").mkdir(parents=True)
-    (tmp_path / sym / "html" / f"{sym}_report.html").write_text("<html>report</html>", encoding="utf-8")
-    (tmp_path / sym / f"{sym}_chart_data.json").write_text(json.dumps({"k": 1}), encoding="utf-8")
+    (tmp_path / sym / "html" / f"{sym}_report.html").write_text(
+        "<html>report</html>", encoding="utf-8"
+    )
+    (tmp_path / sym / f"{sym}_chart_data.json").write_text(
+        json.dumps({"k": 1}), encoding="utf-8"
+    )
     yield tmp_path
 
 

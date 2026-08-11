@@ -603,7 +603,9 @@ def _md_to_html(text: str) -> str:
 
     # Bullet lists (- or *)
     def _list_block(m: re.Match) -> str:
-        items = re.sub(r"^[*\-]\s+(.+)$", r"<li>\1</li>", m.group(0), flags=re.MULTILINE)
+        items = re.sub(
+            r"^[*\-]\s+(.+)$", r"<li>\1</li>", m.group(0), flags=re.MULTILINE
+        )
         return f"<ul>{items}</ul>"
 
     text = re.sub(r"(?:^[*\-] .+\n?)+", _list_block, text, flags=re.MULTILINE)
@@ -694,7 +696,9 @@ def _load_narrative(symbol: str) -> str:
     # A valid narrative has the mandated '## ' sections; a status summary or
     # fragment must not be embedded as the report body.
     if text.count("## ") < 3:
-        _logger.warning("Narrative file %s looks malformed; skipping body embed", path.name)
+        _logger.warning(
+            "Narrative file %s looks malformed; skipping body embed", path.name
+        )
         return ""
     return text
 
@@ -761,7 +765,11 @@ def _peers_table_html(peers: List[Dict[str, Any]]) -> str:
         return ""
     rows = []
     for p in peers:
-        style = ' style="font-weight:700; background:#ebf8ff"' if p.get("is_subject") else ""
+        style = (
+            ' style="font-weight:700; background:#ebf8ff"'
+            if p.get("is_subject")
+            else ""
+        )
 
         def cell(v, suffix=""):
             return f"{v}{suffix}" if v is not None else "—"
@@ -791,7 +799,9 @@ def _scenarios_table_html(scenarios: List[Dict[str, Any]]) -> str:
         return ""
     rows = []
     for sc in scenarios:
-        upside = f"{sc['upside_pct']:+.1f}%" if sc.get("upside_pct") is not None else "—"
+        upside = (
+            f"{sc['upside_pct']:+.1f}%" if sc.get("upside_pct") is not None else "—"
+        )
         rows.append(
             f"<tr><td><strong>{sc['scenario']}</strong></td>"
             f"<td>{sc['growth_pct']}%</td><td>{sc['discount_pct']}%</td>"
@@ -852,9 +862,9 @@ def _load_chart_data(symbol: str) -> Dict[str, Any]:
             if qis is not None and not qis.empty and "Total Revenue" in qis.index:
                 rev = qis.loc["Total Revenue"]
                 chart["quarterly_revenue_m"] = {
-                    (c.date().isoformat() if hasattr(c, "date") else str(c)[:10]): round(
-                        float(v) / 1e6, 1
-                    )
+                    (
+                        c.date().isoformat() if hasattr(c, "date") else str(c)[:10]
+                    ): round(float(v) / 1e6, 1)
                     for c, v in sorted(rev.items())
                     if v == v and v is not None
                 }
@@ -1187,7 +1197,11 @@ class ReportGeneratorTool(BaseTool):
         return result, gaps_acc
 
     def _render_html(
-        self, symbol: str, analysis_data: Dict[str, Any], timeframe: str, asset_type: str = "stock"
+        self,
+        symbol: str,
+        analysis_data: Dict[str, Any],
+        timeframe: str,
+        asset_type: str = "stock",
     ) -> Dict[str, Any]:
         from jinja2 import Environment
         from markupsafe import Markup
@@ -1228,7 +1242,9 @@ class ReportGeneratorTool(BaseTool):
 
         detail = analysis_data.get("detailed_analysis") or {}
         supporting = analysis_data.get("supporting_evidence") or {}
-        market_snap = supporting.get("market_snapshot") or analysis_data.get("market_data") or {}
+        market_snap = (
+            supporting.get("market_snapshot") or analysis_data.get("market_data") or {}
+        )
 
         # Charts + branding (all degrade gracefully when data is unavailable)
         from ._svg_charts import (
@@ -1252,7 +1268,9 @@ class ReportGeneratorTool(BaseTool):
         if ks.get("pe_ratio"):
             key_stats.append(("P/E (TTM)", _fmt(ks["pe_ratio"])))
         if ks.get("low_52w") and ks.get("high_52w"):
-            key_stats.append(("52-Week Range", f"${_fmt(ks['low_52w'])} – ${_fmt(ks['high_52w'])}"))
+            key_stats.append(
+                ("52-Week Range", f"${_fmt(ks['low_52w'])} – ${_fmt(ks['high_52w'])}")
+            )
         if ks.get("beta"):
             key_stats.append(("Beta", _fmt(ks["beta"])))
 
@@ -1262,7 +1280,11 @@ class ReportGeneratorTool(BaseTool):
         target_range_svg = ""
         if pt.get("low") and pt.get("high"):
             markers = [
-                ("Current", pt.get("current_price") or ks.get("current_price"), "#1a202c"),
+                (
+                    "Current",
+                    pt.get("current_price") or ks.get("current_price"),
+                    "#1a202c",
+                ),
                 ("Mean target", pt.get("mean"), "#2b6cb0"),
             ]
             target_range_svg = Markup(
@@ -1301,7 +1323,11 @@ class ReportGeneratorTool(BaseTool):
             )
         if ss.get("put_call_oi_ratio") is not None:
             pc = ss["put_call_oi_ratio"]
-            tone = "bullish tilt" if pc < 0.7 else ("bearish tilt" if pc > 1.0 else "neutral")
+            tone = (
+                "bullish tilt"
+                if pc < 0.7
+                else ("bearish tilt" if pc > 1.0 else "neutral")
+            )
             sentiment_chips.append(("Options Put/Call OI", f"{_fmt(pc)} ({tone})"))
         if ss.get("short_pct_of_float") is not None:
             sentiment_chips.append(
@@ -1339,7 +1365,9 @@ class ReportGeneratorTool(BaseTool):
         for sc in valuation_scenarios:
             iv = sc.get("intrinsic_per_share")
             sc["upside_pct"] = (
-                round((iv - current_px) / current_px * 100, 1) if iv and current_px else None
+                round((iv - current_px) / current_px * 100, 1)
+                if iv and current_px
+                else None
             )
 
         # Sentiment trend across runs
@@ -1461,9 +1489,13 @@ class ReportGeneratorTool(BaseTool):
         if valuation_parts:
             visual_groups["valuation"] = Markup("".join(valuation_parts))
         if range_52w_svg:
-            visual_groups["range52w"] = Markup(f'<div class="chart">{range_52w_svg}</div>')
+            visual_groups["range52w"] = Markup(
+                f'<div class="chart">{range_52w_svg}</div>'
+            )
 
-        narrative_sections, consumed = _build_narrative_sections(narrative_md, visual_groups)
+        narrative_sections, consumed = _build_narrative_sections(
+            narrative_md, visual_groups
+        )
         # Visual groups not matched to a section render in standalone fallback spots
         unconsumed = {k: v for k, v in visual_groups.items() if k not in consumed}
 
@@ -1471,7 +1503,9 @@ class ReportGeneratorTool(BaseTool):
         for key in ("exchange", "sector", "industry"):
             meta.setdefault(key, company.get(key))
 
-        detail_sections, consolidated_gaps = self._load_detail_sections(symbol, asset_type)
+        detail_sections, consolidated_gaps = self._load_detail_sections(
+            symbol, asset_type
+        )
 
         html = template.render(
             symbol=symbol.upper(),
@@ -1504,7 +1538,9 @@ class ReportGeneratorTool(BaseTool):
             market_snap=market_snap,
             technical=detail.get("technical_analysis") or {},
             fundamental=detail.get("fundamental_analysis") or {},
-            etf_profile=analysis_data.get("etf_profile") or chart_data.get("etf_profile") or {},
+            etf_profile=analysis_data.get("etf_profile")
+            or chart_data.get("etf_profile")
+            or {},
             risk=detail.get("risk_assessment") or {},
             sentiment=detail.get("sentiment_analysis") or {},
             market_ctx=detail.get("market_context") or {},
@@ -1525,9 +1561,13 @@ class ReportGeneratorTool(BaseTool):
             "format": "html",
         }
 
-    def _render_json(self, symbol: str, analysis_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _render_json(
+        self, symbol: str, analysis_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         path = self._output_path(symbol, "json")
-        path.write_text(json.dumps(analysis_data, indent=2, default=str), encoding="utf-8")
+        path.write_text(
+            json.dumps(analysis_data, indent=2, default=str), encoding="utf-8"
+        )
         return {
             "status": "success",
             "symbol": symbol.upper(),

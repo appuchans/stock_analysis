@@ -1,15 +1,17 @@
 """Configuration loader for agents, tasks, and LLM settings."""
 
-import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
 
+import yaml
+from pydantic import BaseModel, Field
 
 # ── Agent / Task / Flow config models ────────────────────────────────────────
 
+
 class AgentConfig(BaseModel):
     """Agent configuration model."""
+
     role: str
     goal: str
     backstory: str
@@ -35,8 +37,10 @@ class AgentConfig(BaseModel):
 
 # ── LLM config models ─────────────────────────────────────────────────────────
 
+
 class LLMGlobalConfig(BaseModel):
     """Global LLM defaults loaded from llm_config.yaml."""
+
     provider: str = "openai"
     model: str = "gpt-4o"
     temperature: float = 0.1
@@ -47,33 +51,39 @@ class LLMGlobalConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     """Root LLM configuration loaded from llm_config.yaml."""
-    global_defaults: LLMGlobalConfig = Field(default_factory=LLMGlobalConfig, alias="global")
+
+    global_defaults: LLMGlobalConfig = Field(
+        default_factory=LLMGlobalConfig, alias="global"
+    )
     agents: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    provider_prefixes: Dict[str, str] = Field(default_factory=lambda: {
-        "openai": "openai/",
-        "anthropic": "anthropic/",
-        "ollama": "ollama/",
-        "azure": "azure/",
-        "groq": "groq/",
-        "mistral": "mistral/",
-        "cohere": "cohere/",
-        "bedrock": "bedrock/",
-        "huggingface": "huggingface/",
-        "vertexai": "vertexai/",
-        "gemini": "gemini/",
-        "deepseek": "deepseek/",
-        "openrouter": "openrouter/",
-        "xai": "xai/",
-        "perplexity": "perplexity/",
-        "fireworks_ai": "fireworks_ai/",
-        "together_ai": "together_ai/",
-        "cerebras": "cerebras/",
-    })
+    provider_prefixes: Dict[str, str] = Field(
+        default_factory=lambda: {
+            "openai": "openai/",
+            "anthropic": "anthropic/",
+            "ollama": "ollama/",
+            "azure": "azure/",
+            "groq": "groq/",
+            "mistral": "mistral/",
+            "cohere": "cohere/",
+            "bedrock": "bedrock/",
+            "huggingface": "huggingface/",
+            "vertexai": "vertexai/",
+            "gemini": "gemini/",
+            "deepseek": "deepseek/",
+            "openrouter": "openrouter/",
+            "xai": "xai/",
+            "perplexity": "perplexity/",
+            "fireworks_ai": "fireworks_ai/",
+            "together_ai": "together_ai/",
+            "cerebras": "cerebras/",
+        }
+    )
 
     model_config = {"populate_by_name": True}
 
 
 # ── Loader ────────────────────────────────────────────────────────────────────
+
 
 class ConfigLoader:
     """Configuration loader for agents, tasks, and LLM settings."""
@@ -102,8 +112,7 @@ class ConfigLoader:
             except yaml.YAMLError as e:
                 raise ValueError(f"Invalid YAML in {agents_file}: {e}")
             self._agents_config = {
-                name: AgentConfig(**config)
-                for name, config in agents_data.items()
+                name: AgentConfig(**config) for name, config in agents_data.items()
             }
         return self._agents_config
 

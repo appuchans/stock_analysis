@@ -41,7 +41,19 @@ from ..models.stock_data import (
 )
 from .cache import cached_tool
 
-_VALID_PERIODS = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"}
+_VALID_PERIODS = {
+    "1d",
+    "5d",
+    "1mo",
+    "3mo",
+    "6mo",
+    "1y",
+    "2y",
+    "5y",
+    "10y",
+    "ytd",
+    "max",
+}
 _PERIOD_ALIASES = {
     "1-year": "1y",
     "1 year": "1y",
@@ -119,7 +131,9 @@ def resolve_symbol(symbol: str) -> Optional[Dict[str, str]]:
     name = info.get("shortName") or info.get("longName")
     if not name:
         return None
-    asset_type = "etf" if (info.get("quoteType", "") or "").upper() == "ETF" else "stock"
+    asset_type = (
+        "etf" if (info.get("quoteType", "") or "").upper() == "ETF" else "stock"
+    )
     return {"name": name, "asset_type": asset_type}
 
 
@@ -184,8 +198,14 @@ def _compute_technical_summary(hist: "pd.DataFrame") -> Dict[str, Any]:
     rsi = None
     if len(close) >= 15:
         delta = close.diff()
-        gain = delta.clip(lower=0).ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
-        loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
+        gain = (
+            delta.clip(lower=0).ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
+        )
+        loss = (
+            (-delta.clip(upper=0))
+            .ewm(alpha=1 / 14, min_periods=14, adjust=False)
+            .mean()
+        )
         rs = gain / loss.replace(0, float("nan"))
         rsi_series = 100 - (100 / (1 + rs))
         rsi = _safe(rsi_series.iloc[-1])
@@ -265,7 +285,9 @@ class YahooFinanceTool(BaseTool):
         "Collects comprehensive stock data from Yahoo Finance including prices, fundamentals, and company information"
     )
 
-    def _run(self, symbol: str, period: str = "1y", interval: str = "1d") -> Dict[str, Any]:
+    def _run(
+        self, symbol: str, period: str = "1y", interval: str = "1d"
+    ) -> Dict[str, Any]:
         """Collect data from Yahoo Finance. period accepts 1d/5d/1mo/3mo/6mo/1y/2y/5y/10y/ytd/max."""
         # Normalize BEFORE the cache key is computed (@cached_tool hashes the
         # args/kwargs it receives), so LLM-invented variants like "1-year"
@@ -316,7 +338,9 @@ class YahooFinanceTool(BaseTool):
             current_price = hist["Close"].iloc[-1] if not hist.empty else 0
             previous_close = info.get("previousClose", current_price)
             day_change = current_price - previous_close
-            day_change_percent = (day_change / previous_close * 100) if previous_close != 0 else 0
+            day_change_percent = (
+                (day_change / previous_close * 100) if previous_close != 0 else 0
+            )
 
             market_data = MarketData(
                 symbol=symbol,
@@ -362,7 +386,9 @@ class YahooFinanceTool(BaseTool):
                 timestamp=datetime.now(),
             )
 
-            asset_type = "etf" if info.get("quoteType", "").upper() == "ETF" else "stock"
+            asset_type = (
+                "etf" if info.get("quoteType", "").upper() == "ETF" else "stock"
+            )
 
             # Short interest — institutional positioning signal, free from the
             # same info payload (no extra API call)
@@ -415,7 +441,9 @@ class YahooFinanceTool(BaseTool):
                         pct_threshold=1.0,
                     ),
                     # ytdReturn arrives as a percent figure (85.32 = 85.32%).
-                    "ytd_return": _etf_fraction(info.get("ytdReturn"), pct_threshold=1.5),
+                    "ytd_return": _etf_fraction(
+                        info.get("ytdReturn"), pct_threshold=1.5
+                    ),
                     "three_year_return": _etf_fraction(
                         info.get("threeYearAverageReturn"), pct_threshold=1.5
                     ),
@@ -426,7 +454,8 @@ class YahooFinanceTool(BaseTool):
                         info.get("annualHoldingsTurnover"), pct_threshold=1.0
                     ),
                     "inception_date": info.get("fundInceptionDate"),
-                    "index_tracked": info.get("underlyingSymbol") or info.get("category"),
+                    "index_tracked": info.get("underlyingSymbol")
+                    or info.get("category"),
                     "top_holdings": _fetch_top_holdings(ticker),
                 }
 
@@ -451,7 +480,11 @@ class YahooFinanceTool(BaseTool):
                                     if (v is None or (isinstance(v, float) and v != v))
                                     else int(v)
                                 )
-                        label = col.date().isoformat() if hasattr(col, "date") else str(col)[:10]
+                        label = (
+                            col.date().isoformat()
+                            if hasattr(col, "date")
+                            else str(col)[:10]
+                        )
                         qtrs[label] = row
                     result["quarterly_income"] = qtrs
             except Exception as _exc:
@@ -466,7 +499,11 @@ class YahooFinanceTool(BaseTool):
                         eps_est = row.get("EPS Estimate")
                         eps_act = row.get("Reported EPS")
                         surprise = row.get("Surprise(%)")
-                        date_str = idx.date().isoformat() if hasattr(idx, "date") else str(idx)[:10]
+                        date_str = (
+                            idx.date().isoformat()
+                            if hasattr(idx, "date")
+                            else str(idx)[:10]
+                        )
                         # Only include rows where we have at least one real value
                         if eps_est is not None or eps_act is not None:
                             earnings_hist.append(
@@ -476,7 +513,10 @@ class YahooFinanceTool(BaseTool):
                                         None
                                         if (
                                             eps_est is None
-                                            or (isinstance(eps_est, float) and eps_est != eps_est)
+                                            or (
+                                                isinstance(eps_est, float)
+                                                and eps_est != eps_est
+                                            )
                                         )
                                         else round(float(eps_est), 4)
                                     ),
@@ -484,7 +524,10 @@ class YahooFinanceTool(BaseTool):
                                         None
                                         if (
                                             eps_act is None
-                                            or (isinstance(eps_act, float) and eps_act != eps_act)
+                                            or (
+                                                isinstance(eps_act, float)
+                                                and eps_act != eps_act
+                                            )
                                         )
                                         else round(float(eps_act), 4)
                                     ),
@@ -493,7 +536,8 @@ class YahooFinanceTool(BaseTool):
                                         if (
                                             surprise is None
                                             or (
-                                                isinstance(surprise, float) and surprise != surprise
+                                                isinstance(surprise, float)
+                                                and surprise != surprise
                                             )
                                         )
                                         else round(float(surprise), 2)
@@ -518,10 +562,14 @@ class YahooFinanceTool(BaseTool):
                         title = content.get("title", "")
                         provider = content.get("provider", {})
                         publisher = (
-                            provider.get("displayName", "") if isinstance(provider, dict) else ""
+                            provider.get("displayName", "")
+                            if isinstance(provider, dict)
+                            else ""
                         )
                         pub_date = content.get("pubDate", "")
-                        summary = (content.get("summary") or content.get("description") or "")[:200]
+                        summary = (
+                            content.get("summary") or content.get("description") or ""
+                        )[:200]
                     else:
                         title = n.get("title", "")
                         publisher = n.get("publisher", "")
@@ -547,7 +595,9 @@ class YahooFinanceTool(BaseTool):
             return {"error": f"Failed to collect Yahoo Finance data: {str(e)}"}
 
 
-def _sec_extract_section(plain_text: str, markers: List[str], max_chars: int = 4000) -> str:
+def _sec_extract_section(
+    plain_text: str, markers: List[str], max_chars: int = 4000
+) -> str:
     """Locate a named section in plain text from an SEC filing and return up to max_chars.
 
     Searches for every occurrence of the marker strings (case-insensitive) and picks
@@ -601,7 +651,9 @@ def _sec_unwrap_ixbrl(href: str) -> str:
     return href
 
 
-def _sec_find_primary_doc_url(index_html: str, index_url: str, form_type: str) -> Optional[str]:
+def _sec_find_primary_doc_url(
+    index_html: str, index_url: str, form_type: str
+) -> Optional[str]:
     """Parse an EDGAR filing index page and return the URL of the primary filing document.
 
     EDGAR index pages have a table with columns: Seq | Description | Document | Type | Size.
@@ -634,7 +686,10 @@ def _sec_find_primary_doc_url(index_html: str, index_url: str, form_type: str) -
         if not (href_lower.endswith(".htm") or ".htm" in href_lower):
             continue
         # Exclude obvious exhibits and auxiliary files
-        if any(x in href_lower for x in ["ex", "exhibit", "xsd", "cal", "def", "lab", "pre"]):
+        if any(
+            x in href_lower
+            for x in ["ex", "exhibit", "xsd", "cal", "def", "lab", "pre"]
+        ):
             continue
         full = urljoin("https://www.sec.gov", href)
         return _sec_unwrap_ixbrl(full)
@@ -653,7 +708,9 @@ class FreeSECFilingTool(BaseTool):
     )
 
     @cached_tool(ttl=86400)
-    def _run(self, symbol: str, form_type: str = "10-K", limit: int = 1) -> Dict[str, Any]:
+    def _run(
+        self, symbol: str, form_type: str = "10-K", limit: int = 1
+    ) -> Dict[str, Any]:
         """Collect SEC filing data: MD&A, Risk Factors, and key metadata."""
         from ..config.settings import settings as _edgar_settings
 
@@ -713,7 +770,9 @@ class FreeSECFilingTool(BaseTool):
                 idx_resp.raise_for_status()
 
                 # ── Step 3: find the URL of the primary filing document ────────
-                doc_url = _sec_find_primary_doc_url(idx_resp.text, index_url, form_type) or ""
+                doc_url = (
+                    _sec_find_primary_doc_url(idx_resp.text, index_url, form_type) or ""
+                )
 
                 if doc_url:
                     # ── Step 4: fetch the actual 10-K / 10-Q document ──────────
@@ -721,7 +780,9 @@ class FreeSECFilingTool(BaseTool):
                     # Context-managed so the connection is released back to the
                     # pool even when the loop below breaks out early.
                     raw_html = b""
-                    with _http.get(doc_url, headers=headers, timeout=30, stream=True) as doc_resp:
+                    with _http.get(
+                        doc_url, headers=headers, timeout=30, stream=True
+                    ) as doc_resp:
                         doc_resp.raise_for_status()
                         for chunk in doc_resp.iter_content(chunk_size=32_768):
                             raw_html += chunk
@@ -730,7 +791,9 @@ class FreeSECFilingTool(BaseTool):
 
                     # Convert HTML → plain text once
                     if BeautifulSoup is not None:
-                        plain = BeautifulSoup(raw_html, "html.parser").get_text(separator="\n")
+                        plain = BeautifulSoup(raw_html, "html.parser").get_text(
+                            separator="\n"
+                        )
                     else:
                         plain = raw_html.decode("utf-8", errors="ignore")
 
@@ -744,7 +807,9 @@ class FreeSECFilingTool(BaseTool):
                         "ITEM 2.",
                         "ITEM 2 ",
                     ]
-                    mdna_text = _sec_extract_section(plain, mdna_markers, max_chars=5000)
+                    mdna_text = _sec_extract_section(
+                        plain, mdna_markers, max_chars=5000
+                    )
 
                     # ── Step 6: extract Risk Factors section ──────────────────
                     risk_markers = [
@@ -752,7 +817,9 @@ class FreeSECFilingTool(BaseTool):
                         "ITEM 1A.",
                         "ITEM 1A ",
                     ]
-                    risk_text = _sec_extract_section(plain, risk_markers, max_chars=3500)
+                    risk_text = _sec_extract_section(
+                        plain, risk_markers, max_chars=3500
+                    )
 
             return {
                 "filings": filings,
@@ -785,7 +852,10 @@ class FreeFREDTool(BaseTool):
 
     @cached_tool(ttl=86400)  # FRED macro data is stable; cache for 24 h
     def _run(
-        self, series_id: str, start_date: Optional[str] = None, end_date: Optional[str] = None
+        self,
+        series_id: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Collect economic data from FRED."""
         try:
@@ -814,7 +884,11 @@ class FreeFREDTool(BaseTool):
 
             # Get series info
             info_url = f"{base_url}/series"
-            info_params = {"series_id": series_id, "api_key": self.api_key, "file_type": "json"}
+            info_params = {
+                "series_id": series_id,
+                "api_key": self.api_key,
+                "file_type": "json",
+            }
 
             info_response = _http.get(info_url, params=info_params, timeout=20)
             info_response.raise_for_status()
@@ -849,7 +923,9 @@ class FreeNewsTool(BaseTool):
     )
 
     @cached_tool(ttl=1800)
-    def _run(self, symbol: str, query: Optional[str] = None, limit: int = 10) -> Dict[str, Any]:
+    def _run(
+        self, symbol: str, query: Optional[str] = None, limit: int = 10
+    ) -> Dict[str, Any]:
         """Collect news data for a stock using free sources."""
         from urllib.parse import quote as _url_quote
 
@@ -897,7 +973,9 @@ class FreeNewsTool(BaseTool):
                                 title=entry.get("title", ""),
                                 summary=entry.get("summary", "")[:300],
                                 url=entry.get("link", ""),
-                                source=(entry.get("source") or {}).get("title", "Google News"),
+                                source=(entry.get("source") or {}).get(
+                                    "title", "Google News"
+                                ),
                                 published_at=published_at,
                                 sentiment_score=None,
                                 relevance_score=0.9,
@@ -923,7 +1001,9 @@ class FreeNewsTool(BaseTool):
                     f"?s={encoded_symbol}&region=US&lang=en-US",
                 ),
             ]
-            for source_name, feed_url in fallback_feeds if feedparser is not None else []:
+            for source_name, feed_url in (
+                fallback_feeds if feedparser is not None else []
+            ):
                 if news_data:
                     break
                 try:
@@ -974,7 +1054,10 @@ class FreeNewsTool(BaseTool):
 
                             # Extract published date
                             published_at = datetime.now()
-                            if hasattr(entry, "published_parsed") and entry.published_parsed:
+                            if (
+                                hasattr(entry, "published_parsed")
+                                and entry.published_parsed
+                            ):
                                 published_at = datetime(*entry.published_parsed[:6])
 
                             news_data.append(
@@ -1084,7 +1167,9 @@ def _market_macro_snapshot() -> Dict[str, Any]:
             first = float(hist["Close"].iloc[0])
             out[label] = {
                 "latest": round(latest, 2),
-                "change_1m_pct": round((latest - first) / first * 100, 1) if first else None,
+                "change_1m_pct": (
+                    round((latest - first) / first * 100, 1) if first else None
+                ),
             }
         except Exception as exc:
             _logger.debug("macro proxy %s failed: %s", ticker_sym, exc)
@@ -1111,7 +1196,9 @@ class FreeEconomicDataTool(BaseTool):
         super().__init__(fred_api_key=fred_api_key, **kwargs)
 
     @cached_tool(ttl=86400)
-    def _run(self, country: str = "US", indicators: Optional[str] = None) -> Dict[str, Any]:
+    def _run(
+        self, country: str = "US", indicators: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Collect economic data. indicators is an optional JSON array of FRED series IDs e.g. '["GDPC1","UNRATE"]'."""
         try:
             if indicators is None or not str(indicators).strip():
@@ -1144,9 +1231,9 @@ class FreeEconomicDataTool(BaseTool):
                         "series_id": indicator,
                         "api_key": self.fred_api_key,
                         "file_type": "json",
-                        "observation_start": (datetime.now() - timedelta(days=365 * 2)).strftime(
-                            "%Y-%m-%d"
-                        ),
+                        "observation_start": (
+                            datetime.now() - timedelta(days=365 * 2)
+                        ).strftime("%Y-%m-%d"),
                         "observation_end": datetime.now().strftime("%Y-%m-%d"),
                     }
 
@@ -1170,8 +1257,12 @@ class FreeEconomicDataTool(BaseTool):
                 except requests.exceptions.RequestException as exc:
                     # Never log str(exc) — it embeds the request URL with the
                     # real api_key in the query string.
-                    status = getattr(getattr(exc, "response", None), "status_code", None)
-                    _logger.debug("Failed to get FRED series %s (HTTP %s)", indicator, status)
+                    status = getattr(
+                        getattr(exc, "response", None), "status_code", None
+                    )
+                    _logger.debug(
+                        "Failed to get FRED series %s (HTTP %s)", indicator, status
+                    )
                     return indicator, None
                 except Exception:
                     _logger.debug("Failed to get FRED series %s", indicator)
@@ -1179,7 +1270,10 @@ class FreeEconomicDataTool(BaseTool):
 
             # Concurrently fetch all FRED series
             with ThreadPoolExecutor(max_workers=min(len(indicators), 6)) as executor:
-                futures = {executor.submit(_fetch_single_indicator, ind): ind for ind in indicators}
+                futures = {
+                    executor.submit(_fetch_single_indicator, ind): ind
+                    for ind in indicators
+                }
                 for future in as_completed(futures):
                     ind = futures[future]
                     try:
@@ -1190,10 +1284,18 @@ class FreeEconomicDataTool(BaseTool):
                         _logger.debug("Future failed for FRED series %s: %s", ind, e)
 
             # Create EconomicData model
-            gdp_data = economic_data.get("GDPC1", {}).get("data", {}).get("observations", [])
-            cpi_data = economic_data.get("CPIAUCSL", {}).get("data", {}).get("observations", [])
+            gdp_data = (
+                economic_data.get("GDPC1", {}).get("data", {}).get("observations", [])
+            )
+            cpi_data = (
+                economic_data.get("CPIAUCSL", {})
+                .get("data", {})
+                .get("observations", [])
+            )
             fed_funds_data = (
-                economic_data.get("FEDFUNDS", {}).get("data", {}).get("observations", [])
+                economic_data.get("FEDFUNDS", {})
+                .get("data", {})
+                .get("observations", [])
             )
             unemployment_data = (
                 economic_data.get("UNRATE", {}).get("data", {}).get("observations", [])
@@ -1203,23 +1305,33 @@ class FreeEconomicDataTool(BaseTool):
             gdp_growth = None
             if gdp_data and len(gdp_data) >= 2:
                 gdp_values = [
-                    float(obs.get("value", 0)) for obs in gdp_data if obs.get("value") != "."
+                    float(obs.get("value", 0))
+                    for obs in gdp_data
+                    if obs.get("value") != "."
                 ]
                 if len(gdp_values) >= 2:
-                    gdp_growth = (gdp_values[-1] - gdp_values[-2]) / gdp_values[-2] * 100
+                    gdp_growth = (
+                        (gdp_values[-1] - gdp_values[-2]) / gdp_values[-2] * 100
+                    )
 
             inflation_rate = None
             if cpi_data and len(cpi_data) >= 12:
                 cpi_values = [
-                    float(obs.get("value", 0)) for obs in cpi_data if obs.get("value") != "."
+                    float(obs.get("value", 0))
+                    for obs in cpi_data
+                    if obs.get("value") != "."
                 ]
                 if len(cpi_values) >= 12:
-                    inflation_rate = (cpi_values[-1] - cpi_values[-12]) / cpi_values[-12] * 100
+                    inflation_rate = (
+                        (cpi_values[-1] - cpi_values[-12]) / cpi_values[-12] * 100
+                    )
 
             interest_rate = None
             if fed_funds_data:
                 fed_values = [
-                    float(obs.get("value", 0)) for obs in fed_funds_data if obs.get("value") != "."
+                    float(obs.get("value", 0))
+                    for obs in fed_funds_data
+                    if obs.get("value") != "."
                 ]
                 if fed_values:
                     interest_rate = fed_values[-1]
@@ -1249,13 +1361,17 @@ class FreeEconomicDataTool(BaseTool):
             # Build a compact per-indicator summary — richer context, no raw arrays
             def _indicator_summary(obs_list, name):
                 vals = [
-                    float(o["value"]) for o in obs_list if o.get("value") not in (".", None, "")
+                    float(o["value"])
+                    for o in obs_list
+                    if o.get("value") not in (".", None, "")
                 ]
                 if not vals:
                     return {"latest": None, "trend": "unknown"}
                 latest = vals[-1]
                 qoq = (
-                    round((latest - vals[-4]) / abs(vals[-4]) * 100, 2) if len(vals) >= 4 else None
+                    round((latest - vals[-4]) / abs(vals[-4]) * 100, 2)
+                    if len(vals) >= 4
+                    else None
                 )
                 yoy = (
                     round((latest - vals[-12]) / abs(vals[-12]) * 100, 2)
@@ -1283,11 +1399,15 @@ class FreeEconomicDataTool(BaseTool):
                 "FEDFUNDS_rate": _indicator_summary(fed_funds_data, "FEDFUNDS"),
                 "UNRATE_unemployment": _indicator_summary(unemployment_data, "UNRATE"),
                 "UMCSENT_sentiment": _indicator_summary(
-                    economic_data.get("UMCSENT", {}).get("data", {}).get("observations", []),
+                    economic_data.get("UMCSENT", {})
+                    .get("data", {})
+                    .get("observations", []),
                     "UMCSENT",
                 ),
                 "PAYEMS_payrolls": _indicator_summary(
-                    economic_data.get("PAYEMS", {}).get("data", {}).get("observations", []),
+                    economic_data.get("PAYEMS", {})
+                    .get("data", {})
+                    .get("observations", []),
                     "PAYEMS",
                 ),
             }
@@ -1301,12 +1421,16 @@ class FreeEconomicDataTool(BaseTool):
                 "market_indicators": market_indicators,
             }
             if not economic_data and not market_indicators:
-                return {"error": "No economic data available from FRED or market proxies"}
+                return {
+                    "error": "No economic data available from FRED or market proxies"
+                }
             if not economic_data:
                 # All FRED series failed but market proxies are available.
                 # Add a note so agents know FRED trends are unavailable, and
                 # cache with the normal TTL since proxy data is still fresh.
-                result["note"] = "FRED series unavailable; indicator_summaries reflect no data"
+                result["note"] = (
+                    "FRED series unavailable; indicator_summaries reflect no data"
+                )
             return result
 
         except Exception as e:
@@ -1326,13 +1450,17 @@ class FreeWebSearchTool(BaseTool):
     """Tool for web search using free methods."""
 
     name: str = "Free Web Search Tool"
-    description: str = "Performs web searches using free methods like DuckDuckGo and web scraping"
+    description: str = (
+        "Performs web searches using free methods like DuckDuckGo and web scraping"
+    )
 
     @cached_tool(ttl=3600)
     def _run(self, query: str, num_results: int = 5) -> Dict[str, Any]:
         """Perform web search using free methods."""
         if BeautifulSoup is None:
-            return {"error": "bs4 is not installed; install it with: pip install beautifulsoup4"}
+            return {
+                "error": "bs4 is not installed; install it with: pip install beautifulsoup4"
+            }
         try:
             # Use DuckDuckGo search (free)
             search_url = "https://html.duckduckgo.com/html/"
@@ -1543,11 +1671,14 @@ class FreeCompetitorAnalysisTool(BaseTool):
                         return None
                     return {
                         "symbol": candidate,
-                        "name": info.get("shortName") or info.get("longName") or candidate,
+                        "name": info.get("shortName")
+                        or info.get("longName")
+                        or candidate,
                         "sector": info.get("sector"),
                         "industry": info.get("industry"),
                         "market_cap": info.get("marketCap"),
-                        "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
+                        "current_price": info.get("currentPrice")
+                        or info.get("regularMarketPrice"),
                     }
                 except Exception:
                     pass
@@ -1556,7 +1687,9 @@ class FreeCompetitorAnalysisTool(BaseTool):
             # Concurrently validate competitor candidates
             competitors_list = []
             with ThreadPoolExecutor(max_workers=min(len(candidates), 4)) as executor:
-                futures = {executor.submit(_validate_competitor, c): c for c in candidates}
+                futures = {
+                    executor.submit(_validate_competitor, c): c for c in candidates
+                }
                 for future in as_completed(futures):
                     res = future.result()
                     if res:
@@ -1601,7 +1734,9 @@ class FreeIndustryAnalysisTool(BaseTool):
             # Fetch sub-sources concurrently
             results = {}
             with ThreadPoolExecutor(max_workers=3) as executor:
-                future_search = executor.submit(search_tool._run, search_query, num_results=10)
+                future_search = executor.submit(
+                    search_tool._run, search_query, num_results=10
+                )
                 future_economic = executor.submit(economic_tool._run)
                 future_news = executor.submit(
                     news_tool._run, industry, query=f"{industry} industry news"
@@ -1663,9 +1798,17 @@ class ParallelDataCollectionTool(BaseTool):
         from .social_sentiment import SocialSentimentTool
 
         tasks = [
-            ("yahoo_finance", YahooFinanceTool()._run, {"symbol": symbol, "period": period}),
+            (
+                "yahoo_finance",
+                YahooFinanceTool()._run,
+                {"symbol": symbol, "period": period},
+            ),
             ("analyst_data", AnalystDataTool()._run, {"symbol": symbol}),
-            ("financial_statements", FinancialStatementsTool()._run, {"symbol": symbol}),
+            (
+                "financial_statements",
+                FinancialStatementsTool()._run,
+                {"symbol": symbol},
+            ),
             ("ownership", OwnershipTool()._run, {"symbol": symbol}),
             ("social_sentiment", SocialSentimentTool()._run, {"symbol": symbol}),
         ]
@@ -1674,14 +1817,20 @@ class ParallelDataCollectionTool(BaseTool):
             tasks.append(("sec_filings", FreeSECFilingTool()._run, {"symbol": symbol}))
         if settings.fred_enabled:
             tasks.append(
-                ("economic_data", FreeEconomicDataTool(fred_api_key=settings.fred_api_key)._run, {})
+                (
+                    "economic_data",
+                    FreeEconomicDataTool(fred_api_key=settings.fred_api_key)._run,
+                    {},
+                )
             )
         if settings.rss_feeds_enabled:
             tasks.append(("news", FreeNewsTool()._run, {"symbol": symbol}))
 
         results: Dict[str, Any] = {}
         with ThreadPoolExecutor(max_workers=min(len(tasks), 6)) as executor:
-            futures = {executor.submit(fn, **kwargs): name for name, fn, kwargs in tasks}
+            futures = {
+                executor.submit(fn, **kwargs): name for name, fn, kwargs in tasks
+            }
             for future in as_completed(futures):
                 name = futures[future]
                 try:

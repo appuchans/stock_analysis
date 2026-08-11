@@ -47,8 +47,11 @@ class TestBarChart:
 
     def test_horizontal_mode(self):
         svg = bar_chart_svg(
-            ["Technology", "Healthcare"], [32.0, 10.0],
-            unit="", suffix="%", horizontal=True,
+            ["Technology", "Healthcare"],
+            [32.0, 10.0],
+            unit="",
+            suffix="%",
+            horizontal=True,
         )
         assert svg.count("<rect") == 2
         assert "32%" in svg

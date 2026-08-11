@@ -7,13 +7,16 @@ from src.stock_analysis.agents.base_agent import preflight_llm_credentials
 from src.stock_analysis.config import settings as settings_mod
 from src.stock_analysis.tools import _http
 
-
 # ── token_meter ────────────────────────────────────────────────────────────────
+
 
 def _usage(total, prompt, completion, requests=1, cached=0):
     return SimpleNamespace(
-        total_tokens=total, prompt_tokens=prompt, completion_tokens=completion,
-        cached_prompt_tokens=cached, successful_requests=requests,
+        total_tokens=total,
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        cached_prompt_tokens=cached,
+        successful_requests=requests,
     )
 
 
@@ -60,6 +63,7 @@ def test_token_alert_silent_when_disabled(monkeypatch, caplog):
 
 # ── credential preflight ───────────────────────────────────────────────────────
 
+
 def test_preflight_flags_missing_openai_key(monkeypatch):
     monkeypatch.setattr(settings_mod.settings, "openai_api_key", None)
     problems = preflight_llm_credentials(provider_override="openai")
@@ -78,6 +82,7 @@ def test_preflight_ollama_needs_no_key(monkeypatch):
 
 
 # ── shared HTTP session ────────────────────────────────────────────────────────
+
 
 def test_http_session_has_retry_adapter():
     adapter = _http.SESSION.get_adapter("https://example.com")

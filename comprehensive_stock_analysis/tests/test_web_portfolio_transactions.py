@@ -20,9 +20,16 @@ def _fresh_db(monkeypatch, tmp_path):
 
 class TestTransactionEndpoints:
     def test_create_and_list_transaction(self):
-        resp = client.post("/api/portfolio/transactions", json={
-            "symbol": "AAPL", "side": "buy", "qty": 10, "price": 150.0, "date": "2026-01-01",
-        })
+        resp = client.post(
+            "/api/portfolio/transactions",
+            json={
+                "symbol": "AAPL",
+                "side": "buy",
+                "qty": 10,
+                "price": 150.0,
+                "date": "2026-01-01",
+            },
+        )
         assert resp.status_code == 201
         body = resp.json()
         assert body["symbol"] == "AAPL"
@@ -32,39 +39,81 @@ class TestTransactionEndpoints:
         assert len(listed) == 1
 
     def test_create_normalizes_symbol(self):
-        resp = client.post("/api/portfolio/transactions", json={
-            "symbol": "aapl", "side": "buy", "qty": 10, "price": 150.0, "date": "2026-01-01",
-        })
+        resp = client.post(
+            "/api/portfolio/transactions",
+            json={
+                "symbol": "aapl",
+                "side": "buy",
+                "qty": 10,
+                "price": 150.0,
+                "date": "2026-01-01",
+            },
+        )
         assert resp.json()["symbol"] == "AAPL"
 
     def test_create_invalid_symbol_422(self):
-        resp = client.post("/api/portfolio/transactions", json={
-            "symbol": "../evil", "side": "buy", "qty": 10, "price": 150.0, "date": "2026-01-01",
-        })
+        resp = client.post(
+            "/api/portfolio/transactions",
+            json={
+                "symbol": "../evil",
+                "side": "buy",
+                "qty": 10,
+                "price": 150.0,
+                "date": "2026-01-01",
+            },
+        )
         assert resp.status_code == 422
 
     def test_create_zero_qty_422(self):
-        resp = client.post("/api/portfolio/transactions", json={
-            "symbol": "AAPL", "side": "buy", "qty": 0, "price": 150.0, "date": "2026-01-01",
-        })
+        resp = client.post(
+            "/api/portfolio/transactions",
+            json={
+                "symbol": "AAPL",
+                "side": "buy",
+                "qty": 0,
+                "price": 150.0,
+                "date": "2026-01-01",
+            },
+        )
         assert resp.status_code == 422
 
     def test_create_invalid_date_422(self):
-        resp = client.post("/api/portfolio/transactions", json={
-            "symbol": "AAPL", "side": "buy", "qty": 10, "price": 150.0, "date": "not-a-date",
-        })
+        resp = client.post(
+            "/api/portfolio/transactions",
+            json={
+                "symbol": "AAPL",
+                "side": "buy",
+                "qty": 10,
+                "price": 150.0,
+                "date": "not-a-date",
+            },
+        )
         assert resp.status_code == 422
 
     def test_create_invalid_side_422(self):
-        resp = client.post("/api/portfolio/transactions", json={
-            "symbol": "AAPL", "side": "hold", "qty": 10, "price": 150.0, "date": "2026-01-01",
-        })
+        resp = client.post(
+            "/api/portfolio/transactions",
+            json={
+                "symbol": "AAPL",
+                "side": "hold",
+                "qty": 10,
+                "price": 150.0,
+                "date": "2026-01-01",
+            },
+        )
         assert resp.status_code == 422
 
     def test_delete_transaction(self):
-        row = client.post("/api/portfolio/transactions", json={
-            "symbol": "AAPL", "side": "buy", "qty": 10, "price": 150.0, "date": "2026-01-01",
-        }).json()
+        row = client.post(
+            "/api/portfolio/transactions",
+            json={
+                "symbol": "AAPL",
+                "side": "buy",
+                "qty": 10,
+                "price": 150.0,
+                "date": "2026-01-01",
+            },
+        ).json()
         resp = client.delete(f"/api/portfolio/transactions/{row['id']}")
         assert resp.status_code == 204
         assert client.get("/api/portfolio/transactions").json() == []
@@ -83,11 +132,16 @@ class TestCSVImport:
         assert len(client.get("/api/portfolio/transactions").json()) == 2
 
     def test_import_malformed_csv_422(self):
-        resp = client.post("/api/portfolio/transactions/import", json={"csv": "not,a,valid,header\n"})
+        resp = client.post(
+            "/api/portfolio/transactions/import", json={"csv": "not,a,valid,header\n"}
+        )
         assert resp.status_code == 422
 
     def test_import_empty_csv_422(self):
-        resp = client.post("/api/portfolio/transactions/import", json={"csv": "date,symbol,side,qty,price\n"})
+        resp = client.post(
+            "/api/portfolio/transactions/import",
+            json={"csv": "date,symbol,side,qty,price\n"},
+        )
         assert resp.status_code == 422
 
 
@@ -98,9 +152,16 @@ class TestPositionsEndpoint:
         assert resp.json() == []
 
     def test_positions_reflect_transactions(self):
-        client.post("/api/portfolio/transactions", json={
-            "symbol": "AAPL", "side": "buy", "qty": 10, "price": 150.0, "date": "2026-01-01",
-        })
+        client.post(
+            "/api/portfolio/transactions",
+            json={
+                "symbol": "AAPL",
+                "side": "buy",
+                "qty": 10,
+                "price": 150.0,
+                "date": "2026-01-01",
+            },
+        )
         resp = client.get("/api/portfolio/positions")
         body = resp.json()
         assert len(body) == 1
@@ -109,11 +170,25 @@ class TestPositionsEndpoint:
         assert body[0]["avg_cost"] == 150.0
 
     def test_fully_closed_position_is_excluded(self):
-        client.post("/api/portfolio/transactions", json={
-            "symbol": "AAPL", "side": "buy", "qty": 10, "price": 150.0, "date": "2026-01-01",
-        })
-        client.post("/api/portfolio/transactions", json={
-            "symbol": "AAPL", "side": "sell", "qty": 10, "price": 160.0, "date": "2026-02-01",
-        })
+        client.post(
+            "/api/portfolio/transactions",
+            json={
+                "symbol": "AAPL",
+                "side": "buy",
+                "qty": 10,
+                "price": 150.0,
+                "date": "2026-01-01",
+            },
+        )
+        client.post(
+            "/api/portfolio/transactions",
+            json={
+                "symbol": "AAPL",
+                "side": "sell",
+                "qty": 10,
+                "price": 160.0,
+                "date": "2026-02-01",
+            },
+        )
         resp = client.get("/api/portfolio/positions")
         assert resp.json() == []

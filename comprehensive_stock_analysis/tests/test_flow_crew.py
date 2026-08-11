@@ -180,18 +180,24 @@ class TestChartDataFreshnessTimestamp:
         flow.state.symbol = "AAPL"
         return flow
 
-    def test_apply_structured_bundle_propagates_fetch_timestamp_into_chart(self, monkeypatch):
+    def test_apply_structured_bundle_propagates_fetch_timestamp_into_chart(
+        self, monkeypatch
+    ):
         flow = self._make_flow()
         written = []
         monkeypatch.setattr(
-            flow_crew, "_write_report_file",
-            lambda symbol, filename, content: written.append((symbol, filename, content)),
+            flow_crew,
+            "_write_report_file",
+            lambda symbol, filename, content: written.append(
+                (symbol, filename, content)
+            ),
         )
         # sentiment_history recomputation touches disk; keep it inert for this test.
         monkeypatch.setattr(flow, "_update_sentiment_history", lambda snapshot: [])
 
         bundle = {
-            "structured": {}, "technical_summary": None,
+            "structured": {},
+            "technical_summary": None,
             "chart": {"asset_type": "stock", "company": {"name": "Apple"}},
             "data_fetched_at": "2026-07-20T10:00:00",
         }
@@ -201,6 +207,7 @@ class TestChartDataFreshnessTimestamp:
         _symbol, filename, content = written[0]
         assert filename == "AAPL_chart_data.json"
         import json as _json
+
         chart = _json.loads(content)
         assert chart["data_fetched_at"] == "2026-07-20T10:00:00"
 
@@ -210,15 +217,23 @@ class TestChartDataFreshnessTimestamp:
         flow = self._make_flow()
         written = []
         monkeypatch.setattr(
-            flow_crew, "_write_report_file",
-            lambda symbol, filename, content: written.append((symbol, filename, content)),
+            flow_crew,
+            "_write_report_file",
+            lambda symbol, filename, content: written.append(
+                (symbol, filename, content)
+            ),
         )
         monkeypatch.setattr(flow, "_update_sentiment_history", lambda snapshot: [])
 
-        bundle = {"structured": {}, "technical_summary": None, "chart": {"asset_type": "stock"}}
+        bundle = {
+            "structured": {},
+            "technical_summary": None,
+            "chart": {"asset_type": "stock"},
+        }
         flow._apply_structured_bundle(bundle)
 
         import json as _json
+
         chart = _json.loads(written[0][2])
         assert chart["data_fetched_at"] is None
 
@@ -228,11 +243,17 @@ class TestPremiumProviderEnrichment:
     configured, but must be a strict no-op otherwise: no FMP key, no
     non-deep depth, and no provider exception may ever break the fetch."""
 
-    def _make_flow(self, *, depth: str = "deep", is_etf: bool = False) -> StockAnalysisFlow:
-        flow = StockAnalysisFlow(use_data_cache=False, asset_type="etf" if is_etf else "stock")
+    def _make_flow(
+        self, *, depth: str = "deep", is_etf: bool = False
+    ) -> StockAnalysisFlow:
+        flow = StockAnalysisFlow(
+            use_data_cache=False, asset_type="etf" if is_etf else "stock"
+        )
         flow.state.symbol = "AAPL"
         flow.state.analysis_depth = depth
-        flow.state.asset_type = "etf" if is_etf else "stock"  # _is_etf reads state, not the ctor arg
+        flow.state.asset_type = (
+            "etf" if is_etf else "stock"
+        )  # _is_etf reads state, not the ctor arg
         return flow
 
     def test_noop_without_fmp_key(self, monkeypatch):
@@ -253,33 +274,61 @@ class TestPremiumProviderEnrichment:
         flow._enrich_with_premium_providers("AAPL", structured)
         assert structured == {}
 
-    def test_deep_with_key_adds_statements_estimates_transcript_insider(self, monkeypatch):
+    def test_deep_with_key_adds_statements_estimates_transcript_insider(
+        self, monkeypatch
+    ):
         from src.stock_analysis.config.settings import settings
         from src.stock_analysis.tools.providers.router import ROUTER
 
         monkeypatch.setattr(settings, "fmp_api_key", "test-key")
-        monkeypatch.setattr(ROUTER, "get_statements", lambda symbol, years=10: {
-            "years_available": 10, "source": "fmp",
-        })
-        monkeypatch.setattr(ROUTER, "get_estimates", lambda symbol: {
-            "estimate_revisions": [{"fiscal_year": "2026"}], "source": "fmp",
-        })
-        monkeypatch.setattr(ROUTER, "get_transcript", lambda symbol: {
-            "content_excerpt": "...", "source": "fmp",
-        })
-        monkeypatch.setattr(ROUTER, "get_insider_trades", lambda symbol: {
-            "insider_trades": [{"reporting_name": "Jane Doe"}], "source": "fmp",
-        })
+        monkeypatch.setattr(
+            ROUTER,
+            "get_statements",
+            lambda symbol, years=10: {
+                "years_available": 10,
+                "source": "fmp",
+            },
+        )
+        monkeypatch.setattr(
+            ROUTER,
+            "get_estimates",
+            lambda symbol: {
+                "estimate_revisions": [{"fiscal_year": "2026"}],
+                "source": "fmp",
+            },
+        )
+        monkeypatch.setattr(
+            ROUTER,
+            "get_transcript",
+            lambda symbol: {
+                "content_excerpt": "...",
+                "source": "fmp",
+            },
+        )
+        monkeypatch.setattr(
+            ROUTER,
+            "get_insider_trades",
+            lambda symbol: {
+                "insider_trades": [{"reporting_name": "Jane Doe"}],
+                "source": "fmp",
+            },
+        )
 
         flow = self._make_flow()
-        structured: dict = {"analyst": {"price_targets": {}}, "ownership": {"insider_pct": 5}}
+        structured: dict = {
+            "analyst": {"price_targets": {}},
+            "ownership": {"insider_pct": 5},
+        }
         flow._enrich_with_premium_providers("AAPL", structured)
 
         assert structured["statements_10y"]["years_available"] == 10
         assert structured["analyst"]["estimate_revisions"][0]["fiscal_year"] == "2026"
         assert structured["analyst"]["price_targets"] == {}  # existing keys preserved
         assert structured["transcript"]["content_excerpt"] == "..."
-        assert structured["ownership"]["insider_trades_detail"][0]["reporting_name"] == "Jane Doe"
+        assert (
+            structured["ownership"]["insider_trades_detail"][0]["reporting_name"]
+            == "Jane Doe"
+        )
         assert structured["ownership"]["insider_pct"] == 5  # existing keys preserved
 
     def test_etf_holdings_only_enriched_for_etfs(self, monkeypatch):
@@ -287,12 +336,22 @@ class TestPremiumProviderEnrichment:
         from src.stock_analysis.tools.providers.router import ROUTER
 
         monkeypatch.setattr(settings, "fmp_api_key", "test-key")
-        for method in ("get_statements", "get_estimates", "get_transcript", "get_insider_trades"):
+        for method in (
+            "get_statements",
+            "get_estimates",
+            "get_transcript",
+            "get_insider_trades",
+        ):
             monkeypatch.setattr(ROUTER, method, lambda *a, **k: {})
         called = []
-        monkeypatch.setattr(ROUTER, "get_etf_holdings", lambda symbol: (
-            called.append(symbol) or {"top_holdings": [{"name": "AAPL"}], "source": "fmp"}
-        ))
+        monkeypatch.setattr(
+            ROUTER,
+            "get_etf_holdings",
+            lambda symbol: (
+                called.append(symbol)
+                or {"top_holdings": [{"name": "AAPL"}], "source": "fmp"}
+            ),
+        )
 
         stock_flow = self._make_flow(is_etf=False)
         stock_flow._enrich_with_premium_providers("SPY", {})
@@ -310,7 +369,8 @@ class TestPremiumProviderEnrichment:
 
         monkeypatch.setattr(settings, "fmp_api_key", "test-key")
         monkeypatch.setattr(
-            ROUTER, "get_statements",
+            ROUTER,
+            "get_statements",
             lambda symbol, years=10: (_ for _ in ()).throw(RuntimeError("boom")),
         )
         flow = self._make_flow()
@@ -325,7 +385,9 @@ class TestPremiumProviderEnrichment:
         from src.stock_analysis.tools.providers.router import ROUTER
 
         monkeypatch.setattr(settings, "fmp_api_key", "test-key")
-        monkeypatch.setattr(ROUTER, "get_statements", lambda symbol, years=10: {"error": "rate limited"})
+        monkeypatch.setattr(
+            ROUTER, "get_statements", lambda symbol, years=10: {"error": "rate limited"}
+        )
         monkeypatch.setattr(ROUTER, "get_estimates", lambda symbol: {})
         monkeypatch.setattr(ROUTER, "get_transcript", lambda symbol: {})
         monkeypatch.setattr(ROUTER, "get_insider_trades", lambda symbol: {})

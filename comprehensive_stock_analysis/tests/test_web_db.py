@@ -41,10 +41,21 @@ class TestJobsTable:
         from src.stock_analysis.web import db
 
         job = {
-            "id": "j1", "symbol": "AAPL", "depth": "standard", "asset_type": "stock",
-            "use_cache": 1, "origin": "manual", "state": "queued", "stage": None,
-            "error": None, "company_name": None, "progress": 0.0, "llm_calls": 0,
-            "total_tokens": 0, "created_at": "2026-01-01T00:00:00", "started_at": None,
+            "id": "j1",
+            "symbol": "AAPL",
+            "depth": "standard",
+            "asset_type": "stock",
+            "use_cache": 1,
+            "origin": "manual",
+            "state": "queued",
+            "stage": None,
+            "error": None,
+            "company_name": None,
+            "progress": 0.0,
+            "llm_calls": 0,
+            "total_tokens": 0,
+            "created_at": "2026-01-01T00:00:00",
+            "started_at": None,
             "finished_at": None,
         }
         db.upsert_job(job)
@@ -60,26 +71,52 @@ class TestJobsTable:
         from src.stock_analysis.web import db
 
         for i, state in enumerate(["queued", "running", "queued", "completed"]):
-            db.upsert_job({
-                "id": f"j{i}", "symbol": "AAPL", "depth": "standard", "asset_type": "stock",
-                "use_cache": 1, "origin": "manual", "state": state, "stage": None,
-                "error": None, "company_name": None, "progress": 0.0, "llm_calls": 0,
-                "total_tokens": 0, "created_at": f"2026-01-01T00:0{i}:00", "started_at": None,
-                "finished_at": None,
-            })
+            db.upsert_job(
+                {
+                    "id": f"j{i}",
+                    "symbol": "AAPL",
+                    "depth": "standard",
+                    "asset_type": "stock",
+                    "use_cache": 1,
+                    "origin": "manual",
+                    "state": state,
+                    "stage": None,
+                    "error": None,
+                    "company_name": None,
+                    "progress": 0.0,
+                    "llm_calls": 0,
+                    "total_tokens": 0,
+                    "created_at": f"2026-01-01T00:0{i}:00",
+                    "started_at": None,
+                    "finished_at": None,
+                }
+            )
         queued = db.queued_jobs()
         assert {r["id"] for r in queued} == {"j0", "j2"}
 
     def test_mark_orphaned_running(self):
         from src.stock_analysis.web import db
 
-        db.upsert_job({
-            "id": "j1", "symbol": "AAPL", "depth": "standard", "asset_type": "stock",
-            "use_cache": 1, "origin": "manual", "state": "running", "stage": None,
-            "error": None, "company_name": None, "progress": 0.5, "llm_calls": 0,
-            "total_tokens": 0, "created_at": "2026-01-01T00:00:00", "started_at": None,
-            "finished_at": None,
-        })
+        db.upsert_job(
+            {
+                "id": "j1",
+                "symbol": "AAPL",
+                "depth": "standard",
+                "asset_type": "stock",
+                "use_cache": 1,
+                "origin": "manual",
+                "state": "running",
+                "stage": None,
+                "error": None,
+                "company_name": None,
+                "progress": 0.5,
+                "llm_calls": 0,
+                "total_tokens": 0,
+                "created_at": "2026-01-01T00:00:00",
+                "started_at": None,
+                "finished_at": None,
+            }
+        )
         count = db.mark_orphaned_running()
         assert count == 1
         assert db.list_jobs()[0]["state"] == "interrupted"
@@ -90,8 +127,13 @@ class TestRecHistoryTable:
         from src.stock_analysis.web import db
 
         db.record_recommendation(
-            symbol="AAPL", recorded_at="2026-01-01T00:00:00", recommendation="Buy",
-            target_price=250.0, stop_loss=180.0, confidence=0.8, price_at_rec=200.0,
+            symbol="AAPL",
+            recorded_at="2026-01-01T00:00:00",
+            recommendation="Buy",
+            target_price=250.0,
+            stop_loss=180.0,
+            confidence=0.8,
+            price_at_rec=200.0,
         )
         rows = db.list_rec_history("AAPL")
         assert len(rows) == 1
@@ -103,8 +145,13 @@ class TestRecHistoryTable:
 
         for _ in range(2):
             db.record_recommendation(
-                symbol="AAPL", recorded_at="2026-01-01T00:00:00", recommendation="Buy",
-                target_price=250.0, stop_loss=180.0, confidence=0.8, price_at_rec=200.0,
+                symbol="AAPL",
+                recorded_at="2026-01-01T00:00:00",
+                recommendation="Buy",
+                target_price=250.0,
+                stop_loss=180.0,
+                confidence=0.8,
+                price_at_rec=200.0,
             )
         assert len(db.list_rec_history("AAPL")) == 1
 
@@ -113,8 +160,12 @@ class TestAlertsLogTable:
     def test_append_and_list_newest_first(self):
         from src.stock_analysis.web import db
 
-        db.append_alert({"symbol": "AAPL", "fired_at": "2026-01-01T00:00:00", "reason": "flip"})
-        db.append_alert({"symbol": "MSFT", "fired_at": "2026-01-02T00:00:00", "reason": "drop"})
+        db.append_alert(
+            {"symbol": "AAPL", "fired_at": "2026-01-01T00:00:00", "reason": "flip"}
+        )
+        db.append_alert(
+            {"symbol": "MSFT", "fired_at": "2026-01-02T00:00:00", "reason": "drop"}
+        )
         rows = db.list_alerts()
         assert rows[0]["symbol"] == "MSFT"
         assert rows[1]["symbol"] == "AAPL"
@@ -142,24 +193,52 @@ class TestSettingsKV:
 
 
 class TestJobRecovery:
-    def test_recover_reenqueues_queued_jobs_and_flags_running_as_interrupted(self, monkeypatch):
+    def test_recover_reenqueues_queued_jobs_and_flags_running_as_interrupted(
+        self, monkeypatch
+    ):
         from src.stock_analysis.web import db
         from src.stock_analysis.web.jobs import JobManager
 
-        db.upsert_job({
-            "id": "stale-running", "symbol": "MSFT", "depth": "standard", "asset_type": "stock",
-            "use_cache": 1, "origin": "manual", "state": "running", "stage": None,
-            "error": None, "company_name": None, "progress": 0.3, "llm_calls": 0,
-            "total_tokens": 0, "created_at": "2026-01-01T00:00:00", "started_at": None,
-            "finished_at": None,
-        })
-        db.upsert_job({
-            "id": "stale-queued", "symbol": "GOOGL", "depth": "quick", "asset_type": "stock",
-            "use_cache": 1, "origin": "scheduled", "state": "queued", "stage": None,
-            "error": None, "company_name": None, "progress": 0.0, "llm_calls": 0,
-            "total_tokens": 0, "created_at": "2026-01-01T00:01:00", "started_at": None,
-            "finished_at": None,
-        })
+        db.upsert_job(
+            {
+                "id": "stale-running",
+                "symbol": "MSFT",
+                "depth": "standard",
+                "asset_type": "stock",
+                "use_cache": 1,
+                "origin": "manual",
+                "state": "running",
+                "stage": None,
+                "error": None,
+                "company_name": None,
+                "progress": 0.3,
+                "llm_calls": 0,
+                "total_tokens": 0,
+                "created_at": "2026-01-01T00:00:00",
+                "started_at": None,
+                "finished_at": None,
+            }
+        )
+        db.upsert_job(
+            {
+                "id": "stale-queued",
+                "symbol": "GOOGL",
+                "depth": "quick",
+                "asset_type": "stock",
+                "use_cache": 1,
+                "origin": "scheduled",
+                "state": "queued",
+                "stage": None,
+                "error": None,
+                "company_name": None,
+                "progress": 0.0,
+                "llm_calls": 0,
+                "total_tokens": 0,
+                "created_at": "2026-01-01T00:01:00",
+                "started_at": None,
+                "finished_at": None,
+            }
+        )
 
         # Block the freshly re-enqueued job's actual run so we can inspect
         # queue state without waiting for a real analysis.
@@ -195,7 +274,10 @@ class TestJobRecovery:
         deadline = time.time() + 2.0
         found = False
         while time.time() < deadline:
-            if any(j.symbol == "GOOGL" and j.origin == "scheduled" for j in mgr._jobs.values()):
+            if any(
+                j.symbol == "GOOGL" and j.origin == "scheduled"
+                for j in mgr._jobs.values()
+            ):
                 found = True
                 break
             time.sleep(0.02)

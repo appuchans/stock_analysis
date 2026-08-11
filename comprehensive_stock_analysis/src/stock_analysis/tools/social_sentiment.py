@@ -13,7 +13,6 @@ from typing import Any, Dict
 from crewai.tools import BaseTool
 
 from . import _http
-
 from .cache import cached_tool
 
 _logger = logging.getLogger(__name__)
@@ -63,7 +62,13 @@ def _fetch_reddit_json(symbol: str) -> Dict[str, Any]:
     """Reddit's public JSON search (blocked with 403 on some networks)."""
     resp = _http.get(
         "https://www.reddit.com/r/stocks+wallstreetbets+investing/search.json",
-        params={"q": symbol, "restrict_sr": "on", "sort": "new", "t": "week", "limit": 25},
+        params={
+            "q": symbol,
+            "restrict_sr": "on",
+            "sort": "new",
+            "t": "week",
+            "limit": 25,
+        },
         headers={"User-Agent": _REDDIT_UA},
         timeout=10,
     )
@@ -88,7 +93,13 @@ def _fetch_reddit_rss(symbol: str) -> Dict[str, Any]:
     """
     resp = _http.get(
         "https://www.reddit.com/r/stocks+wallstreetbets+investing/search.rss",
-        params={"q": symbol, "restrict_sr": "on", "sort": "new", "t": "week", "limit": 25},
+        params={
+            "q": symbol,
+            "restrict_sr": "on",
+            "sort": "new",
+            "t": "week",
+            "limit": 25,
+        },
         headers={"User-Agent": _REDDIT_UA},
         timeout=10,
     )
@@ -161,18 +172,27 @@ class SocialSentimentTool(BaseTool):
             except Exception as exc:
                 # Technical detail goes to logs only — reports must never contain
                 # raw error messages or HTTP status codes.
-                _logger.info("%s fetch failed for %s: %s: %s",
-                             name, symbol, type(exc).__name__, str(exc)[:120])
-                result["sources_failed"].append({
-                    "source": name,
-                    "note": f"{name} data was unavailable at the time of writing",
-                })
+                _logger.info(
+                    "%s fetch failed for %s: %s: %s",
+                    name,
+                    symbol,
+                    type(exc).__name__,
+                    str(exc)[:120],
+                )
+                result["sources_failed"].append(
+                    {
+                        "source": name,
+                        "note": f"{name} data was unavailable at the time of writing",
+                    }
+                )
 
         st = result.get("stocktwits") or {}
         labeled = (st.get("bullish") or 0) + (st.get("bearish") or 0)
         if labeled >= 5:
             ratio = st["bullish"] / labeled
-            bias = "bullish" if ratio >= 0.6 else ("bearish" if ratio <= 0.4 else "mixed")
+            bias = (
+                "bullish" if ratio >= 0.6 else ("bearish" if ratio <= 0.4 else "mixed")
+            )
         else:
             bias = "insufficient_data"
         result["aggregate"] = {"overall_bias": bias, "labeled_messages": labeled}

@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
 
+from ...tools.portfolio_tools import PortfolioAnalysisTool
 from .. import db
 from ..schemas import (
     CSVImportRequest,
@@ -14,7 +15,6 @@ from ..schemas import (
     TransactionCreateRequest,
     TransactionItem,
 )
-from ...tools.portfolio_tools import PortfolioAnalysisTool
 
 router = APIRouter(prefix="/api", tags=["portfolio"])
 
@@ -38,7 +38,11 @@ def _holdings_weights(symbols: List[str]) -> Any:
     from ...tools.portfolio_ledger import compute_positions
 
     positions = compute_positions(db.list_transactions())
-    held = {s: positions[s] for s in symbols if s in positions and positions[s]["qty"] > 1e-9}
+    held = {
+        s: positions[s]
+        for s in symbols
+        if s in positions and positions[s]["qty"] > 1e-9
+    }
     if len(held) != len(symbols):
         return None
     total_cost = sum(p["cost_basis_total"] for p in held.values())
@@ -108,9 +112,14 @@ def portfolio_dashboard(benchmark: str = "SPY") -> Dict[str, Any]:
     positions = compute_positions(txs)
     open_positions = {s: p for s, p in positions.items() if p["qty"] > 1e-9}
     empty: Dict[str, Any] = {
-        "positions": [], "total_market_value": 0.0, "total_cost_basis": 0.0,
-        "total_unrealized_pnl": 0.0, "total_realized_pnl": 0.0,
-        "value_series": [], "benchmark_symbol": benchmark, "benchmark_comparison": None,
+        "positions": [],
+        "total_market_value": 0.0,
+        "total_cost_basis": 0.0,
+        "total_unrealized_pnl": 0.0,
+        "total_realized_pnl": 0.0,
+        "value_series": [],
+        "benchmark_symbol": benchmark,
+        "benchmark_comparison": None,
     }
     if not open_positions:
         return empty
@@ -131,21 +140,34 @@ def portfolio_dashboard(benchmark: str = "SPY") -> Dict[str, Any]:
         q = quotes.get(s) or {}
         price = q.get("price")
         market_value = (price * p["qty"]) if price is not None else None
-        unrealized = (market_value - p["cost_basis_total"]) if market_value is not None else None
+        unrealized = (
+            (market_value - p["cost_basis_total"]) if market_value is not None else None
+        )
         total_value += market_value or 0.0
         total_cost += p["cost_basis_total"]
         total_realized += p["realized_pnl"]
-        enriched.append({
-            "symbol": s, "qty": p["qty"], "avg_cost": p["avg_cost"],
-            "cost_basis_total": p["cost_basis_total"], "realized_pnl": p["realized_pnl"],
-            "current_price": price, "market_value": round(market_value, 2) if market_value is not None else None,
-            "unrealized_pnl": round(unrealized, 2) if unrealized is not None else None,
-            "day_change_pct": q.get("change_pct"),
-        })
+        enriched.append(
+            {
+                "symbol": s,
+                "qty": p["qty"],
+                "avg_cost": p["avg_cost"],
+                "cost_basis_total": p["cost_basis_total"],
+                "realized_pnl": p["realized_pnl"],
+                "current_price": price,
+                "market_value": (
+                    round(market_value, 2) if market_value is not None else None
+                ),
+                "unrealized_pnl": (
+                    round(unrealized, 2) if unrealized is not None else None
+                ),
+                "day_change_pct": q.get("change_pct"),
+            }
+        )
     for e in enriched:
         e["weight"] = (
             round(e["market_value"] / total_value, 4)
-            if total_value and e["market_value"] is not None else None
+            if total_value and e["market_value"] is not None
+            else None
         )
     enriched.sort(key=lambda e: -(e["market_value"] or 0))
 
@@ -157,15 +179,23 @@ def portfolio_dashboard(benchmark: str = "SPY") -> Dict[str, Any]:
 
         earliest = min(t["date"] for t in txs if t["symbol"] in open_positions)
         hist_symbols = symbols + [benchmark]
-        raw = yf.download(hist_symbols, start=earliest, progress=False, auto_adjust=True)["Close"]
+        raw = yf.download(
+            hist_symbols, start=earliest, progress=False, auto_adjust=True
+        )["Close"]
         if isinstance(raw, pd.Series):
             raw = raw.to_frame(hist_symbols[0])
-        value_series = build_value_series(txs, raw[[c for c in symbols if c in raw.columns]])
+        value_series = build_value_series(
+            txs, raw[[c for c in symbols if c in raw.columns]]
+        )
         value_series_data = [
-            {"date": d.strftime("%Y-%m-%d"), "value": round(float(v), 2)} for d, v in value_series.items()
+            {"date": d.strftime("%Y-%m-%d"), "value": round(float(v), 2)}
+            for d, v in value_series.items()
         ]
         if benchmark in raw.columns and not value_series.empty:
-            benchmark_comparison = compute_benchmark_comparison(value_series, raw[benchmark].dropna()) or None
+            benchmark_comparison = (
+                compute_benchmark_comparison(value_series, raw[benchmark].dropna())
+                or None
+            )
     except Exception:
         pass  # history/benchmark are best-effort; positions above still return
 
@@ -173,7 +203,9 @@ def portfolio_dashboard(benchmark: str = "SPY") -> Dict[str, Any]:
         "positions": enriched,
         "total_market_value": round(total_value, 2),
         "total_cost_basis": round(total_cost, 2),
-        "total_unrealized_pnl": round(total_value - total_cost, 2) if total_value else None,
+        "total_unrealized_pnl": (
+            round(total_value - total_cost, 2) if total_value else None
+        ),
         "total_realized_pnl": round(total_realized, 2),
         "value_series": value_series_data,
         "benchmark_symbol": benchmark,

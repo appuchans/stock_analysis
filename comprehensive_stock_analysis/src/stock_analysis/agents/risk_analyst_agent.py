@@ -1,11 +1,15 @@
 """Agent for Risk Analyst."""
 
-from typing import List, Any, Optional
+from typing import Any, List, Optional
 
-from .base_agent import BaseAgent
 from ..tools.analysis_tools import RiskAnalysisTool
 from ..tools.calculation_tools import FinancialCalculatorTool, RiskCalculatorTool
-from ..tools.company_intel import FinancialStatementsTool, OptionsSentimentTool, OwnershipTool
+from ..tools.company_intel import (
+    FinancialStatementsTool,
+    OptionsSentimentTool,
+    OwnershipTool,
+)
+from .base_agent import BaseAgent
 
 
 class RiskAnalystAgent(BaseAgent):

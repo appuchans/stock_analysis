@@ -28,7 +28,10 @@ class TestLogHygiene:
         def _rec(msg):
             return logging.LogRecord("root", logging.INFO, "", 0, msg, None, None)
 
-        assert _drop_noise(_rec("OpenAI: Successfully validated tool 'valuation_tool'")) is False
+        assert (
+            _drop_noise(_rec("OpenAI: Successfully validated tool 'valuation_tool'"))
+            is False
+        )
         assert _drop_noise(_rec("[token-usage] symbol=NVDA input=1000")) is True
         assert _drop_noise(_rec("Analysis failed for NVDA")) is True
 

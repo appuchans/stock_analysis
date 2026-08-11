@@ -39,7 +39,9 @@ def compute_positions(transactions: List[Dict[str, Any]]) -> Dict[str, Dict[str,
                 continue
             if t["side"] == "buy":
                 per_share_cost = price + (fees / qty)
-                lots.append({"qty": qty, "cost_basis": per_share_cost, "date": t["date"]})
+                lots.append(
+                    {"qty": qty, "cost_basis": per_share_cost, "date": t["date"]}
+                )
             elif t["side"] == "sell":
                 remaining = qty
                 proceeds_per_share = price - (fees / qty)
@@ -63,7 +65,11 @@ def compute_positions(transactions: List[Dict[str, Any]]) -> Dict[str, Dict[str,
             "cost_basis_total": round(cost_basis_total, 2),
             "realized_pnl": round(realized_pnl, 2),
             "lots": [
-                {"qty": round(lot["qty"], 6), "cost_basis": round(lot["cost_basis"], 4), "date": lot["date"]}
+                {
+                    "qty": round(lot["qty"], 6),
+                    "cost_basis": round(lot["cost_basis"], 4),
+                    "date": lot["date"],
+                }
                 for lot in lots
             ],
         }
@@ -82,7 +88,9 @@ def parse_transactions_csv(text: str) -> List[Dict[str, Any]]:
 
     reader = csv.DictReader(io.StringIO(text.strip()))
     required = {"date", "symbol", "side", "qty", "price"}
-    if reader.fieldnames is None or not required.issubset({f.strip().lower() for f in reader.fieldnames}):
+    if reader.fieldnames is None or not required.issubset(
+        {f.strip().lower() for f in reader.fieldnames}
+    ):
         raise ValueError(f"CSV header must include: {', '.join(sorted(required))}")
 
     rows: List[Dict[str, Any]] = []
@@ -93,7 +101,9 @@ def parse_transactions_csv(text: str) -> List[Dict[str, Any]]:
             raise ValueError(f"line {i}: invalid symbol {row.get('symbol')!r}")
         side = row.get("side", "").lower()
         if side not in ("buy", "sell"):
-            raise ValueError(f"line {i}: side must be 'buy' or 'sell', got {row.get('side')!r}")
+            raise ValueError(
+                f"line {i}: side must be 'buy' or 'sell', got {row.get('side')!r}"
+            )
         try:
             qty = float(row["qty"])
             price = float(row["price"])
@@ -105,10 +115,17 @@ def parse_transactions_csv(text: str) -> List[Dict[str, Any]]:
         date = row.get("date", "")
         if not date:
             raise ValueError(f"line {i}: date is required")
-        rows.append({
-            "symbol": symbol, "side": side, "qty": qty, "price": price,
-            "fees": fees, "date": date, "note": row.get("note", ""),
-        })
+        rows.append(
+            {
+                "symbol": symbol,
+                "side": side,
+                "qty": qty,
+                "price": price,
+                "fees": fees,
+                "date": date,
+                "note": row.get("note", ""),
+            }
+        )
     return rows
 
 
@@ -135,7 +152,9 @@ def build_value_series(transactions: List[Dict[str, Any]], prices: "Any") -> "An
     for t in transactions:
         signed = float(t["qty"]) if t["side"] == "buy" else -float(t["qty"])
         d = t["date"]
-        changes_by_symbol[t["symbol"]][d] = changes_by_symbol[t["symbol"]].get(d, 0.0) + signed
+        changes_by_symbol[t["symbol"]][d] = (
+            changes_by_symbol[t["symbol"]].get(d, 0.0) + signed
+        )
 
     qty_columns: Dict[str, "Any"] = {}
     for symbol, changes in changes_by_symbol.items():
@@ -151,12 +170,19 @@ def build_value_series(transactions: List[Dict[str, Any]], prices: "Any") -> "An
 
     qty_df = pd.DataFrame(qty_columns).fillna(0)
     value = (qty_df * prices[qty_df.columns]).sum(axis=1)
-    return value[value.index >= min(pd.to_datetime(d) for d in
-                                     (c for changes in changes_by_symbol.values() for c in changes))]
+    return value[
+        value.index
+        >= min(
+            pd.to_datetime(d)
+            for d in (c for changes in changes_by_symbol.values() for c in changes)
+        )
+    ]
 
 
 def compute_benchmark_comparison(
-    portfolio_value: "Any", benchmark_prices: "Any", risk_free_rate: float = 0.02,
+    portfolio_value: "Any",
+    benchmark_prices: "Any",
+    risk_free_rate: float = 0.02,
 ) -> Dict[str, Any]:
     """Index both series to 100 at their common start date and compute
     alpha/beta/Sharpe for the portfolio vs the benchmark. Both inputs are
@@ -188,17 +214,26 @@ def compute_benchmark_comparison(
     ann_bench_ret = float(bench_ret.mean() * 252)
     alpha: Optional[float] = (
         ann_port_ret - (risk_free_rate + beta * (ann_bench_ret - risk_free_rate))
-        if beta is not None else None
+        if beta is not None
+        else None
     )
     ann_vol = float(port_ret.std() * np.sqrt(252))
-    sharpe: Optional[float] = (ann_port_ret - risk_free_rate) / ann_vol if ann_vol > 0 else None
+    sharpe: Optional[float] = (
+        (ann_port_ret - risk_free_rate) / ann_vol if ann_vol > 0 else None
+    )
 
     pv_indexed = (pv / pv.iloc[0] * 100).round(2)
     bp_indexed = (bp / bp.iloc[0] * 100).round(2)
 
     return {
-        "portfolio_indexed": [{"date": d.strftime("%Y-%m-%d"), "value": float(v)} for d, v in pv_indexed.items()],
-        "benchmark_indexed": [{"date": d.strftime("%Y-%m-%d"), "value": float(v)} for d, v in bp_indexed.items()],
+        "portfolio_indexed": [
+            {"date": d.strftime("%Y-%m-%d"), "value": float(v)}
+            for d, v in pv_indexed.items()
+        ],
+        "benchmark_indexed": [
+            {"date": d.strftime("%Y-%m-%d"), "value": float(v)}
+            for d, v in bp_indexed.items()
+        ],
         "alpha_annualized_pct": round(alpha * 100, 2) if alpha is not None else None,
         "beta": round(beta, 3) if beta is not None else None,
         "sharpe_ratio": round(sharpe, 3) if sharpe is not None else None,

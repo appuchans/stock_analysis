@@ -6,7 +6,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.stock_analysis.tools.analysis_tools import RiskAnalysisTool, TechnicalAnalysisTool
+from src.stock_analysis.tools.analysis_tools import (
+    RiskAnalysisTool,
+    TechnicalAnalysisTool,
+)
 
 
 class TestCreditRiskZeroValueBug:
@@ -19,9 +22,13 @@ class TestCreditRiskZeroValueBug:
         return RiskAnalysisTool()
 
     def test_zero_debt_to_equity_scores_as_excellent(self):
-        result = self._tool()._analyze_credit_risk({
-            "debt_to_equity": 0.0, "interest_coverage": 10.0, "current_ratio": 2.0,
-        })
+        result = self._tool()._analyze_credit_risk(
+            {
+                "debt_to_equity": 0.0,
+                "interest_coverage": 10.0,
+                "current_ratio": 2.0,
+            }
+        )
         assert result["debt_to_equity"] == 0.0
         assert result["credit_score"] == 1.0
         assert result["risk_level"] == "Low"
@@ -52,9 +59,13 @@ class TestCreditRiskZeroValueBug:
         assert present["current_ratio"] != missing["current_ratio"]
 
     def test_operational_risk_zero_growth_scores_as_missed_threshold_not_missing(self):
-        result = self._tool()._analyze_operational_risk({
-            "revenue_growth": 0.0, "earnings_growth": 0.20, "roe": 0.20,
-        })
+        result = self._tool()._analyze_operational_risk(
+            {
+                "revenue_growth": 0.0,
+                "earnings_growth": 0.20,
+                "roe": 0.20,
+            }
+        )
         assert result["revenue_growth"] == 0.0
         # revenue_growth=0.0 fails both thresholds (contributes 0 of 1), the
         # other two hit their top threshold (contribute 1 each) -> 2/3.
@@ -75,17 +86,27 @@ class TestNeutralSignalMiscount:
         dates = pd.date_range("2024-01-01", periods=n)
         np.random.seed(7)
         prices = 100 + np.cumsum(np.random.randn(n) * 0.5)
-        return pd.DataFrame({
-            "open": prices * 0.99, "high": prices * 1.01, "low": prices * 0.98,
-            "close": prices, "volume": np.random.randint(1_000_000, 5_000_000, n),
-        }, index=dates)
+        return pd.DataFrame(
+            {
+                "open": prices * 0.99,
+                "high": prices * 1.01,
+                "low": prices * 0.98,
+                "close": prices,
+                "volume": np.random.randint(1_000_000, 5_000_000, n),
+            },
+            index=dates,
+        )
 
     def test_all_four_groups_present_sums_to_four(self):
         tool = TechnicalAnalysisTool()
         df = self._df()
         indicators = tool._calculate_indicators(df)
         signals = tool._generate_signals(df, indicators)
-        total = signals["buy_signals"] + signals["sell_signals"] + signals["neutral_signals"]
+        total = (
+            signals["buy_signals"]
+            + signals["sell_signals"]
+            + signals["neutral_signals"]
+        )
         assert total == 4
 
     def test_missing_indicator_group_excluded_from_total(self):
@@ -97,7 +118,11 @@ class TestNeutralSignalMiscount:
         # silently counted as "neutral".
         indicators["rsi"] = None
         signals = tool._generate_signals(df, indicators)
-        total = signals["buy_signals"] + signals["sell_signals"] + signals["neutral_signals"]
+        total = (
+            signals["buy_signals"]
+            + signals["sell_signals"]
+            + signals["neutral_signals"]
+        )
         assert total == 3
 
     def test_two_missing_groups_excluded(self):
@@ -107,7 +132,11 @@ class TestNeutralSignalMiscount:
         indicators["rsi"] = None
         indicators["macd"] = None
         signals = tool._generate_signals(df, indicators)
-        total = signals["buy_signals"] + signals["sell_signals"] + signals["neutral_signals"]
+        total = (
+            signals["buy_signals"]
+            + signals["sell_signals"]
+            + signals["neutral_signals"]
+        )
         assert total == 2
 
     def test_all_indicators_missing_yields_zero_total_not_negative(self):

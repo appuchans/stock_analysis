@@ -20,7 +20,9 @@ def _setup_logging() -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     _rotate_if_large(log_path)
     handler = logging.FileHandler(log_path, encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    )
     handler.addFilter(_drop_noise)
     root = logging.getLogger()
     root.addHandler(handler)

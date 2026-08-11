@@ -68,7 +68,9 @@ class MarketData(BaseModel):
     current_price: Decimal = Field(..., description="Current price")
     previous_close: Optional[Decimal] = Field(None, description="Previous close")
     day_change: Optional[Decimal] = Field(None, description="Day change")
-    day_change_percent: Optional[Decimal] = Field(None, description="Day change percentage")
+    day_change_percent: Optional[Decimal] = Field(
+        None, description="Day change percentage"
+    )
     volume: int = Field(..., description="Current volume")
     avg_volume: Optional[int] = Field(None, description="Average volume")
     market_cap: Optional[Decimal] = Field(None, description="Market capitalization")
@@ -108,7 +110,9 @@ class FundamentalData(BaseModel):
     free_cash_flow: Optional[Decimal] = Field(None, description="Free Cash Flow")
     # Dividends
     dividend_yield: Optional[Decimal] = Field(None, description="Dividend Yield")
-    dividend_per_share: Optional[Decimal] = Field(None, description="Dividend per Share")
+    dividend_per_share: Optional[Decimal] = Field(
+        None, description="Dividend per Share"
+    )
     payout_ratio: Optional[Decimal] = Field(None, description="Payout Ratio")
     timestamp: datetime = Field(..., description="Timestamp of the fundamental data")
 
@@ -121,8 +125,12 @@ class NewsData(BaseModel):
     url: str = Field(..., description="News URL")
     source: str = Field(..., description="News source")
     published_at: datetime = Field(..., description="Publication timestamp")
-    sentiment_score: Optional[float] = Field(None, description="Sentiment score (-1 to 1)")
-    relevance_score: Optional[float] = Field(None, description="Relevance score (0 to 1)")
+    sentiment_score: Optional[float] = Field(
+        None, description="Sentiment score (-1 to 1)"
+    )
+    relevance_score: Optional[float] = Field(
+        None, description="Relevance score (0 to 1)"
+    )
     tags: List[str] = Field(default_factory=list, description="News tags")
 
     @field_validator("sentiment_score")
@@ -147,8 +155,12 @@ class EconomicData(BaseModel):
     inflation_rate: Optional[Decimal] = Field(None, description="Inflation rate")
     interest_rate: Optional[Decimal] = Field(None, description="Interest rate")
     unemployment_rate: Optional[Decimal] = Field(None, description="Unemployment rate")
-    consumer_confidence: Optional[Decimal] = Field(None, description="Consumer confidence")
-    business_confidence: Optional[Decimal] = Field(None, description="Business confidence")
+    consumer_confidence: Optional[Decimal] = Field(
+        None, description="Consumer confidence"
+    )
+    business_confidence: Optional[Decimal] = Field(
+        None, description="Business confidence"
+    )
     currency_strength: Optional[Decimal] = Field(None, description="Currency strength")
     country: str = Field(..., description="Country")
     timestamp: datetime = Field(..., description="Timestamp of the economic data")
@@ -158,16 +170,22 @@ class InvestmentRecommendation(BaseModel):
     """Investment recommendation — the advisor stage's validated output."""
 
     symbol: str = Field(..., description="Stock symbol")
-    recommendation: RecommendationType = Field(..., description="Investment recommendation")
+    recommendation: RecommendationType = Field(
+        ..., description="Investment recommendation"
+    )
     target_price: Optional[Decimal] = Field(None, description="Target price")
     stop_loss: Optional[Decimal] = Field(None, description="Stop loss price")
     time_horizon: str = Field(..., description="Investment time horizon")
     risk_level: RiskLevel = Field(..., description="Risk level")
     confidence: float = Field(..., description="Confidence level (0-1)")
     reasoning: str = Field(..., description="Reasoning for recommendation")
-    key_factors: List[str] = Field(..., description="Key factors influencing recommendation")
+    key_factors: List[str] = Field(
+        ..., description="Key factors influencing recommendation"
+    )
     risks: List[str] = Field(default_factory=list, description="Key risks")
-    opportunities: List[str] = Field(default_factory=list, description="Key opportunities")
+    opportunities: List[str] = Field(
+        default_factory=list, description="Key opportunities"
+    )
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="Timestamp of the recommendation",

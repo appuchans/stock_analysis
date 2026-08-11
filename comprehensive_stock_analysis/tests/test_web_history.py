@@ -15,19 +15,39 @@ def _seed(root, sym, *, html=True, chart=True, rec=True):
     d = root / sym
     if html:
         (d / "html").mkdir(parents=True, exist_ok=True)
-        (d / "html" / f"{sym}_report.html").write_text("<html>ok</html>", encoding="utf-8")
+        (d / "html" / f"{sym}_report.html").write_text(
+            "<html>ok</html>", encoding="utf-8"
+        )
     else:
         d.mkdir(parents=True, exist_ok=True)
     if chart:
-        (d / f"{sym}_chart_data.json").write_text(json.dumps({
-            "company": {"name": f"{sym} Inc", "sector": "Tech"},
-            "key_stats": {"current_price": 100.0, "market_cap": 2e12, "pe_ratio": 25.0,
-                          "high_52w": 120.0, "low_52w": 80.0},
-        }), encoding="utf-8")
+        (d / f"{sym}_chart_data.json").write_text(
+            json.dumps(
+                {
+                    "company": {"name": f"{sym} Inc", "sector": "Tech"},
+                    "key_stats": {
+                        "current_price": 100.0,
+                        "market_cap": 2e12,
+                        "pe_ratio": 25.0,
+                        "high_52w": 120.0,
+                        "low_52w": 80.0,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
     if rec:
-        (d / f"{sym}_investment_recommendation.json").write_text(json.dumps({
-            "recommendation": "Buy", "target_price": 130.0, "confidence": 0.8, "risk_level": "Medium",
-        }), encoding="utf-8")
+        (d / f"{sym}_investment_recommendation.json").write_text(
+            json.dumps(
+                {
+                    "recommendation": "Buy",
+                    "target_price": 130.0,
+                    "confidence": 0.8,
+                    "risk_level": "Medium",
+                }
+            ),
+            encoding="utf-8",
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -92,6 +112,7 @@ def test_completed_report_defaults_status_completed(_temp_reports):
 
 def test_aborted_run_without_html_appears_with_status(_temp_reports):
     from src.stock_analysis.web.reports_index import write_run_status
+
     write_run_status("ZZZZ", "aborted")
     items = {it["symbol"]: it for it in client.get("/api/history").json()["items"]}
     assert "ZZZZ" in items
@@ -101,9 +122,10 @@ def test_aborted_run_without_html_appears_with_status(_temp_reports):
 
 def test_status_marker_overrides_for_symbol_with_html(_temp_reports):
     from src.stock_analysis.web.reports_index import write_run_status
-    _seed(_temp_reports, "AAPL")           # completed report on disk
-    write_run_status("AAPL", "aborted")     # latest run was cancelled
+
+    _seed(_temp_reports, "AAPL")  # completed report on disk
+    write_run_status("AAPL", "aborted")  # latest run was cancelled
     it = client.get("/api/history").json()["items"][0]
     assert it["symbol"] == "AAPL"
     assert it["status"] == "aborted"
-    assert it["has_html"] is True           # the prior report is still viewable
+    assert it["has_html"] is True  # the prior report is still viewable

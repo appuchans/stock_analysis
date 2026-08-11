@@ -1,19 +1,22 @@
 """Tests for free data collection tools in free_data_collection.py."""
 
-import pytest
 import json
-from unittest.mock import patch, Mock, MagicMock
 from datetime import datetime
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+
 from src.stock_analysis.tools.free_data_collection import (
-    FreeEconomicDataTool,
     FreeCompetitorAnalysisTool,
-    FreeIndustryAnalysisTool,
-    FreeSECFilingTool,
-    YahooFinanceTool,
+    FreeEconomicDataTool,
     FreeFREDTool,
+    FreeIndustryAnalysisTool,
     FreeNewsTool,
-    FreeWebSearchTool
+    FreeSECFilingTool,
+    FreeWebSearchTool,
+    YahooFinanceTool,
 )
+
 
 class TestFreeEconomicDataTool:
     """Tests for FreeEconomicDataTool."""
@@ -23,20 +26,27 @@ class TestFreeEconomicDataTool:
         """Keep the market-proxy fallback (yfinance) off the network."""
         import pandas as pd
 
-        hist = pd.DataFrame({"Close": [100.0, 105.0]},
-                            index=pd.date_range("2026-05-12", periods=2))
+        hist = pd.DataFrame(
+            {"Close": [100.0, 105.0]}, index=pd.date_range("2026-05-12", periods=2)
+        )
 
         class _T:
-            def __init__(self, sym): pass
-            def history(self, period="1mo"): return hist
+            def __init__(self, sym):
+                pass
+
+            def history(self, period="1mo"):
+                return hist
 
         import src.stock_analysis.tools.free_data_collection as fdc
+
         monkeypatch.setattr(fdc.yf, "Ticker", _T)
 
-    @patch('src.stock_analysis.tools._http.SESSION.get')
+    @patch("src.stock_analysis.tools._http.SESSION.get")
     def test_market_proxies_present_alongside_fred(self, mock_get):
         mock_resp = Mock()
-        mock_resp.json.return_value = {"observations": [{"date": "2024-01-01", "value": "5.0"}]}
+        mock_resp.json.return_value = {
+            "observations": [{"date": "2024-01-01", "value": "5.0"}]
+        }
         mock_resp.raise_for_status = Mock()
         mock_get.return_value = mock_resp
         tool = FreeEconomicDataTool(fred_api_key="test_key")
@@ -46,7 +56,10 @@ class TestFreeEconomicDataTool:
         assert mi["vix_volatility_index"]["latest"] == 105.0
         assert mi["vix_volatility_index"]["change_1m_pct"] == 5.0
 
-    @patch('src.stock_analysis.tools._http.SESSION.get', side_effect=ConnectionError("FRED down"))
+    @patch(
+        "src.stock_analysis.tools._http.SESSION.get",
+        side_effect=ConnectionError("FRED down"),
+    )
     def test_fred_failure_falls_back_to_market_proxies(self, mock_get):
         tool = FreeEconomicDataTool(fred_api_key="test_key")
         result = tool._run(country="US")
@@ -54,7 +67,7 @@ class TestFreeEconomicDataTool:
         assert result["market_indicators"]
         assert "note" in result or result.get("economic_data") is not None
 
-    @patch('src.stock_analysis.tools._http.SESSION.get')
+    @patch("src.stock_analysis.tools._http.SESSION.get")
     def test_economic_data_tool_default_indicators(self, mock_get):
         """Test default indicator fetching with mock responses."""
         # Create standard responses for FRED series and info
@@ -93,7 +106,7 @@ class TestFreeEconomicDataTool:
 
         assert "economic_data" in result
         assert "indicator_summaries" in result
-        
+
         # Verify summaries are calculated
         summaries = result["indicator_summaries"]
         assert "GDPC1_real_gdp" in summaries
@@ -102,13 +115,20 @@ class TestFreeEconomicDataTool:
         assert "UNRATE_unemployment" in summaries
 
         assert summaries["GDPC1_real_gdp"]["latest"] == 111.0
-        assert summaries["GDPC1_real_gdp"]["trend"] in ("rising", "falling", "stable", "unknown")
+        assert summaries["GDPC1_real_gdp"]["trend"] in (
+            "rising",
+            "falling",
+            "stable",
+            "unknown",
+        )
 
-    @patch('src.stock_analysis.tools._http.SESSION.get')
+    @patch("src.stock_analysis.tools._http.SESSION.get")
     def test_economic_data_tool_custom_indicators(self, mock_get):
         """Test with custom indicators specified as list or JSON string."""
         mock_obs_response = Mock()
-        mock_obs_response.json.return_value = {"observations": [{"date": "2024-01-01", "value": "5.0"}]}
+        mock_obs_response.json.return_value = {
+            "observations": [{"date": "2024-01-01", "value": "5.0"}]
+        }
         mock_obs_response.raise_for_status = Mock()
         mock_info_response = Mock()
         mock_info_response.json.return_value = {"seriess": []}
@@ -162,9 +182,11 @@ class TestFreeFREDTool:
 class TestFreeCompetitorAnalysisTool:
     """Tests for FreeCompetitorAnalysisTool."""
 
-    @patch('src.stock_analysis.tools.free_data_collection.YahooFinanceTool')
-    @patch('src.stock_analysis.tools.free_data_collection.FreeWebSearchTool')
-    def test_competitor_analysis_filtering_and_parallel_validation(self, mock_search_class, mock_yahoo_class):
+    @patch("src.stock_analysis.tools.free_data_collection.YahooFinanceTool")
+    @patch("src.stock_analysis.tools.free_data_collection.FreeWebSearchTool")
+    def test_competitor_analysis_filtering_and_parallel_validation(
+        self, mock_search_class, mock_yahoo_class
+    ):
         """Test candidate extraction, stop-word blocklisting, limit, and validation."""
         # Setup YahooFinanceTool mock
         mock_yahoo_instance = Mock()
@@ -173,11 +195,21 @@ class TestFreeCompetitorAnalysisTool:
         # Primary company info
         mock_yahoo_instance._run.side_effect = lambda symbol, **kwargs: (
             {
-                "company_info": {"name": "Test Main Corp", "sector": "Tech", "industry": "Software"},
-                "market_data": {"market_cap": 1000000, "current_price": 50.0}
-            } if symbol == "AAPL" else {
-                "company_info": {"name": f"Competitor {symbol}", "sector": "Tech", "industry": "Software"},
-                "market_data": {"market_cap": 500000, "current_price": 40.0}
+                "company_info": {
+                    "name": "Test Main Corp",
+                    "sector": "Tech",
+                    "industry": "Software",
+                },
+                "market_data": {"market_cap": 1000000, "current_price": 50.0},
+            }
+            if symbol == "AAPL"
+            else {
+                "company_info": {
+                    "name": f"Competitor {symbol}",
+                    "sector": "Tech",
+                    "industry": "Software",
+                },
+                "market_data": {"market_cap": 500000, "current_price": 40.0},
             }
         )
 
@@ -192,12 +224,12 @@ class TestFreeCompetitorAnalysisTool:
             "results": [
                 {
                     "title": "Top Competitors are MSFT and GOOG on NYSE",
-                    "snippet": "We also check AMZN, META, ETF, SEC, and NFLX."
+                    "snippet": "We also check AMZN, META, ETF, SEC, and NFLX.",
                 },
                 {
                     "title": "TSLA and NVDA compete in tech space",
-                    "snippet": "Other potential names include ORCL, IBM, CSCO, and CEO AAPL."
-                }
+                    "snippet": "Other potential names include ORCL, IBM, CSCO, and CEO AAPL.",
+                },
             ]
         }
 
@@ -216,7 +248,8 @@ class TestFreeCompetitorAnalysisTool:
         # keyword argument (cache-key-consistency fix), so call.args is empty —
         # read call.kwargs["symbol"] instead of call.args[0].
         run_calls = [
-            call.kwargs["symbol"] for call in mock_yahoo_instance._run.call_args_list
+            call.kwargs["symbol"]
+            for call in mock_yahoo_instance._run.call_args_list
             if call.kwargs.get("symbol") != "AAPL"
         ]
         assert len(run_calls) <= 8
@@ -224,7 +257,8 @@ class TestFreeCompetitorAnalysisTool:
         # The primary company-info fetch itself must be a keyword call too —
         # regression guard for the cache-key-consistency fix.
         primary_calls = [
-            call for call in mock_yahoo_instance._run.call_args_list
+            call
+            for call in mock_yahoo_instance._run.call_args_list
             if call.kwargs.get("symbol") == "AAPL"
         ]
         assert len(primary_calls) == 1
@@ -240,13 +274,17 @@ class TestFreeCompetitorAnalysisTool:
 class TestFreeIndustryAnalysisTool:
     """Tests for FreeIndustryAnalysisTool."""
 
-    @patch('src.stock_analysis.tools.free_data_collection.FreeWebSearchTool')
-    @patch('src.stock_analysis.tools.free_data_collection.FreeEconomicDataTool')
-    @patch('src.stock_analysis.tools.free_data_collection.FreeNewsTool')
-    def test_industry_analysis_parallel_fetching(self, mock_news_class, mock_economic_class, mock_search_class):
+    @patch("src.stock_analysis.tools.free_data_collection.FreeWebSearchTool")
+    @patch("src.stock_analysis.tools.free_data_collection.FreeEconomicDataTool")
+    @patch("src.stock_analysis.tools.free_data_collection.FreeNewsTool")
+    def test_industry_analysis_parallel_fetching(
+        self, mock_news_class, mock_economic_class, mock_search_class
+    ):
         """Test industry analysis runs sub-sources concurrently."""
         mock_search = Mock()
-        mock_search._run.return_value = {"results": [{"title": "Search Result 1", "snippet": "Snippet"}]}
+        mock_search._run.return_value = {
+            "results": [{"title": "Search Result 1", "snippet": "Snippet"}]
+        }
         mock_search_class.return_value = mock_search
 
         mock_economic = Mock()
@@ -286,7 +324,9 @@ class TestFreeNewsToolFallbacks:
 
         empty_feed = Mock(entries=[])
         bing_entry = {
-            "title": "NVDA rallies", "summary": "chip demand", "link": "http://x",
+            "title": "NVDA rallies",
+            "summary": "chip demand",
+            "link": "http://x",
         }
         bing_feed = Mock(entries=[bing_entry])
 
@@ -321,7 +361,10 @@ class TestFreeNewsToolFallbacks:
         # Google News and Bing were both fetched through the shared session,
         # each with the RSS URL and an explicit timeout — never a bare
         # feedparser.parse(url) call.
-        fetched_urls = [c.args[0] if c.args else c.kwargs.get("url") for c in mock_get.call_args_list]
+        fetched_urls = [
+            c.args[0] if c.args else c.kwargs.get("url")
+            for c in mock_get.call_args_list
+        ]
         assert any("news.google.com" in u for u in fetched_urls)
         assert any("bing.com" in u for u in fetched_urls)
         for c in mock_get.call_args_list:
@@ -343,7 +386,7 @@ class TestCachingDecorators:
         assert hasattr(FreeIndustryAnalysisTool._run, "__wrapped__")
         assert hasattr(FreeSECFilingTool._run, "__wrapped__")
 
-    @patch('src.stock_analysis.tools.cache._get_redis')
+    @patch("src.stock_analysis.tools.cache._get_redis")
     def test_cache_hits_and_misses(self, mock_get_redis):
         """Test cache interaction with a mock Redis client."""
         mock_redis = MagicMock()
@@ -356,7 +399,7 @@ class TestCachingDecorators:
         # We can use FreeSECFilingTool with a mock requests/content logic
         tool = FreeSECFilingTool()
 
-        with patch('src.stock_analysis.tools._http.SESSION.get') as mock_requests_get:
+        with patch("src.stock_analysis.tools._http.SESSION.get") as mock_requests_get:
             mock_resp = Mock()
             mock_resp.content = b'<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>10-K</title><link href="http://link"/></entry></feed>'
             mock_resp.raise_for_status = Mock()
@@ -370,7 +413,10 @@ class TestCachingDecorators:
             assert mock_redis.setex.called
 
             # Now mock Redis cache hit
-            cached_data = {"filings": [{"title": "Cached 10-K"}], "content": "cached content"}
+            cached_data = {
+                "filings": [{"title": "Cached 10-K"}],
+                "content": "cached content",
+            }
             mock_redis.get.return_value = json.dumps(cached_data)
 
             # Second run: cache hit, should return cached data directly without requests.get
@@ -385,6 +431,7 @@ class TestPeriodNormalization:
 
     def test_aliases(self):
         from src.stock_analysis.tools.free_data_collection import _normalize_period
+
         assert _normalize_period("1-year") == "1y"
         assert _normalize_period("1 Year") == "1y"
         assert _normalize_period("12 months") == "1y"
@@ -395,6 +442,7 @@ class TestPeriodNormalization:
 
     def test_garbage_falls_back_to_default(self):
         from src.stock_analysis.tools.free_data_collection import _normalize_period
+
         assert _normalize_period("forever") == "1y"
         assert _normalize_period(None) == "1y"
         assert _normalize_period("", default="2y") == "2y"
@@ -420,10 +468,10 @@ class TestMemoryCacheFallback:
         t = _Tool()
         first = t._run("NVDA")
         second = t._run("NVDA")
-        assert calls["n"] == 1            # underlying function ran once
-        assert first == second            # identical → CrewAI loop guard can fire
+        assert calls["n"] == 1  # underlying function ran once
+        assert first == second  # identical → CrewAI loop guard can fire
         t._run("AAPL")
-        assert calls["n"] == 2            # different args = different cache key
+        assert calls["n"] == 2  # different args = different cache key
 
     @patch("src.stock_analysis.tools.cache._get_redis", return_value=None)
     def test_errors_not_cached_in_memory(self, _redis):
@@ -442,4 +490,4 @@ class TestMemoryCacheFallback:
         t = _Tool()
         t._run("X")
         t._run("X")
-        assert calls["n"] == 2            # error responses are retried, never cached
+        assert calls["n"] == 2  # error responses are retried, never cached

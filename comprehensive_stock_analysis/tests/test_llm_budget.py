@@ -25,6 +25,7 @@ class TestAbort:
 class TestBudgetCounter:
     def test_raises_beyond_limit(self, monkeypatch):
         from src.stock_analysis.config.settings import settings
+
         monkeypatch.setattr(settings, "max_llm_calls_per_run", 5)
         llm_budget.reset()
         for _ in range(5):
@@ -37,6 +38,7 @@ class TestBudgetCounter:
 
     def test_reset_starts_new_window(self, monkeypatch):
         from src.stock_analysis.config.settings import settings
+
         monkeypatch.setattr(settings, "max_llm_calls_per_run", 2)
         llm_budget.reset()
         llm_budget.check_and_increment()
@@ -48,6 +50,7 @@ class TestBudgetCounter:
 
     def test_batch_multiplier_scales_allowance(self, monkeypatch):
         from src.stock_analysis.config.settings import settings
+
         monkeypatch.setattr(settings, "max_llm_calls_per_run", 2)
         llm_budget.reset(allowance_multiplier=3)
         for _ in range(6):
@@ -59,8 +62,8 @@ class TestBudgetCounter:
 class TestBudgetedLLM:
     def test_no_request_reaches_provider_past_budget(self, monkeypatch):
         """The guarantee: past the cap, the provider call is never invoked."""
-        from src.stock_analysis.config.settings import settings
         from src.stock_analysis.agents.base_agent import _with_budget
+        from src.stock_analysis.config.settings import settings
 
         monkeypatch.setattr(settings, "max_llm_calls_per_run", 3)
         llm_budget.reset()

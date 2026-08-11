@@ -146,9 +146,7 @@ def _narrative_guardrail(output: Any) -> Tuple[bool, Any]:
     """
     text = _strip_md_fences(str(getattr(output, "raw", output)))
     headings = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip().startswith("## ")
+        line.strip() for line in text.splitlines() if line.strip().startswith("## ")
     ]
     first_lower = headings[0].lower() if headings else ""
     # Accept "## Investment Thesis", "## Investment Overview/Analysis/Summary",

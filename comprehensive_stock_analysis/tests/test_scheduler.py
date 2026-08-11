@@ -82,7 +82,9 @@ class TestFireSchedule:
         row = scheduler.create_schedule(target="AAPL", cron_expr="0 * * * *")
         db.set_schedule_enabled(row["id"], False)
         called = []
-        monkeypatch.setattr(scheduler, "_target_symbols", lambda t: called.append(t) or ["AAPL"])
+        monkeypatch.setattr(
+            scheduler, "_target_symbols", lambda t: called.append(t) or ["AAPL"]
+        )
         scheduler._fire_schedule(row["id"])
         assert called == []
 
@@ -105,12 +107,20 @@ class TestFireSchedule:
         # jobs.manager is imported lazily inside _fire_schedule; patch the
         # real module so that lazy import picks up the stub.
         import src.stock_analysis.web.jobs as jobs_mod
+
         monkeypatch.setattr(
-            jobs_mod, "manager",
-            type("M", (), {"submit": staticmethod(
-                lambda sym, depth, atype, cache, origin: submitted.append(sym) or
-                type("J", (), {"symbol": sym})()
-            )})(),
+            jobs_mod,
+            "manager",
+            type(
+                "M",
+                (),
+                {
+                    "submit": staticmethod(
+                        lambda sym, depth, atype, cache, origin: submitted.append(sym)
+                        or type("J", (), {"symbol": sym})()
+                    )
+                },
+            )(),
         )
 
         scheduler._fire_schedule(row["id"])
@@ -119,17 +129,29 @@ class TestFireSchedule:
     def test_monitor_only_calls_refresh_data_only_not_manager_submit(self, monkeypatch):
         from src.stock_analysis.web import db, scheduler
 
-        row = scheduler.create_schedule(target="AAPL", cron_expr="0 * * * *", monitor_only=True)
+        row = scheduler.create_schedule(
+            target="AAPL", cron_expr="0 * * * *", monitor_only=True
+        )
         refreshed = []
-        monkeypatch.setattr(scheduler, "refresh_data_only", lambda sym, use_cache=False: refreshed.append(sym) or True)
-        monkeypatch.setattr(scheduler, "_evaluate_rules_after_refresh", lambda symbols: None)
+        monkeypatch.setattr(
+            scheduler,
+            "refresh_data_only",
+            lambda sym, use_cache=False: refreshed.append(sym) or True,
+        )
+        monkeypatch.setattr(
+            scheduler, "_evaluate_rules_after_refresh", lambda symbols: None
+        )
 
         import src.stock_analysis.web.jobs as jobs_mod
 
         def _should_not_be_called(*a, **k):
             raise AssertionError("monitor_only schedules must not enqueue a real job")
 
-        monkeypatch.setattr(jobs_mod, "manager", type("M", (), {"submit": staticmethod(_should_not_be_called)})())
+        monkeypatch.setattr(
+            jobs_mod,
+            "manager",
+            type("M", (), {"submit": staticmethod(_should_not_be_called)})(),
+        )
 
         scheduler._fire_schedule(row["id"])
         assert refreshed == ["AAPL"]
@@ -148,7 +170,11 @@ class TestFireSchedule:
         def _should_not_be_called(*a, **k):
             raise AssertionError("cap should have blocked this submission")
 
-        monkeypatch.setattr(jobs_mod, "manager", type("M", (), {"submit": staticmethod(_should_not_be_called)})())
+        monkeypatch.setattr(
+            jobs_mod,
+            "manager",
+            type("M", (), {"submit": staticmethod(_should_not_be_called)})(),
+        )
 
         scheduler._fire_schedule(row["id"])
         updated = db.get_schedule(row["id"])
@@ -165,11 +191,20 @@ class TestFireSchedule:
 
         submitted = []
         monkeypatch.setattr(
-            jobs_mod, "manager",
-            type("M", (), {"submit": staticmethod(
-                lambda sym, depth, atype, cache, origin: submitted.append((sym, origin)) or
-                type("J", (), {"symbol": sym})()
-            )})(),
+            jobs_mod,
+            "manager",
+            type(
+                "M",
+                (),
+                {
+                    "submit": staticmethod(
+                        lambda sym, depth, atype, cache, origin: submitted.append(
+                            (sym, origin)
+                        )
+                        or type("J", (), {"symbol": sym})()
+                    )
+                },
+            )(),
         )
         scheduler._fire_schedule(row["id"])
         assert submitted == [("AAPL", "scheduled")]
@@ -184,11 +219,18 @@ class TestFireSchedule:
 
         submitted = []
         monkeypatch.setattr(
-            jobs_mod, "manager",
-            type("M", (), {"submit": staticmethod(
-                lambda sym, depth, atype, cache, origin: submitted.append(sym) or
-                type("J", (), {"symbol": sym})()
-            )})(),
+            jobs_mod,
+            "manager",
+            type(
+                "M",
+                (),
+                {
+                    "submit": staticmethod(
+                        lambda sym, depth, atype, cache, origin: submitted.append(sym)
+                        or type("J", (), {"symbol": sym})()
+                    )
+                },
+            )(),
         )
         scheduler._fire_schedule(row["id"])
         assert submitted == ["AAPL"]
@@ -199,7 +241,8 @@ class TestRefreshDataOnly:
         from src.stock_analysis.web import scheduler
 
         monkeypatch.setattr(
-            "src.stock_analysis.tools.free_data_collection.resolve_symbol", lambda s: None
+            "src.stock_analysis.tools.free_data_collection.resolve_symbol",
+            lambda s: None,
         )
         assert scheduler.refresh_data_only("ZZZINVALID") is False
 
@@ -223,7 +266,9 @@ class TestRefreshDataOnly:
             def kickoff(self, *a, **k):
                 calls["kickoff"] += 1
 
-        monkeypatch.setattr("src.stock_analysis.crew.flow_crew.StockAnalysisFlow", _FakeFlow)
+        monkeypatch.setattr(
+            "src.stock_analysis.crew.flow_crew.StockAnalysisFlow", _FakeFlow
+        )
         assert scheduler.refresh_data_only("AAPL") is True
         assert calls == {"fetch_structured": 1, "kickoff": 0}
 
@@ -242,7 +287,9 @@ class TestRefreshDataOnly:
             def _fetch_structured(self):
                 raise RuntimeError("network down")
 
-        monkeypatch.setattr("src.stock_analysis.crew.flow_crew.StockAnalysisFlow", _FakeFlow)
+        monkeypatch.setattr(
+            "src.stock_analysis.crew.flow_crew.StockAnalysisFlow", _FakeFlow
+        )
         assert scheduler.refresh_data_only("AAPL") is False
 
 

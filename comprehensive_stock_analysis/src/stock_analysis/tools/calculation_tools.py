@@ -140,7 +140,9 @@ class FinancialCalculatorTool(BaseTool):
 
         return ratios
 
-    def _calculate_returns(self, prices: List[float], periods: int = 1) -> Dict[str, Any]:
+    def _calculate_returns(
+        self, prices: List[float], periods: int = 1
+    ) -> Dict[str, Any]:
         """Calculate returns."""
         if len(prices) < 2:
             return {"error": "Insufficient price data"}
@@ -164,7 +166,8 @@ class FinancialCalculatorTool(BaseTool):
             "std_return": np.std(returns_array),
             "total_return": (prices[-1] - prices[0]) / prices[0],
             "annualized_return": np.mean(returns_array) * trading_periods_per_year,
-            "annualized_volatility": np.std(returns_array) * np.sqrt(trading_periods_per_year),
+            "annualized_volatility": np.std(returns_array)
+            * np.sqrt(trading_periods_per_year),
         }
 
     def _calculate_valuation(
@@ -193,7 +196,9 @@ class FinancialCalculatorTool(BaseTool):
             if year <= 3:  # High growth period
                 projected_earnings.append(earnings * ((1 + growth_rate) ** year))
             else:  # Terminal growth period
-                projected_earnings.append(projected_earnings[-1] * (1 + terminal_growth_rate))
+                projected_earnings.append(
+                    projected_earnings[-1] * (1 + terminal_growth_rate)
+                )
 
         # Calculate present value of projected earnings
         pv_earnings = []
@@ -239,14 +244,18 @@ class FinancialCalculatorTool(BaseTool):
 
         # Sharpe ratio — annual excess return over annual volatility
         excess_return = annualized_return - risk_free_rate
-        sharpe_ratio = excess_return / annualized_volatility if annualized_volatility > 0 else 0
+        sharpe_ratio = (
+            excess_return / annualized_volatility if annualized_volatility > 0 else 0
+        )
 
         # Sortino ratio (annualised downside deviation)
         downside_returns = returns_array[returns_array < 0]
         downside_deviation = (
             np.std(downside_returns) * np.sqrt(252) if len(downside_returns) > 0 else 0
         )
-        sortino_ratio = excess_return / downside_deviation if downside_deviation > 0 else 0
+        sortino_ratio = (
+            excess_return / downside_deviation if downside_deviation > 0 else 0
+        )
 
         # Maximum drawdown
         cumulative_returns = np.cumprod(1 + returns_array)
@@ -270,7 +279,9 @@ class FinancialCalculatorTool(BaseTool):
             "max_drawdown": max_drawdown,
             "var_95": var_95,
             "cvar_95": cvar_95,
-            "risk_level": self._determine_risk_level(annualized_volatility, max_drawdown),
+            "risk_level": self._determine_risk_level(
+                annualized_volatility, max_drawdown
+            ),
         }
 
     def _determine_risk_level(self, volatility: float, max_drawdown: float) -> str:
@@ -293,7 +304,9 @@ class TechnicalIndicatorTool(BaseTool):
     name: str = "Technical Indicator Tool"
     description: str = "Calculates various technical indicators for stock analysis"
 
-    def _run(self, price_data: str, indicator_type: str, params: str = "{}") -> Dict[str, Any]:
+    def _run(
+        self, price_data: str, indicator_type: str, params: str = "{}"
+    ) -> Dict[str, Any]:
         """Calculate technical indicators. price_data is a JSON array of OHLCV records; params is an optional JSON object of extra kwargs."""
         try:
             kwargs = _parse_dict(params)
@@ -421,7 +434,9 @@ class RiskCalculatorTool(BaseTool):
                     returns = hist["Close"].pct_change().dropna()
 
             if returns is None or len(returns) < 2:
-                return {"error": "Provide price_data (JSON OHLCV array) or a valid symbol"}
+                return {
+                    "error": "Provide price_data (JSON OHLCV array) or a valid symbol"
+                }
 
             # Basic risk metrics
             risk_metrics = self._calculate_basic_risk_metrics(returns, risk_free_rate)
@@ -457,14 +472,18 @@ class RiskCalculatorTool(BaseTool):
         excess_return = annualized_return - risk_free_rate
 
         # Sharpe ratio — annual excess return over annual volatility
-        sharpe_ratio = excess_return / annualized_volatility if annualized_volatility > 0 else 0
+        sharpe_ratio = (
+            excess_return / annualized_volatility if annualized_volatility > 0 else 0
+        )
 
         # Sortino ratio (annualised downside deviation)
         downside_returns = returns[returns < 0]
         downside_deviation = (
             downside_returns.std() * np.sqrt(252) if len(downside_returns) > 0 else 0
         )
-        sortino_ratio = excess_return / downside_deviation if downside_deviation > 0 else 0
+        sortino_ratio = (
+            excess_return / downside_deviation if downside_deviation > 0 else 0
+        )
 
         return {
             "mean_return": mean_return,
@@ -545,9 +564,13 @@ class RiskCalculatorTool(BaseTool):
             _logger.debug("Beta calculation skipped: %s", exc)
             return None
 
-    def _assess_risk_level(self, basic_metrics: Dict, advanced_metrics: Dict) -> Dict[str, Any]:
+    def _assess_risk_level(
+        self, basic_metrics: Dict, advanced_metrics: Dict
+    ) -> Dict[str, Any]:
         """Assess overall risk level (volatility thresholds are annualised)."""
-        volatility = basic_metrics.get("annualized_volatility", basic_metrics["volatility"])
+        volatility = basic_metrics.get(
+            "annualized_volatility", basic_metrics["volatility"]
+        )
         max_drawdown = abs(advanced_metrics["max_drawdown"])
         sharpe_ratio = basic_metrics["sharpe_ratio"]
 
@@ -691,10 +714,14 @@ class ValuationCalculatorTool(BaseTool):
     ) -> Dict[str, Any]:
         """Calculate comparable valuation."""
         # PE-based valuation
-        pe_valuation = current_price * (industry_pe / pe_ratio) if pe_ratio > 0 else None
+        pe_valuation = (
+            current_price * (industry_pe / pe_ratio) if pe_ratio > 0 else None
+        )
 
         # PB-based valuation
-        pb_valuation = current_price * (industry_pb / pb_ratio) if pb_ratio > 0 else None
+        pb_valuation = (
+            current_price * (industry_pb / pb_ratio) if pb_ratio > 0 else None
+        )
 
         # Average valuation
         valuations = [v for v in [pe_valuation, pb_valuation] if v is not None]
@@ -706,12 +733,17 @@ class ValuationCalculatorTool(BaseTool):
             "average_valuation": avg_valuation,
             "current_price": current_price,
             "upside_potential": (
-                (avg_valuation - current_price) / current_price * 100 if avg_valuation else None
+                (avg_valuation - current_price) / current_price * 100
+                if avg_valuation
+                else None
             ),
         }
 
     def _calculate_asset_based_valuation(
-        self, total_assets: float, total_liabilities: float, intangible_assets: float = 0
+        self,
+        total_assets: float,
+        total_liabilities: float,
+        intangible_assets: float = 0,
     ) -> Dict[str, Any]:
         """Calculate asset-based valuation."""
         book_value = total_assets - total_liabilities
@@ -729,14 +761,21 @@ class ValuationCalculatorTool(BaseTool):
         }
 
     def _calculate_dividend_discount(
-        self, current_dividend: float, dividend_growth_rate: float, required_return: float
+        self,
+        current_dividend: float,
+        dividend_growth_rate: float,
+        required_return: float,
     ) -> Dict[str, Any]:
         """Calculate dividend discount model valuation."""
         if required_return <= dividend_growth_rate:
-            return {"error": "Required return must be greater than dividend growth rate"}
+            return {
+                "error": "Required return must be greater than dividend growth rate"
+            }
 
         intrinsic_value = (
-            current_dividend * (1 + dividend_growth_rate) / (required_return - dividend_growth_rate)
+            current_dividend
+            * (1 + dividend_growth_rate)
+            / (required_return - dividend_growth_rate)
         )
 
         return {

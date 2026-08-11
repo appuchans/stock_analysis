@@ -58,7 +58,9 @@ class BacktestTool(BaseTool):
     # Signal generators
     # ------------------------------------------------------------------
 
-    def _sma_crossover_signals(self, close: pd.Series, fast: int, slow: int) -> pd.Series:
+    def _sma_crossover_signals(
+        self, close: pd.Series, fast: int, slow: int
+    ) -> pd.Series:
         fast_ma = close.rolling(fast).mean()
         slow_ma = close.rolling(slow).mean()
         # Shift by 1 so we trade at the next day's open
@@ -107,12 +109,16 @@ class BacktestTool(BaseTool):
         # (signal != 0) rather than looking at a single day's return.
         sig = signals.reindex(strategy_returns.index).fillna(0)
         in_trade = sig > 0
-        trade_id = (in_trade & ~in_trade.shift(1, fill_value=False)).cumsum().where(in_trade)
+        trade_id = (
+            (in_trade & ~in_trade.shift(1, fill_value=False)).cumsum().where(in_trade)
+        )
         if in_trade.any():
             segment_returns = strategy_returns.groupby(trade_id).apply(
                 lambda r: float((1 + r).prod() - 1)
             )
-            win_rate = float((segment_returns > 0).mean()) if len(segment_returns) > 0 else 0.0
+            win_rate = (
+                float((segment_returns > 0).mean()) if len(segment_returns) > 0 else 0.0
+            )
         else:
             win_rate = 0.0
 

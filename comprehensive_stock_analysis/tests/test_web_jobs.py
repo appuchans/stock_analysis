@@ -56,7 +56,11 @@ def _patch_app(monkeypatch):
         "status": "completed",
         "report": "/tmp/x.html",
         "recommendation": {"recommendation": "Buy", "target_price": 250.0},
-        "token_usage": {"total_tokens": 1234, "prompt_tokens": 1000, "completion_tokens": 234},
+        "token_usage": {
+            "total_tokens": 1234,
+            "prompt_tokens": 1000,
+            "completion_tokens": 234,
+        },
         "llm_calls": 7,
     }
     yield
@@ -86,14 +90,23 @@ def test_completed_job_surfaces_result():
 
 
 def test_failed_job_surfaces_error():
-    _FakeApp.result = {"status": "failed", "error": "boom", "token_usage": {}, "llm_calls": 0}
+    _FakeApp.result = {
+        "status": "failed",
+        "error": "boom",
+        "token_usage": {},
+        "llm_calls": 0,
+    }
     job = _poll(client.post("/api/analyze", json={"symbol": "MSFT"}).json()["job_id"])
     assert job["state"] == "failed"
     assert job["error"] == "boom"
 
 
 def test_completed_job_surfaces_company_name():
-    job = _poll(client.post("/api/analyze", json={"symbol": "AAPL", "depth": "quick"}).json()["job_id"])
+    job = _poll(
+        client.post("/api/analyze", json={"symbol": "AAPL", "depth": "quick"}).json()[
+            "job_id"
+        ]
+    )
     assert job["company_name"] == "AAPL Inc."
 
 
@@ -114,7 +127,9 @@ def test_invalid_symbol_fails_fast_without_running_the_flow(monkeypatch):
 
     monkeypatch.setattr(_FakeApp, "analyze_stock", _should_not_run)
 
-    job = _poll(client.post("/api/analyze", json={"symbol": "ZZZINVALID"}).json()["job_id"])
+    job = _poll(
+        client.post("/api/analyze", json={"symbol": "ZZZINVALID"}).json()["job_id"]
+    )
     assert job["state"] == "failed"
     assert "ZZZINVALID" in job["error"]
     assert job["company_name"] is None
@@ -124,6 +139,7 @@ def test_invalid_symbol_fails_fast_without_running_the_flow(monkeypatch):
 def test_cancel_marks_job_aborted(monkeypatch, tmp_path):
     # keep the status marker out of the real reports dir
     from src.stock_analysis.config import settings as settings_mod
+
     monkeypatch.setattr(settings_mod.settings, "report_output_dir", str(tmp_path))
 
     # Genuine abort: analyze_stock stops short of completing (e.g. it caught
@@ -153,6 +169,7 @@ def test_cancel_race_completed_result_is_not_mislabeled_aborted(monkeypatch, tmp
     completed — never mislabeled "aborted" just because cancel_requested was
     set. The result's own status always wins over cancel_requested."""
     from src.stock_analysis.config import settings as settings_mod
+
     monkeypatch.setattr(settings_mod.settings, "report_output_dir", str(tmp_path))
 
     # _patch_app's default _FakeApp.result already has status="completed".
@@ -171,7 +188,14 @@ def test_live_view_exposes_activity():
     from src.stock_analysis.web import progress
     from src.stock_analysis.web.jobs import Job, manager
 
-    job = Job(id="t1", symbol="AAPL", depth="standard", asset_type="auto", use_cache=True, state="running")
+    job = Job(
+        id="t1",
+        symbol="AAPL",
+        depth="standard",
+        asset_type="auto",
+        use_cache=True,
+        state="running",
+    )
     job.tracker = progress.StageTracker()
     job.tracker.set_stage("Synthesizing recommendation", 0.80)
     job.tracker.note("Risk Analysis · Yahoo Finance")
@@ -187,8 +211,12 @@ def test_stage_progresses_through_flow_and_is_monotonic():
     t = progress.StageTracker()
     progress.set_active(t)
     try:
-        for method in ("collect_data", "standard_analysis",
-                       "synthesize_recommendation", "generate_report"):
+        for method in (
+            "collect_data",
+            "standard_analysis",
+            "synthesize_recommendation",
+            "generate_report",
+        ):
             progress._dispatch_stage(*progress._STAGE_MAP[method])
         assert t.snapshot() == ("Generating report", 0.92)
         # a stray earlier event must never move the bar backwards

@@ -24,8 +24,8 @@ except Exception:  # pragma: no cover - extremely old urllib3
 DEFAULT_TIMEOUT = 10
 
 _RETRY = Retry(
-    total=2,                      # 2 retries (3 attempts) — enough for blips, not slow
-    backoff_factor=0.5,           # 0s, 0.5s, 1.0s between attempts
+    total=2,  # 2 retries (3 attempts) — enough for blips, not slow
+    backoff_factor=0.5,  # 0s, 0.5s, 1.0s between attempts
     status_forcelist=(429, 500, 502, 503, 504),
     allowed_methods=frozenset({"GET", "POST"}),
     raise_on_status=False,

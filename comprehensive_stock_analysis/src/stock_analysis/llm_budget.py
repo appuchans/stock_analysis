@@ -45,6 +45,7 @@ def _resolve_limit() -> int:
     global _limit
     if _limit <= 0:
         from .config.settings import settings
+
         _limit = settings.max_llm_calls_per_run
     return _limit
 
@@ -53,6 +54,7 @@ def reset(allowance_multiplier: int = 1) -> None:
     """Start a new budget window (call at the beginning of each analysis run)."""
     global _count, _limit, _warned, _aborted
     from .config.settings import settings
+
     with _lock:
         _count = 0
         _warned = False
@@ -87,7 +89,9 @@ def check_and_increment() -> None:
         _warned = True
         _logger.warning(
             "[llm-budget] %d of %d LLM calls used (80%% threshold) — "
-            "a possible loop will be stopped at the limit", count, limit,
+            "a possible loop will be stopped at the limit",
+            count,
+            limit,
         )
 
 

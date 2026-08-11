@@ -40,9 +40,9 @@ try:
                 from crewai.events.types.crew_events import CrewKickoffCompletedEvent
                 from crewai.events.types.task_events import TaskCompletedEvent
                 from crewai.events.types.tool_usage_events import (
-                    ToolUsageStartedEvent,
-                    ToolUsageFinishedEvent,
                     ToolUsageErrorEvent,
+                    ToolUsageFinishedEvent,
+                    ToolUsageStartedEvent,
                 )
 
                 @crewai_event_bus.on(TaskCompletedEvent)

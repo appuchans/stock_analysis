@@ -125,7 +125,9 @@ class PortfolioRequest(BaseModel):
 
     @field_validator("weights")
     @classmethod
-    def _check_weights(cls, v: Optional[Dict[str, float]]) -> Optional[Dict[str, float]]:
+    def _check_weights(
+        cls, v: Optional[Dict[str, float]]
+    ) -> Optional[Dict[str, float]]:
         if v is None:
             return v
         normalized = {}
@@ -306,8 +308,13 @@ class ScheduleItem(BaseModel):
 
 
 _RULE_TYPES = (
-    "price_above", "price_below", "pct_move_day", "target_price_hit",
-    "stop_loss_hit", "recommendation_changed", "confidence_dropped",
+    "price_above",
+    "price_below",
+    "pct_move_day",
+    "target_price_hit",
+    "stop_loss_hit",
+    "recommendation_changed",
+    "confidence_dropped",
     "earnings_within_days",
 )
 
@@ -328,7 +335,12 @@ class RuleCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _threshold_required_for_price_rules(self) -> "RuleCreateRequest":
-        needs_threshold = {"price_above", "price_below", "pct_move_day", "earnings_within_days"}
+        needs_threshold = {
+            "price_above",
+            "price_below",
+            "pct_move_day",
+            "earnings_within_days",
+        }
         if self.rule_type in needs_threshold and self.threshold is None:
             raise ValueError(f"rule_type {self.rule_type!r} requires a threshold")
         return self

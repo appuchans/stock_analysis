@@ -14,7 +14,15 @@ from src.stock_analysis.tools.portfolio_ledger import (
 
 
 def _tx(symbol, side, qty, price, fees=0.0, date="2026-01-01", tx_id=None):
-    return {"symbol": symbol, "side": side, "qty": qty, "price": price, "fees": fees, "date": date, "id": tx_id}
+    return {
+        "symbol": symbol,
+        "side": side,
+        "qty": qty,
+        "price": price,
+        "fees": fees,
+        "date": date,
+        "id": tx_id,
+    }
 
 
 class TestComputePositionsBasic:
@@ -34,10 +42,12 @@ class TestComputePositionsBasic:
         assert p["cost_basis_total"] == 1010.0
 
     def test_two_buys_average_cost_correctly(self):
-        positions = compute_positions([
-            _tx("AAPL", "buy", 10, 100.0, date="2026-01-01"),
-            _tx("AAPL", "buy", 10, 120.0, date="2026-01-02"),
-        ])
+        positions = compute_positions(
+            [
+                _tx("AAPL", "buy", 10, 100.0, date="2026-01-01"),
+                _tx("AAPL", "buy", 10, 120.0, date="2026-01-02"),
+            ]
+        )
         p = positions["AAPL"]
         assert p["qty"] == 20
         assert p["avg_cost"] == 110.0
@@ -46,21 +56,25 @@ class TestComputePositionsBasic:
 
 class TestFIFOSelling:
     def test_full_sell_realizes_pnl_and_closes_position(self):
-        positions = compute_positions([
-            _tx("AAPL", "buy", 10, 100.0, date="2026-01-01"),
-            _tx("AAPL", "sell", 10, 150.0, date="2026-02-01"),
-        ])
+        positions = compute_positions(
+            [
+                _tx("AAPL", "buy", 10, 100.0, date="2026-01-01"),
+                _tx("AAPL", "sell", 10, 150.0, date="2026-02-01"),
+            ]
+        )
         p = positions["AAPL"]
         assert p["qty"] == 0
         assert p["realized_pnl"] == 500.0  # (150-100)*10
         assert p["lots"] == []
 
     def test_partial_sell_consumes_oldest_lot_first(self):
-        positions = compute_positions([
-            _tx("AAPL", "buy", 10, 100.0, date="2026-01-01"),
-            _tx("AAPL", "buy", 10, 200.0, date="2026-01-15"),
-            _tx("AAPL", "sell", 10, 250.0, date="2026-02-01"),
-        ])
+        positions = compute_positions(
+            [
+                _tx("AAPL", "buy", 10, 100.0, date="2026-01-01"),
+                _tx("AAPL", "buy", 10, 200.0, date="2026-01-15"),
+                _tx("AAPL", "sell", 10, 250.0, date="2026-02-01"),
+            ]
+        )
         p = positions["AAPL"]
         # FIFO: the 10 sold shares come from the $100 lot, not the $200 one.
         assert p["qty"] == 10
@@ -68,11 +82,13 @@ class TestFIFOSelling:
         assert p["realized_pnl"] == 1500.0  # (250-100)*10
 
     def test_sell_spanning_two_lots(self):
-        positions = compute_positions([
-            _tx("AAPL", "buy", 5, 100.0, date="2026-01-01"),
-            _tx("AAPL", "buy", 5, 200.0, date="2026-01-15"),
-            _tx("AAPL", "sell", 8, 300.0, date="2026-02-01"),
-        ])
+        positions = compute_positions(
+            [
+                _tx("AAPL", "buy", 5, 100.0, date="2026-01-01"),
+                _tx("AAPL", "buy", 5, 200.0, date="2026-01-15"),
+                _tx("AAPL", "sell", 8, 300.0, date="2026-02-01"),
+            ]
+        )
         p = positions["AAPL"]
         # 5 shares @ $100 + 3 shares @ $200 consumed.
         assert p["qty"] == pytest.approx(2)
@@ -81,10 +97,12 @@ class TestFIFOSelling:
         assert p["lots"][0]["qty"] == pytest.approx(2)
 
     def test_sell_fees_reduce_proceeds(self):
-        positions = compute_positions([
-            _tx("AAPL", "buy", 10, 100.0, date="2026-01-01"),
-            _tx("AAPL", "sell", 10, 150.0, fees=20.0, date="2026-02-01"),
-        ])
+        positions = compute_positions(
+            [
+                _tx("AAPL", "buy", 10, 100.0, date="2026-01-01"),
+                _tx("AAPL", "sell", 10, 150.0, fees=20.0, date="2026-02-01"),
+            ]
+        )
         p = positions["AAPL"]
         # $20 fee / 10 shares = $2/share off the $150 sale price.
         assert p["realized_pnl"] == pytest.approx((148 - 100) * 10)
@@ -92,10 +110,12 @@ class TestFIFOSelling:
     def test_sell_exceeding_open_lots_stops_at_zero(self):
         """Long-only ledger: an oversell just exhausts available lots rather
         than going negative or raising."""
-        positions = compute_positions([
-            _tx("AAPL", "buy", 5, 100.0, date="2026-01-01"),
-            _tx("AAPL", "sell", 10, 150.0, date="2026-02-01"),
-        ])
+        positions = compute_positions(
+            [
+                _tx("AAPL", "buy", 5, 100.0, date="2026-01-01"),
+                _tx("AAPL", "sell", 10, 150.0, date="2026-02-01"),
+            ]
+        )
         p = positions["AAPL"]
         assert p["qty"] == 0
         assert p["realized_pnl"] == pytest.approx((150 - 100) * 5)
@@ -103,19 +123,23 @@ class TestFIFOSelling:
 
 class TestComputePositionsMultiSymbol:
     def test_multiple_symbols_are_independent(self):
-        positions = compute_positions([
-            _tx("AAPL", "buy", 10, 100.0, date="2026-01-01"),
-            _tx("MSFT", "buy", 5, 300.0, date="2026-01-01"),
-        ])
+        positions = compute_positions(
+            [
+                _tx("AAPL", "buy", 10, 100.0, date="2026-01-01"),
+                _tx("MSFT", "buy", 5, 300.0, date="2026-01-01"),
+            ]
+        )
         assert set(positions) == {"AAPL", "MSFT"}
         assert positions["AAPL"]["qty"] == 10
         assert positions["MSFT"]["qty"] == 5
 
     def test_transactions_out_of_order_are_sorted_by_date(self):
-        positions = compute_positions([
-            _tx("AAPL", "sell", 5, 150.0, date="2026-02-01"),
-            _tx("AAPL", "buy", 10, 100.0, date="2026-01-01"),
-        ])
+        positions = compute_positions(
+            [
+                _tx("AAPL", "sell", 5, 150.0, date="2026-02-01"),
+                _tx("AAPL", "buy", 10, 100.0, date="2026-01-01"),
+            ]
+        )
         p = positions["AAPL"]
         assert p["qty"] == 5
         assert p["realized_pnl"] == pytest.approx((150 - 100) * 5)
@@ -180,7 +204,8 @@ class TestParseTransactionsCSV:
 def _price_df(symbols, start="2026-01-01", n=10, base=100.0, step=1.0):
     dates = pd.date_range(start, periods=n, freq="B")
     return pd.DataFrame(
-        {sym: [base + i * step for i in range(n)] for sym in symbols}, index=dates,
+        {sym: [base + i * step for i in range(n)] for sym in symbols},
+        index=dates,
     )
 
 
@@ -223,7 +248,9 @@ class TestBuildValueSeries:
         assert result.empty
 
     def test_multi_symbol_value_sums_correctly(self):
-        prices = _price_df(["AAPL", "MSFT"], start="2026-01-01", n=5, base=100.0, step=0.0)
+        prices = _price_df(
+            ["AAPL", "MSFT"], start="2026-01-01", n=5, base=100.0, step=0.0
+        )
         txs = [
             {"symbol": "AAPL", "side": "buy", "qty": 10, "date": "2026-01-01"},
             {"symbol": "MSFT", "side": "buy", "qty": 5, "date": "2026-01-01"},
@@ -240,7 +267,7 @@ class TestComputeBenchmarkComparison:
 
     def test_identical_series_has_beta_one_and_zero_alpha(self):
         dates = pd.date_range("2026-01-01", periods=30, freq="B")
-        values = [100 * (1.001 ** i) for i in range(30)]
+        values = [100 * (1.001**i) for i in range(30)]
         pv = pd.Series(values, index=dates)
         bp = pd.Series(values, index=dates)
         result = compute_benchmark_comparison(pv, bp, risk_free_rate=0.0)
@@ -257,8 +284,8 @@ class TestComputeBenchmarkComparison:
 
     def test_outperforming_portfolio_has_positive_alpha(self):
         dates = pd.date_range("2026-01-01", periods=60, freq="B")
-        bench_vals = [100 * (1.0005 ** i) for i in range(60)]
-        port_vals = [100 * (1.003 ** i) for i in range(60)]  # consistently outperforms
+        bench_vals = [100 * (1.0005**i) for i in range(60)]
+        port_vals = [100 * (1.003**i) for i in range(60)]  # consistently outperforms
         pv = pd.Series(port_vals, index=dates)
         bp = pd.Series(bench_vals, index=dates)
         result = compute_benchmark_comparison(pv, bp, risk_free_rate=0.0)

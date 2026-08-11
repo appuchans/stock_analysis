@@ -28,7 +28,8 @@ class YFinanceProvider(base.ProviderBase):
             prev_close = getattr(fast, "previous_close", None)
             change_pct = (
                 ((price - prev_close) / prev_close * 100)
-                if price is not None and prev_close else None
+                if price is not None and prev_close
+                else None
             )
             return {
                 "symbol": symbol,
@@ -54,7 +55,9 @@ class YFinanceProvider(base.ProviderBase):
                     "high": round(float(row["High"]), 4),
                     "low": round(float(row["Low"]), 4),
                     "close": round(float(row["Close"]), 4),
-                    "volume": int(row["Volume"]) if row["Volume"] == row["Volume"] else None,
+                    "volume": (
+                        int(row["Volume"]) if row["Volume"] == row["Volume"] else None
+                    ),
                 }
                 for idx, row in hist.iterrows()
             ]

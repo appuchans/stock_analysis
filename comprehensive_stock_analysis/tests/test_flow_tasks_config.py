@@ -19,10 +19,10 @@ _KNOWN_INPUTS = {
     "ownership_data",
     "sentiment_data",
     "statements_10y_data",  # deep runs only, when FMP_API_KEY is configured
-    "transcript_data",      # deep runs only, when FMP_API_KEY is configured
-    "analyses_summary",   # passed by synthesize_recommendation / generate_report
+    "transcript_data",  # deep runs only, when FMP_API_KEY is configured
+    "analyses_summary",  # passed by synthesize_recommendation / generate_report
     "historical_context",  # passed by synthesize_recommendation from past rec_history
-    "analysis_key",       # passed per stage by _run_stages
+    "analysis_key",  # passed per stage by _run_stages
 }
 
 _PLACEHOLDER_RE = re.compile(r"\{([a-z_]+)\}")
@@ -42,9 +42,20 @@ def _walk_strings(node):
 class TestFlowTasksConfig:
     def test_loads_with_required_sections(self):
         cfg = config_loader.load_flow_tasks_config()
-        for key in ("shared", "collect_data", "technical", "fundamental",
-                    "risk", "sentiment", "market", "industry", "competitor",
-                    "economic", "recommendation", "report"):
+        for key in (
+            "shared",
+            "collect_data",
+            "technical",
+            "fundamental",
+            "risk",
+            "sentiment",
+            "market",
+            "industry",
+            "competitor",
+            "economic",
+            "recommendation",
+            "report",
+        ):
             assert key in cfg, f"missing section: {key}"
         assert "rigor_footer" in cfg["shared"]
         assert "with_data_suffix" in cfg["shared"]

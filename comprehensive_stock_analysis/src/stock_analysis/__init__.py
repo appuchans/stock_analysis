@@ -19,8 +19,10 @@ __all__ = [
 def __getattr__(name: str):
     if name == "Settings":
         from .config.settings import Settings
+
         return Settings
     if name == "StockAnalysisFlow":
         from .crew.flow_crew import StockAnalysisFlow
+
         return StockAnalysisFlow
     raise AttributeError(f"module 'stock_analysis' has no attribute {name!r}")

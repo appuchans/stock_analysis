@@ -24,8 +24,11 @@ def create_schedule(req: ScheduleCreateRequest) -> dict:
 
     try:
         return scheduler.create_schedule(
-            target=req.target, cron_expr=req.cron_expr, depth=req.depth,
-            use_cache=req.use_cache, monitor_only=req.monitor_only,
+            target=req.target,
+            cron_expr=req.cron_expr,
+            depth=req.depth,
+            use_cache=req.use_cache,
+            monitor_only=req.monitor_only,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"invalid cron expression: {exc}")
@@ -59,7 +62,9 @@ def create_rule(req: RuleCreateRequest) -> dict:
     from .. import rules as rules_mod
 
     return rules_mod.create_rule(
-        symbol=req.symbol, rule_type=req.rule_type, threshold=req.threshold,
+        symbol=req.symbol,
+        rule_type=req.rule_type,
+        threshold=req.threshold,
         cooldown_min=req.cooldown_min,
     )
 

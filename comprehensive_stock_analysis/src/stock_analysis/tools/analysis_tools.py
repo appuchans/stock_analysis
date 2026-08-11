@@ -90,7 +90,9 @@ class TechnicalAnalysisTool(BaseTool):
             price_list = _parse_list(price_data)
             vol_list = _parse_list(volume_data)
             if not price_list:
-                return {"error": "price_data is empty or null — pass a JSON array of OHLCV records"}
+                return {
+                    "error": "price_data is empty or null — pass a JSON array of OHLCV records"
+                }
             # Convert to DataFrame
             df = pd.DataFrame(price_list)
             df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -208,7 +210,9 @@ class TechnicalAnalysisTool(BaseTool):
 
         return patterns
 
-    def _generate_signals(self, df: pd.DataFrame, indicators: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_signals(
+        self, df: pd.DataFrame, indicators: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Generate trading signals."""
         signals = {
             "buy_signals": 0,
@@ -235,7 +239,10 @@ class TechnicalAnalysisTool(BaseTool):
                 sell_count += 1
 
         # MACD signals
-        if indicators.get("macd") is not None and indicators.get("macd_signal") is not None:
+        if (
+            indicators.get("macd") is not None
+            and indicators.get("macd_signal") is not None
+        ):
             evaluated_groups += 1
             if indicators["macd"] > indicators["macd_signal"]:
                 buy_count += 1
@@ -243,7 +250,10 @@ class TechnicalAnalysisTool(BaseTool):
                 sell_count += 1
 
         # Moving average signals
-        if indicators.get("sma_20") is not None and indicators.get("sma_50") is not None:
+        if (
+            indicators.get("sma_20") is not None
+            and indicators.get("sma_50") is not None
+        ):
             evaluated_groups += 1
             if indicators["sma_20"] > indicators["sma_50"]:
                 buy_count += 1
@@ -330,8 +340,12 @@ class TechnicalAnalysisTool(BaseTool):
             "support": support,
             "resistance": resistance,
             "current_price": df["close"].iloc[-1],
-            "support_distance": (df["close"].iloc[-1] - support) / df["close"].iloc[-1] * 100,
-            "resistance_distance": (resistance - df["close"].iloc[-1]) / df["close"].iloc[-1] * 100,
+            "support_distance": (df["close"].iloc[-1] - support)
+            / df["close"].iloc[-1]
+            * 100,
+            "resistance_distance": (resistance - df["close"].iloc[-1])
+            / df["close"].iloc[-1]
+            * 100,
         }
 
 
@@ -413,7 +427,9 @@ class FundamentalAnalysisTool(BaseTool):
             total_metrics += 1
             if 0.5 <= valuation["peg_ratio"] <= 1.5:
                 score += 1
-            elif 0.3 <= valuation["peg_ratio"] < 0.5 or 1.5 < valuation["peg_ratio"] <= 2:
+            elif (
+                0.3 <= valuation["peg_ratio"] < 0.5 or 1.5 < valuation["peg_ratio"] <= 2
+            ):
                 score += 0.5
 
         if total_metrics > 0:
@@ -429,7 +445,9 @@ class FundamentalAnalysisTool(BaseTool):
 
         return valuation
 
-    def _analyze_profitability(self, fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_profitability(
+        self, fundamental_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Analyze profitability metrics."""
         profitability = {
             "roe": fundamental_data.get("roe"),
@@ -482,7 +500,9 @@ class FundamentalAnalysisTool(BaseTool):
 
         return profitability
 
-    def _analyze_financial_health(self, fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_financial_health(
+        self, fundamental_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Analyze financial health metrics."""
         financial_health = {
             "debt_to_equity": fundamental_data.get("debt_to_equity"),
@@ -552,7 +572,9 @@ class FundamentalAnalysisTool(BaseTool):
 
         if growth["revenue_growth"] is not None:
             total_metrics += 1
-            if growth["revenue_growth"] >= 0.10:  # yfinance returns fractions (10% = 0.10)
+            if (
+                growth["revenue_growth"] >= 0.10
+            ):  # yfinance returns fractions (10% = 0.10)
                 score += 1
             elif growth["revenue_growth"] >= 0.05:
                 score += 0.5
@@ -695,7 +717,9 @@ class RiskAnalysisTool(BaseTool):
             "var_95": var_95,
             "max_drawdown": max_drawdown,
             "beta": beta,
-            "risk_level": "High" if volatility > 0.3 else "Medium" if volatility > 0.2 else "Low",
+            "risk_level": (
+                "High" if volatility > 0.3 else "Medium" if volatility > 0.2 else "Low"
+            ),
         }
 
     def _analyze_credit_risk(self, fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -734,7 +758,9 @@ class RiskAnalysisTool(BaseTool):
 
         credit_score = (score / total_metrics) if total_metrics else 0.0
         risk_level = (
-            "Low" if credit_score >= 0.8333 else "Medium" if credit_score >= 0.5 else "High"
+            "Low"
+            if credit_score >= 0.8333
+            else "Medium" if credit_score >= 0.5 else "High"
         )
 
         return {
@@ -745,7 +771,9 @@ class RiskAnalysisTool(BaseTool):
             "risk_level": risk_level,
         }
 
-    def _analyze_liquidity_risk(self, fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_liquidity_risk(
+        self, fundamental_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Analyze liquidity risk."""
         current_ratio = fundamental_data.get("current_ratio")
         quick_ratio = fundamental_data.get("quick_ratio")
@@ -769,7 +797,11 @@ class RiskAnalysisTool(BaseTool):
                 score += 0.5
 
         liquidity_score = (score / total_metrics) if total_metrics else 0.0
-        risk_level = "Low" if liquidity_score >= 1.0 else "Medium" if liquidity_score >= 0.5 else "High"
+        risk_level = (
+            "Low"
+            if liquidity_score >= 1.0
+            else "Medium" if liquidity_score >= 0.5 else "High"
+        )
 
         return {
             "current_ratio": current_ratio,
@@ -779,7 +811,9 @@ class RiskAnalysisTool(BaseTool):
             "risk_level": risk_level,
         }
 
-    def _analyze_operational_risk(self, fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_operational_risk(
+        self, fundamental_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Analyze operational risk."""
         # This is a simplified operational risk analysis
         # In practice, this would involve more complex metrics
@@ -815,7 +849,9 @@ class RiskAnalysisTool(BaseTool):
 
         operational_score = (score / total_metrics) if total_metrics else 0.0
         risk_level = (
-            "Low" if operational_score >= 0.8333 else "Medium" if operational_score >= 0.5 else "High"
+            "Low"
+            if operational_score >= 0.8333
+            else "Medium" if operational_score >= 0.5 else "High"
         )
 
         return {
@@ -827,7 +863,11 @@ class RiskAnalysisTool(BaseTool):
         }
 
     def _assess_overall_risk(
-        self, market_risk: Dict, credit_risk: Dict, liquidity_risk: Dict, operational_risk: Dict
+        self,
+        market_risk: Dict,
+        credit_risk: Dict,
+        liquidity_risk: Dict,
+        operational_risk: Dict,
     ) -> Dict[str, Any]:
         """Assess overall risk level."""
         risk_scores = []
@@ -865,7 +905,9 @@ class ValuationTool(BaseTool):
     """Tool for valuation analysis."""
 
     name: str = "Valuation Tool"
-    description: str = "Performs comprehensive valuation analysis using multiple methodologies"
+    description: str = (
+        "Performs comprehensive valuation analysis using multiple methodologies"
+    )
 
     def _run(self, fundamental_data: str, market_data: str) -> Dict[str, Any]:
         """Perform valuation analysis. fundamental_data and market_data are JSON objects."""
@@ -878,7 +920,9 @@ class ValuationTool(BaseTool):
             dcf_valuation = self._dcf_valuation(fundamental_data)
 
             # Comparable Valuation
-            comparable_valuation = self._comparable_valuation(fundamental_data, market_data)
+            comparable_valuation = self._comparable_valuation(
+                fundamental_data, market_data
+            )
 
             # Asset-based Valuation
             asset_valuation = self._asset_based_valuation(fundamental_data)
@@ -907,7 +951,11 @@ class ValuationTool(BaseTool):
         discount_rate = 0.10  # Default 10%
 
         if current_earnings <= 0:
-            return {"intrinsic_value": None, "method": "DCF", "status": "insufficient_data"}
+            return {
+                "intrinsic_value": None,
+                "method": "DCF",
+                "status": "insufficient_data",
+            }
 
         # The Gordon growth model breaks down when growth >= discount rate
         if growth_rate >= discount_rate:
@@ -919,7 +967,9 @@ class ValuationTool(BaseTool):
             }
 
         # Simple perpetuity growth model
-        intrinsic_value = current_earnings * (1 + growth_rate) / (discount_rate - growth_rate)
+        intrinsic_value = (
+            current_earnings * (1 + growth_rate) / (discount_rate - growth_rate)
+        )
 
         return {
             "intrinsic_value": intrinsic_value,
@@ -939,7 +989,11 @@ class ValuationTool(BaseTool):
         pe_ratio = fundamental_data.get("pe_ratio") or 0
 
         if pe_ratio <= 0:
-            return {"intrinsic_value": None, "method": "Comparable", "status": "insufficient_data"}
+            return {
+                "intrinsic_value": None,
+                "method": "Comparable",
+                "status": "insufficient_data",
+            }
 
         intrinsic_value = current_price * (industry_pe / pe_ratio)
 
@@ -950,13 +1004,19 @@ class ValuationTool(BaseTool):
             "status": "calculated",
         }
 
-    def _asset_based_valuation(self, fundamental_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _asset_based_valuation(
+        self, fundamental_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Asset-based valuation analysis."""
         total_assets = fundamental_data.get("total_assets") or 0
         total_liabilities = fundamental_data.get("total_liabilities") or 0
 
         if total_assets <= 0:
-            return {"intrinsic_value": None, "method": "Asset-based", "status": "insufficient_data"}
+            return {
+                "intrinsic_value": None,
+                "method": "Asset-based",
+                "status": "insufficient_data",
+            }
 
         book_value = total_assets - total_liabilities
         intrinsic_value = book_value  # Simplified: intrinsic value = book value
@@ -964,7 +1024,10 @@ class ValuationTool(BaseTool):
         return {
             "intrinsic_value": intrinsic_value,
             "method": "Asset-based",
-            "assumptions": {"total_assets": total_assets, "total_liabilities": total_liabilities},
+            "assumptions": {
+                "total_assets": total_assets,
+                "total_liabilities": total_liabilities,
+            },
             "status": "calculated",
         }
 
@@ -994,7 +1057,9 @@ class ValuationTool(BaseTool):
 
         intrinsic_value = sum(valuations) / len(valuations)
         upside_potential = (
-            (intrinsic_value - current_price) / current_price * 100 if current_price > 0 else None
+            (intrinsic_value - current_price) / current_price * 100
+            if current_price > 0
+            else None
         )
 
         if upside_potential is None:
@@ -1053,7 +1118,9 @@ class ComparisonTool(BaseTool):
         industry_pe = industry_data.get("pe_ratio_avg") or 0
 
         pe_comparison = (
-            "above" if stock_pe > industry_pe else "below" if stock_pe < industry_pe else "equal"
+            "above"
+            if stock_pe > industry_pe
+            else "below" if stock_pe < industry_pe else "equal"
         )
 
         return {

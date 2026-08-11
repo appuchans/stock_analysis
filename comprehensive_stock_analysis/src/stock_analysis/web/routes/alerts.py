@@ -24,6 +24,7 @@ def _log_entry_to_item(entry: dict) -> AlertItem:
 @router.get("/alerts", response_model=List[AlertItem])
 def list_alerts(limit: int = Query(200, ge=1, le=1000)) -> List[AlertItem]:
     from ..alerts import get_alert_log
+
     return [_log_entry_to_item(e) for e in get_alert_log(limit=limit)]
 
 
@@ -34,7 +35,9 @@ def save_alert_settings(body: AlertSettingsRequest) -> dict:
     values = {
         "alert_email": body.alert_email,
         "alert_smtp_host": body.alert_smtp_host,
-        "alert_smtp_port": None if body.alert_smtp_port is None else str(body.alert_smtp_port),
+        "alert_smtp_port": (
+            None if body.alert_smtp_port is None else str(body.alert_smtp_port)
+        ),
         "alert_smtp_user": body.alert_smtp_user,
         "alert_smtp_password": body.alert_smtp_password,
         "alert_webhook_url": body.alert_webhook_url,

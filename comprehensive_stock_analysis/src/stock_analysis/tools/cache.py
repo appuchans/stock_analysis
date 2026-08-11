@@ -57,7 +57,9 @@ def _memory_set(key: str, payload: str, ttl: int) -> None:
     with _memory_lock:
         if len(_memory_cache) >= _MEMORY_CACHE_MAX:
             # Drop the soonest-to-expire entries
-            for old_key, _ in sorted(_memory_cache.items(), key=lambda kv: kv[1][0])[:32]:
+            for old_key, _ in sorted(_memory_cache.items(), key=lambda kv: kv[1][0])[
+                :32
+            ]:
                 del _memory_cache[old_key]
         _memory_cache[key] = (time.time() + ttl, payload)
 

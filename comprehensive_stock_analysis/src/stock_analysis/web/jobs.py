@@ -68,7 +68,9 @@ class JobManager:
     """Owns the single worker and the job registry (single-user)."""
 
     def __init__(self) -> None:
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="analysis")
+        self._executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="analysis"
+        )
         self._jobs: Dict[str, Job] = {}
         self._pending: List[str] = []  # queued job ids, FIFO (for position + resume)
         self._active_id: Optional[str] = None
@@ -80,24 +82,28 @@ class JobManager:
         try:
             from . import db
 
-            db.upsert_job({
-                "id": job.id,
-                "symbol": job.symbol,
-                "depth": job.depth,
-                "asset_type": job.asset_type,
-                "use_cache": 1 if job.use_cache else 0,
-                "origin": job.origin,
-                "state": job.state,
-                "stage": job.stage,
-                "error": job.error,
-                "company_name": job.company_name,
-                "progress": float(job.progress),
-                "llm_calls": int(job.llm_calls),
-                "total_tokens": int((job.token_usage or {}).get("total_tokens") or 0),
-                "created_at": job.created_at,
-                "started_at": job.started_at,
-                "finished_at": job.finished_at,
-            })
+            db.upsert_job(
+                {
+                    "id": job.id,
+                    "symbol": job.symbol,
+                    "depth": job.depth,
+                    "asset_type": job.asset_type,
+                    "use_cache": 1 if job.use_cache else 0,
+                    "origin": job.origin,
+                    "state": job.state,
+                    "stage": job.stage,
+                    "error": job.error,
+                    "company_name": job.company_name,
+                    "progress": float(job.progress),
+                    "llm_calls": int(job.llm_calls),
+                    "total_tokens": int(
+                        (job.token_usage or {}).get("total_tokens") or 0
+                    ),
+                    "created_at": job.created_at,
+                    "started_at": job.started_at,
+                    "finished_at": job.finished_at,
+                }
+            )
         except Exception:  # persistence must never break a run
             pass
 
@@ -152,7 +158,9 @@ class JobManager:
             if job.id == self._active_id or job.state == "running":
                 return 0
             try:
-                return self._pending.index(job.id) + (0 if self._active_id is None else 1)
+                return self._pending.index(job.id) + (
+                    0 if self._active_id is None else 1
+                )
             except ValueError:
                 return 0
 
@@ -176,12 +184,16 @@ class JobManager:
                 job.stage = "Aborted"
                 job.finished_at = _now()
                 self._persist(job)
-                _logger.info("queued job %s (%s) cancelled before start", job_id, job.symbol)
+                _logger.info(
+                    "queued job %s (%s) cancelled before start", job_id, job.symbol
+                )
                 return True
         from ..llm_budget import request_abort
 
         request_abort()
-        _logger.info("cancellation requested for running job %s (%s)", job_id, job.symbol)
+        _logger.info(
+            "cancellation requested for running job %s (%s)", job_id, job.symbol
+        )
         return True
 
     # ── worker (runs in the single worker thread) ────────────────────────────
@@ -222,7 +234,9 @@ class JobManager:
             if info is None:
                 job.state = "failed"
                 job.stage = "Failed"
-                job.error = f"'{job.symbol}' doesn't look like a valid stock or ETF symbol"
+                job.error = (
+                    f"'{job.symbol}' doesn't look like a valid stock or ETF symbol"
+                )
                 return
             job.company_name = info["name"]
             # Archive the previous recommendation so diff can compare before/after
@@ -335,8 +349,11 @@ class JobManager:
             db.mark_orphaned_running()
             for row in db.queued_jobs():
                 self.submit(
-                    row["symbol"], row["depth"], row["asset_type"],
-                    bool(row["use_cache"]), origin=row.get("origin") or "manual",
+                    row["symbol"],
+                    row["depth"],
+                    row["asset_type"],
+                    bool(row["use_cache"]),
+                    origin=row.get("origin") or "manual",
                 )
         except Exception:
             _logger.debug("job recovery skipped", exc_info=True)
@@ -363,10 +380,16 @@ class JobManager:
         for jid in ids:
             job = self._jobs.get(jid)
             if job is not None:
-                items.append({
-                    "id": job.id, "symbol": job.symbol, "depth": job.depth,
-                    "origin": job.origin, "state": job.state, "created_at": job.created_at,
-                })
+                items.append(
+                    {
+                        "id": job.id,
+                        "symbol": job.symbol,
+                        "depth": job.depth,
+                        "origin": job.origin,
+                        "state": job.state,
+                        "created_at": job.created_at,
+                    }
+                )
         return items
 
     def live_view(self, job: Job) -> Dict[str, Any]:

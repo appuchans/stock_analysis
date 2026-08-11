@@ -27,7 +27,9 @@ class Settings(BaseSettings):
     fred_api_key: str = Field("demo", validation_alias="FRED_API_KEY")
     # Required by SEC EDGAR terms of service — set to a real contact email.
     # A warning is logged at startup if the placeholder default is still in use.
-    sec_edgar_email: str = Field("contact@example.com", validation_alias="SEC_EDGAR_EMAIL")
+    sec_edgar_email: str = Field(
+        "contact@example.com", validation_alias="SEC_EDGAR_EMAIL"
+    )
     # Optional premium providers (tools/providers/) — the app is fully
     # functional without these; when set, the provider router prefers them
     # for the capabilities they cover and falls back to yfinance otherwise.

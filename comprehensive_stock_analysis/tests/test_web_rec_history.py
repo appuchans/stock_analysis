@@ -21,7 +21,9 @@ def _temp_reports(monkeypatch, tmp_path):
     from src.stock_analysis.web import db as db_mod
 
     monkeypatch.setattr(settings_mod.settings, "report_output_dir", str(tmp_path))
-    monkeypatch.setattr(settings_mod.settings, "data_output_dir", str(tmp_path / "data"))
+    monkeypatch.setattr(
+        settings_mod.settings, "data_output_dir", str(tmp_path / "data")
+    )
     monkeypatch.setattr(db_mod, "_initialized", False)
     yield tmp_path
 
@@ -35,18 +37,39 @@ def _seed(root, sym, *, prev=False, current=True, price=100.0):
         # shutil.copy2 before the new run overwrites `current`), and avoids
         # both landing in the same one-second timestamp bucket in this test.
         p = d / f"{sym}_investment_recommendation_prev.json"
-        p.write_text(json.dumps({
-            "recommendation": "Hold", "target_price": 110.0, "stop_loss": 85.0, "confidence": 0.6,
-        }), encoding="utf-8")
+        p.write_text(
+            json.dumps(
+                {
+                    "recommendation": "Hold",
+                    "target_price": 110.0,
+                    "stop_loss": 85.0,
+                    "confidence": 0.6,
+                }
+            ),
+            encoding="utf-8",
+        )
         old = time.time() - 3600
         os.utime(p, (old, old))
     if current:
-        (d / f"{sym}_investment_recommendation.json").write_text(json.dumps({
-            "recommendation": "Buy", "target_price": 130.0, "stop_loss": 90.0, "confidence": 0.8,
-        }), encoding="utf-8")
-    (d / f"{sym}_chart_data.json").write_text(json.dumps({
-        "key_stats": {"current_price": price},
-    }), encoding="utf-8")
+        (d / f"{sym}_investment_recommendation.json").write_text(
+            json.dumps(
+                {
+                    "recommendation": "Buy",
+                    "target_price": 130.0,
+                    "stop_loss": 90.0,
+                    "confidence": 0.8,
+                }
+            ),
+            encoding="utf-8",
+        )
+    (d / f"{sym}_chart_data.json").write_text(
+        json.dumps(
+            {
+                "key_stats": {"current_price": price},
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 class TestBackfill:
@@ -58,6 +81,7 @@ class TestBackfill:
         assert count == 1
 
         from src.stock_analysis.web import db
+
         rows = db.list_rec_history("AAPL")
         assert len(rows) == 1
         assert rows[0]["recommendation"] == "Buy"
@@ -71,6 +95,7 @@ class TestBackfill:
         assert count == 2
 
         from src.stock_analysis.web import db
+
         rows = db.list_rec_history("AAPL")
         assert len(rows) == 2
         recs = {r["recommendation"] for r in rows}
@@ -87,15 +112,20 @@ class TestBackfill:
         backfill_rec_history()  # second pass must not duplicate rows
 
         from src.stock_analysis.web import db
+
         assert len(db.list_rec_history("AAPL")) == 2
 
     def test_missing_reports_root_is_a_noop(self, tmp_path, monkeypatch):
         from src.stock_analysis.web.reports_index import backfill_rec_history
 
-        monkeypatch.setattr(settings_mod.settings, "report_output_dir", str(tmp_path / "nope"))
+        monkeypatch.setattr(
+            settings_mod.settings, "report_output_dir", str(tmp_path / "nope")
+        )
         assert backfill_rec_history() == 0
 
-    def test_symbol_with_no_recommendation_files_contributes_nothing(self, _temp_reports):
+    def test_symbol_with_no_recommendation_files_contributes_nothing(
+        self, _temp_reports
+    ):
         from src.stock_analysis.web.reports_index import backfill_rec_history
 
         (_temp_reports / "EMPTY").mkdir()
@@ -137,10 +167,20 @@ class TestLiveCaptureOnJobCompletion:
         from src.stock_analysis.web.jobs import Job, manager
 
         job = Job(
-            id="j1", symbol="MSFT", depth="standard", asset_type="stock",
-            use_cache=True, state="completed", finished_at="2026-07-23T10:00:00",
+            id="j1",
+            symbol="MSFT",
+            depth="standard",
+            asset_type="stock",
+            use_cache=True,
+            state="completed",
+            finished_at="2026-07-23T10:00:00",
         )
-        rec = {"recommendation": "Sell", "target_price": 300.0, "stop_loss": 250.0, "confidence": 0.55}
+        rec = {
+            "recommendation": "Sell",
+            "target_price": 300.0,
+            "stop_loss": 250.0,
+            "confidence": 0.55,
+        }
         manager._capture_rec_history(job, rec)
 
         rows = db.list_rec_history("MSFT")
@@ -158,8 +198,13 @@ class TestLiveCaptureOnJobCompletion:
             json.dumps({"key_stats": {"current_price": 305.5}}), encoding="utf-8"
         )
         job = Job(
-            id="j1", symbol="MSFT", depth="standard", asset_type="stock",
-            use_cache=True, state="completed", finished_at="2026-07-23T10:00:00",
+            id="j1",
+            symbol="MSFT",
+            depth="standard",
+            asset_type="stock",
+            use_cache=True,
+            state="completed",
+            finished_at="2026-07-23T10:00:00",
         )
         manager._capture_rec_history(job, {"recommendation": "Buy"})
 
@@ -169,5 +214,9 @@ class TestLiveCaptureOnJobCompletion:
     def test_capture_rec_history_never_raises_on_bad_input(self, _temp_reports):
         from src.stock_analysis.web.jobs import Job, manager
 
-        job = Job(id="j1", symbol="MSFT", depth="standard", asset_type="stock", use_cache=True)
-        manager._capture_rec_history(job, {"target_price": "not-a-number"})  # must not raise
+        job = Job(
+            id="j1", symbol="MSFT", depth="standard", asset_type="stock", use_cache=True
+        )
+        manager._capture_rec_history(
+            job, {"target_price": "not-a-number"}
+        )  # must not raise

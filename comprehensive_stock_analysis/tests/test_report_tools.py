@@ -35,10 +35,21 @@ _CHART_DATA = {
         "beta": 1.8,
     },
     "analyst": {
-        "price_targets": {"current_price": 130.0, "low": 100.0, "mean": 160.0,
-                          "median": 158.0, "high": 220.0},
-        "rating_counts": {"period": "0m", "strong_buy": 10, "buy": 40,
-                          "hold": 5, "sell": 1, "strong_sell": 0},
+        "price_targets": {
+            "current_price": 130.0,
+            "low": 100.0,
+            "mean": 160.0,
+            "median": 158.0,
+            "high": 220.0,
+        },
+        "rating_counts": {
+            "period": "0m",
+            "strong_buy": 10,
+            "buy": 40,
+            "hold": 5,
+            "sell": 1,
+            "strong_sell": 0,
+        },
     },
     "sentiment_snapshot": {
         "stocktwits_bullish_pct": 86.7,
@@ -56,18 +67,42 @@ _CHART_DATA = {
         "ex_dividend_date": "2026-06-03",
     },
     "peers": [
-        {"symbol": "TEST", "name": "Test Corporation", "market_cap_b": 3200.0,
-         "pe_ttm": 31.4, "fwd_pe": 25.1, "revenue_growth_pct": 65.5,
-         "operating_margin_pct": 60.4, "is_subject": True},
-        {"symbol": "PEER", "name": "Peer Inc", "market_cap_b": 900.0,
-         "pe_ttm": 40.2, "fwd_pe": 30.5, "revenue_growth_pct": 20.0,
-         "operating_margin_pct": 25.0, "is_subject": False},
+        {
+            "symbol": "TEST",
+            "name": "Test Corporation",
+            "market_cap_b": 3200.0,
+            "pe_ttm": 31.4,
+            "fwd_pe": 25.1,
+            "revenue_growth_pct": 65.5,
+            "operating_margin_pct": 60.4,
+            "is_subject": True,
+        },
+        {
+            "symbol": "PEER",
+            "name": "Peer Inc",
+            "market_cap_b": 900.0,
+            "pe_ttm": 40.2,
+            "fwd_pe": 30.5,
+            "revenue_growth_pct": 20.0,
+            "operating_margin_pct": 25.0,
+            "is_subject": False,
+        },
     ],
     "valuation_scenarios": [
-        {"scenario": "Bear", "growth_pct": 12.0, "discount_pct": 12.0,
-         "terminal_pct": 2.5, "intrinsic_per_share": 123.55},
-        {"scenario": "Base", "growth_pct": 24.0, "discount_pct": 10.0,
-         "terminal_pct": 2.5, "intrinsic_per_share": 209.73},
+        {
+            "scenario": "Bear",
+            "growth_pct": 12.0,
+            "discount_pct": 12.0,
+            "terminal_pct": 2.5,
+            "intrinsic_per_share": 123.55,
+        },
+        {
+            "scenario": "Base",
+            "growth_pct": 24.0,
+            "discount_pct": 10.0,
+            "terminal_pct": 2.5,
+            "intrinsic_per_share": 209.73,
+        },
     ],
     "sentiment_history": [
         {"date": "2026-06-01", "stocktwits_bullish_pct": 62.0},
@@ -159,7 +194,9 @@ class TestRenderHtmlReport:
         assert 'id="data-sources-gaps"' in html
         assert "segment revenue not available" in html
         # The gap text must not also remain inside the fundamental appendix body
-        fundamental_appendix = html.split('id="detail-fundamental_analysis"')[1].split("</details>")[0]
+        fundamental_appendix = html.split('id="detail-fundamental_analysis"')[1].split(
+            "</details>"
+        )[0]
         assert "segment revenue not available" not in fundamental_appendix
 
     def test_key_stats_and_analyst_visuals_render(self, report_dir):
@@ -254,7 +291,9 @@ class TestRenderHtmlReport:
         )
         result = render_html_report("HHH")
         assert result.get("status") == "success"
-        html = next((tmp_path / "HHH" / "html").glob("*.html")).read_text(encoding="utf-8")
+        html = next((tmp_path / "HHH" / "html").glob("*.html")).read_text(
+            encoding="utf-8"
+        )
         assert 'class="badge hold">HOLD' in html
 
     def test_renders_even_with_no_specialist_files(self, tmp_path, monkeypatch):
@@ -274,7 +313,9 @@ class TestRenderHtmlReport:
         )
         chart = dict(_CHART_DATA)
         chart["sector_weightings_pct"] = {"technology": 32.0, "healthcare": 10.0}
-        (sym_dir / "ETFX_chart_data.json").write_text(json.dumps(chart), encoding="utf-8")
+        (sym_dir / "ETFX_chart_data.json").write_text(
+            json.dumps(chart), encoding="utf-8"
+        )
         render_html_report("ETFX")  # asset type auto-detected from etf_* file
         html = next((sym_dir / "html").glob("*.html")).read_text(encoding="utf-8")
         assert "ETF Research Report" in html
