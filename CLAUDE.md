@@ -100,7 +100,7 @@ One pipeline: `StockAnalysisFlow` (`crew/flow_crew.py`), selected with `--depth 
 - `yfinance_provider.py` — thin adapter giving the existing `yf_summaries` functions the same shape as premium providers.
 - `fmp.py` / `polygon.py` — REST clients over the shared `tools/_http.py` session. `fmp.screener()` exists but is **not yet wired to anything**.
 
-Two independent consumers: the flow's deep-run enrichment (above) and the web layer (portfolio dashboard live pricing, price-rule polling).
+Two independent consumers: the flow's deep-run enrichment (above) and the web layer (portfolio dashboard live pricing, price-rule polling, `price_series.py` chart bars, and `GET /api/watchlist/quotes`). Note `get_batch_quotes` is **Polygon-only** and outside the 8-method Protocol — callers must handle an empty result as a no-op when Polygon isn't configured, not as an error.
 
 ### Web UI
 
@@ -113,7 +113,9 @@ A local single-user interface in `src/stock_analysis/web/` — FastAPI backend +
 - **History**: every run writes a `<SYM>_run_status.json` marker so the gallery shows aborted/failed/completed even with no report. Ordering uses a **stable analysis timestamp** (`_analyzed_at`: status marker → newest *data* artifact mtime, excluding the re-render-bumped HTML).
 - **Reuse over rebuild**: `routes/results.py` serves the existing self-contained HTML report (iframe-embedded) plus `<SYM>_chart_data.json`; `dashboard.js` builds the interactive Overview from that JSON (ETF reports show fund facts from `chart_data.etf_profile`/`asset_type` instead of stock tiles); `reports_index.py` scans `report_output_dir` for the gallery.
 - **Path safety**: `_paths.py` guards every file path with a strict symbol regex + `report_output_dir` containment check (traversal-safe). Use it for any new file-serving route.
-- **Frontend** (`static/`) is a no-build SPA: left-sidebar shell, **light/dark theme** via `[data-theme]` on `<html>` (localStorage + `prefers-color-scheme`), bundled **Inter** font (`static/fonts/`), Chart.js themed live from CSS vars (`util.theme()`). `app.py` sets `Cache-Control: no-cache` on `/static` + `/api/reports` so edits and re-runs show immediately.
+- **Live price series**: `price_series.py` is the single source for "N symbols, one period, back from today" — both the report Overview chart (`GET /api/reports/{symbol}/prices?period=&compare=`) and the Compare page (`GET /api/compare/prices`) go through it. It fetches via `ROUTER.get_daily_bars`, caps at `MAX_SYMBOLS` (4), and caches 15 min to bound repeated provider calls on rapid UI toggling. **A symbol the provider chain can't serve is dropped into `omitted`, never a hard error** — one bad ticker must not break a chart showing three good ones. Put any new multi-symbol price fetch here rather than adding a second path.
+- **Compare** (`routes/compare.py`, `#/compare`) puts 2–4 arbitrary symbols side by side and **works for symbols that have never been analyzed**: `/api/compare/metrics` fetches key stats + analyst consensus live and in parallel (`_key_metrics` is shared with `yf_summaries`), then `_report_overlay()` best-effort layers sentiment/valuation from an existing `chart_data.json` when there is one. Same omit-don't-error contract as above.
+- **Frontend** (`static/`) is a no-build SPA: left-sidebar shell, **light/dark theme** via `[data-theme]` on `<html>` (localStorage + `prefers-color-scheme`), bundled **Inter** font (`static/fonts/`), Chart.js themed live from CSS vars (`util.theme()`). `app.py` sets `Cache-Control: no-cache` on `/static` + `/api/reports` so edits and re-runs show immediately. Shared UI modules — `priceChart.js` (`renderPriceChart`), `chartControls.js` (`periodSelector`, `symbolChipInput`), and `util.js`'s `makeSortable`/`attachSortHeaders`/`debounce` — are reused across dashboard, compare, watchlist, portfolio, and history; extend these rather than re-implementing per view.
 
 #### Persistence
 
