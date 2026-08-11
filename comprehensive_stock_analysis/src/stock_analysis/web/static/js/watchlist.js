@@ -1,9 +1,12 @@
 // Watchlist: add/remove symbols, see latest rec + freshness, analyze one or all.
-import { $, el, fetchJSON, fmtNum, fmtMoney, badgeClass, navigate, sparkline, theme, timeAgo } from "./util.js";
+import { $, el, fetchJSON, fmtNum, fmtMoney, badgeClass, navigate, sparkline, theme, timeAgo, debounce, attachSortHeaders, sortByAccessor } from "./util.js";
 
 let watchlist = [];
 let historyBySymbol = {};
+let liveQuotes = {};
 let pollTimer = null;
+let sortAccessor = null;
+let sortDir = 1;
 
 export async function loadWatchlist() {
   const body = $("#watchlist-body");
@@ -18,9 +21,21 @@ export async function loadWatchlist() {
   ]);
   watchlist = wl.items || [];
   historyBySymbol = Object.fromEntries((hist.items || []).map((it) => [it.symbol, it]));
+  liveQuotes = {};
 
   $("#watchlist-form").onsubmit = onAdd;
   $("#watchlist-analyze-all").onclick = onAnalyzeAll;
+  $("#watchlist-refresh-prices").onclick = onRefreshPrices;
+  $("#watchlist-filter").oninput = debounce(render, 200);
+  const priceOf = (w) => {
+    const live = liveQuotes[w.symbol];
+    return live ? live.price : (historyBySymbol[w.symbol] || {}).current_price;
+  };
+  attachSortHeaders($("#watchlist-body").closest("table").querySelector("thead"),
+    [(w) => w.symbol, (w) => (historyBySymbol[w.symbol] || {}).recommendation,
+     (w) => (historyBySymbol[w.symbol] || {}).confidence, priceOf,
+     null, (w) => (historyBySymbol[w.symbol] || {}).mtime, null],
+    (accessor, dir) => { sortAccessor = accessor; sortDir = dir; render(); });
   render();
   empty.classList.toggle("hidden", watchlist.length > 0);
   // Only start polling if something is actually in flight — otherwise this
@@ -30,8 +45,29 @@ export async function loadWatchlist() {
 
 function render() {
   const body = $("#watchlist-body");
+  const q = ($("#watchlist-filter").value || "").trim().toLowerCase();
+  let rows = q ? watchlist.filter((w) => w.symbol.toLowerCase().includes(q)) : watchlist;
+  if (sortAccessor) rows = sortByAccessor(rows, sortAccessor, sortDir);
   body.innerHTML = "";
-  watchlist.forEach((w) => body.append(row(w)));
+  rows.forEach((w) => body.append(row(w)));
+}
+
+async function onRefreshPrices() {
+  const btn = $("#watchlist-refresh-prices");
+  btn.disabled = true;
+  try {
+    const data = await fetchJSON("/api/watchlist/quotes");
+    liveQuotes = data.quotes || {};
+    if (!Object.keys(liveQuotes).length) {
+      alert("Live price refresh requires a Polygon API key to be configured.");
+      return;
+    }
+    render();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function onAdd(ev) {
@@ -170,7 +206,10 @@ function row(w) {
       ? el("span", { class: "rec-badge " + badgeClass(h.recommendation) }, h.recommendation.toUpperCase())
       : el("span", { class: "muted" }, "—")));
     tr.append(el("td", { class: "num" }, h.confidence != null ? fmtNum(h.confidence * 100, 0) + "%" : "—"));
-    tr.append(el("td", { class: "num" }, fmtMoney(h.current_price)));
+    const live = liveQuotes[w.symbol];
+    const priceCell = el("td", { class: "num" }, fmtMoney(live ? live.price : h.current_price));
+    if (live) priceCell.title = "Live quote";
+    tr.append(priceCell);
     const sparkCell = el("td", {});
     if ((h.spark || []).length >= 2) {
       const cv = el("canvas", { class: "wl-spark" });

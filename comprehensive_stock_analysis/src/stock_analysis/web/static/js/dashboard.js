@@ -1,6 +1,8 @@
 // Report view: embed the full HTML report + build the interactive Overview
 // dashboard from chart_data.json using Chart.js, themed to match light/dark.
-import { $, $$, el, fetchJSON, fmtNum, fmtMoney, fmtCompact, badgeClass, theme, timeAgo } from "./util.js";
+import { $, $$, el, fetchJSON, fmtNum, fmtMoney, fmtCompact, badgeClass, theme, timeAgo, makeSortable } from "./util.js";
+import { renderPriceChart } from "./priceChart.js";
+import { periodSelector, symbolChipInput } from "./chartControls.js";
 
 let charts = [];
 let last = null; // { symbol, chart, rec } — kept so we can re-theme without refetch
@@ -78,7 +80,7 @@ function buildDashboard() {
 
   const grid = el("div", { class: "grid-2" });
   host.append(grid);
-  if ((chart.price_history || []).length) grid.append(panel("Price (1-year weekly)", priceChart, chart.price_history));
+  if ((chart.price_history || []).length) grid.append(priceChartPanel(symbol, chart.price_history));
   const rev = chart.quarterly_revenue_m || {};
   if (Object.keys(rev).length) grid.append(panel("Quarterly revenue", revenueChart, rev));
   const counts = (chart.analyst || {}).rating_counts || {};
@@ -239,16 +241,66 @@ function sentimentTiles(s) {
     tiles(items));
 }
 
-function peersTable(peers) {
-  const head = el("tr", {}, ["Symbol", "Mkt cap", "P/E", "Fwd P/E", "Rev gr%", "Op mgn%"].map((h) => el("th", {}, h)));
-  const rows = peers.map((p) => el("tr", { class: p.is_subject ? "subject" : "" },
+function peerRow(p) {
+  return el("tr", { class: p.is_subject ? "subject" : "" },
     el("td", {}, p.symbol), el("td", {}, fmtMoney((p.market_cap_b || 0) * 1e9)),
     el("td", {}, fmtNum(p.pe_ttm, 1)), el("td", {}, fmtNum(p.fwd_pe, 1)),
     el("td", {}, p.revenue_growth_pct != null ? fmtNum(p.revenue_growth_pct, 1) : "—"),
-    el("td", {}, p.operating_margin_pct != null ? fmtNum(p.operating_margin_pct, 1) : "—")));
+    el("td", {}, p.operating_margin_pct != null ? fmtNum(p.operating_margin_pct, 1) : "—"));
+}
+
+function peersTable(peers) {
+  const head = el("tr", {}, ["Symbol", "Mkt cap", "P/E", "Fwd P/E", "Rev gr%", "Op mgn%"].map((h) => el("th", {}, h)));
+  const thead = el("thead", {}, head);
+  const tbody = el("tbody", {});
+  const table = el("table", { class: "peers" }, thead, tbody);
+  makeSortable(thead, tbody, peers, peerRow, [
+    (p) => p.symbol, (p) => p.market_cap_b, (p) => p.pe_ttm, (p) => p.fwd_pe,
+    (p) => p.revenue_growth_pct, (p) => p.operating_margin_pct,
+  ]);
   return el("div", { class: "panel" }, el("h3", {}, "Peer comparison"),
-    el("div", { style: "margin-top:12px" },
-      el("table", { class: "peers" }, el("thead", {}, head), el("tbody", {}, rows))));
+    el("div", { style: "margin-top:12px" }, table));
+}
+
+// Live-fetched, period + comparison-symbol price chart. Falls back to the
+// pre-baked chart_data.json series (single line, 1y weekly) if the live
+// endpoint is unreachable, so the panel never renders empty.
+function priceChartPanel(symbol, fallbackHistory) {
+  const state = { period: "1y", compareSymbols: [] };
+  const canvas = el("canvas");
+  const chartHost = el("div", { style: "margin-top:12px" }, canvas);
+  let chartInstance = null;
+
+  function setChart(seriesList) {
+    if (chartInstance) {
+      try { chartInstance.destroy(); } catch (_) { /* noop */ }
+      const idx = charts.indexOf(chartInstance);
+      if (idx >= 0) charts.splice(idx, 1);
+    }
+    chartInstance = renderPriceChart(canvas, seriesList);
+    charts.push(chartInstance);
+  }
+
+  async function refetch() {
+    const compareParam = state.compareSymbols.length ? `&compare=${state.compareSymbols.join(",")}` : "";
+    try {
+      const data = await fetchJSON(`/api/reports/${symbol}/prices?period=${state.period}${compareParam}`);
+      setChart(data.series.length ? data.series : [{ symbol, bars: fallbackHistory }]);
+    } catch (_) {
+      setChart([{ symbol, bars: fallbackHistory }]);
+    }
+  }
+
+  const controls = el("div", { class: "panel-toolbar" },
+    periodSelector(state.period, (p) => { state.period = p; refetch(); }),
+    symbolChipInput({
+      getSymbols: () => state.compareSymbols,
+      onChange: (syms) => { state.compareSymbols = syms; refetch(); },
+      placeholder: "Compare (e.g. MSFT)",
+    }));
+
+  queueMicrotask(refetch);
+  return el("div", { class: "panel" }, el("h3", {}, "Price"), controls, chartHost);
 }
 
 function panel(title, builder, data) {
@@ -259,20 +311,6 @@ function panel(title, builder, data) {
 }
 
 /* ── Chart.js configs (read theme() live so dark/light both look right) ───── */
-
-function priceChart(canvas, points) {
-  const t = theme();
-  const ctx = canvas.getContext("2d");
-  const grad = ctx.createLinearGradient(0, 0, 0, 240);
-  grad.addColorStop(0, t.accent + "33"); grad.addColorStop(1, t.accent + "00");
-  return new Chart(canvas, {
-    type: "line",
-    data: { labels: points.map((p) => p.date), datasets: [{
-      data: points.map((p) => p.close), borderColor: t.accent, backgroundColor: grad,
-      fill: true, tension: .25, pointRadius: 0, borderWidth: 2 }] },
-    options: baseOpts({ x: { ticks: { maxTicksLimit: 6 } } }),
-  });
-}
 
 function revenueChart(canvas, rev) {
   const t = theme();

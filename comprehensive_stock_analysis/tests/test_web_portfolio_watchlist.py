@@ -22,19 +22,35 @@ client = TestClient(_test_app)
 _GOOD_PORTFOLIO_RESULT = {
     "symbols": ["AAPL", "MSFT"],
     "period": "1y",
-    "correlation_matrix": {"AAPL": {"AAPL": 1.0, "MSFT": 0.85}, "MSFT": {"AAPL": 0.85, "MSFT": 1.0}},
+    "correlation_matrix": {
+        "AAPL": {"AAPL": 1.0, "MSFT": 0.85},
+        "MSFT": {"AAPL": 0.85, "MSFT": 1.0},
+    },
     "individual_metrics": {
-        "AAPL": {"annualised_return_pct": 12.5, "annualised_volatility_pct": 18.0,
-                 "sharpe_ratio": 0.58, "max_drawdown_pct": -15.0, "var_95_daily_pct": -2.1},
-        "MSFT": {"annualised_return_pct": 14.0, "annualised_volatility_pct": 17.5,
-                 "sharpe_ratio": 0.69, "max_drawdown_pct": -12.0, "var_95_daily_pct": -1.9},
+        "AAPL": {
+            "annualised_return_pct": 12.5,
+            "annualised_volatility_pct": 18.0,
+            "sharpe_ratio": 0.58,
+            "max_drawdown_pct": -15.0,
+            "var_95_daily_pct": -2.1,
+        },
+        "MSFT": {
+            "annualised_return_pct": 14.0,
+            "annualised_volatility_pct": 17.5,
+            "sharpe_ratio": 0.69,
+            "max_drawdown_pct": -12.0,
+            "var_95_daily_pct": -1.9,
+        },
     },
     "equal_weight_allocation": {"AAPL": 0.5, "MSFT": 0.5},
     "min_variance_weights": {"AAPL": 0.48, "MSFT": 0.52},
     "portfolio_metrics": {
-        "annualised_return_pct": 13.2, "annualised_volatility_pct": 16.9,
-        "sharpe_ratio": 0.66, "max_drawdown_pct": -11.5,
-        "var_95_daily_pct": -1.8, "cvar_95_daily_pct": -2.5,
+        "annualised_return_pct": 13.2,
+        "annualised_volatility_pct": 16.9,
+        "sharpe_ratio": 0.66,
+        "max_drawdown_pct": -11.5,
+        "var_95_daily_pct": -1.8,
+        "cvar_95_daily_pct": -2.5,
     },
 }
 
@@ -52,7 +68,9 @@ def mock_portfolio_tool():
 def mock_portfolio_error():
     with patch(
         "src.stock_analysis.web.routes.portfolio._tool._run",
-        return_value={"error": "Insufficient price data returned for the requested symbols"},
+        return_value={
+            "error": "Insufficient price data returned for the requested symbols"
+        },
     ) as m:
         yield m
 
@@ -140,24 +158,52 @@ class TestPortfolioAnalyzeEndpoint:
         )
         assert resp.status_code == 422
 
-    def test_defaults_to_holdings_weights_when_all_symbols_are_held(self, mock_portfolio_tool):
+    def test_defaults_to_holdings_weights_when_all_symbols_are_held(
+        self, mock_portfolio_tool
+    ):
         from src.stock_analysis.web import db
 
-        db.add_transaction({"symbol": "AAPL", "side": "buy", "qty": 10, "price": 100.0,
-                             "fees": 0, "date": "2026-01-01"})
-        db.add_transaction({"symbol": "MSFT", "side": "buy", "qty": 5, "price": 200.0,
-                             "fees": 0, "date": "2026-01-01"})
+        db.add_transaction(
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "qty": 10,
+                "price": 100.0,
+                "fees": 0,
+                "date": "2026-01-01",
+            }
+        )
+        db.add_transaction(
+            {
+                "symbol": "MSFT",
+                "side": "buy",
+                "qty": 5,
+                "price": 200.0,
+                "fees": 0,
+                "date": "2026-01-01",
+            }
+        )
         # cost basis: AAPL $1000, MSFT $1000 -> 50/50
         resp = client.post("/api/portfolio/analyze", json={"symbols": ["AAPL", "MSFT"]})
         assert resp.status_code == 200
         _args, _kwargs = mock_portfolio_tool.call_args
         assert _args[3] == {"AAPL": 0.5, "MSFT": 0.5}
 
-    def test_falls_back_to_optimizer_when_not_all_symbols_held(self, mock_portfolio_tool):
+    def test_falls_back_to_optimizer_when_not_all_symbols_held(
+        self, mock_portfolio_tool
+    ):
         from src.stock_analysis.web import db
 
-        db.add_transaction({"symbol": "AAPL", "side": "buy", "qty": 10, "price": 100.0,
-                             "fees": 0, "date": "2026-01-01"})
+        db.add_transaction(
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "qty": 10,
+                "price": 100.0,
+                "fees": 0,
+                "date": "2026-01-01",
+            }
+        )
         # MSFT is not held — holdings weighting must not apply.
         resp = client.post("/api/portfolio/analyze", json={"symbols": ["AAPL", "MSFT"]})
         assert resp.status_code == 200
@@ -167,19 +213,40 @@ class TestPortfolioAnalyzeEndpoint:
     def test_explicit_weights_override_holdings(self, mock_portfolio_tool):
         from src.stock_analysis.web import db
 
-        db.add_transaction({"symbol": "AAPL", "side": "buy", "qty": 10, "price": 100.0,
-                             "fees": 0, "date": "2026-01-01"})
-        db.add_transaction({"symbol": "MSFT", "side": "buy", "qty": 5, "price": 200.0,
-                             "fees": 0, "date": "2026-01-01"})
-        resp = client.post("/api/portfolio/analyze", json={
-            "symbols": ["AAPL", "MSFT"], "weights": {"AAPL": 0.9, "MSFT": 0.1},
-        })
+        db.add_transaction(
+            {
+                "symbol": "AAPL",
+                "side": "buy",
+                "qty": 10,
+                "price": 100.0,
+                "fees": 0,
+                "date": "2026-01-01",
+            }
+        )
+        db.add_transaction(
+            {
+                "symbol": "MSFT",
+                "side": "buy",
+                "qty": 5,
+                "price": 200.0,
+                "fees": 0,
+                "date": "2026-01-01",
+            }
+        )
+        resp = client.post(
+            "/api/portfolio/analyze",
+            json={
+                "symbols": ["AAPL", "MSFT"],
+                "weights": {"AAPL": 0.9, "MSFT": 0.1},
+            },
+        )
         assert resp.status_code == 200
         _args, _kwargs = mock_portfolio_tool.call_args
         assert _args[3] == {"AAPL": 0.9, "MSFT": 0.1}
 
 
 # ── Watchlist ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(autouse=True)
 def _fresh_db(monkeypatch, tmp_path):
@@ -255,3 +322,37 @@ class TestWatchlistEndpoints:
         # added_at DESC means GOOGL (last added) comes first
         assert syms[0] == "GOOGL"
         assert syms[-1] == "AAPL"
+
+
+class TestWatchlistQuotesEndpoint:
+    def test_empty_watchlist_returns_empty_quotes(self):
+        resp = client.get("/api/watchlist/quotes")
+        assert resp.status_code == 200
+        assert resp.json() == {"quotes": {}}
+
+    def test_returns_live_quotes_for_watchlist_symbols(self):
+        client.post("/api/watchlist", json={"symbol": "AAPL"})
+        client.post("/api/watchlist", json={"symbol": "MSFT"})
+        fake_quotes = {
+            "AAPL": {"price": 200.5, "change_pct": 1.2, "source": "polygon"},
+            "MSFT": {"price": 410.0, "change_pct": -0.5, "source": "polygon"},
+        }
+        with patch(
+            "src.stock_analysis.web.routes.watchlist.ROUTER.get_batch_quotes",
+            return_value=fake_quotes,
+        ):
+            resp = client.get("/api/watchlist/quotes")
+        assert resp.status_code == 200
+        body = resp.json()["quotes"]
+        assert body["AAPL"] == {"price": 200.5, "change_pct": 1.2}
+        assert body["MSFT"] == {"price": 410.0, "change_pct": -0.5}
+
+    def test_polygon_unconfigured_returns_empty_quotes_not_error(self):
+        client.post("/api/watchlist", json={"symbol": "AAPL"})
+        with patch(
+            "src.stock_analysis.web.routes.watchlist.ROUTER.get_batch_quotes",
+            return_value={},
+        ):
+            resp = client.get("/api/watchlist/quotes")
+        assert resp.status_code == 200
+        assert resp.json() == {"quotes": {}}

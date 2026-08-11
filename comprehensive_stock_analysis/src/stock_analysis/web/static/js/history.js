@@ -14,16 +14,27 @@ export async function loadHistory() {
     items = (await fetchJSON("/api/history")).items || [];
   } catch (_) { items = []; }
   $("#history-filter").oninput = render;
+  $("#history-sort").onchange = render;
   render();
   empty.classList.toggle("hidden", items.length > 0);
 }
 
+const SORTERS = {
+  newest: (a, b) => (b.mtime || "").localeCompare(a.mtime || ""),
+  oldest: (a, b) => (a.mtime || "").localeCompare(b.mtime || ""),
+  symbol: (a, b) => a.symbol.localeCompare(b.symbol),
+  recommendation: (a, b) => (a.recommendation || "").localeCompare(b.recommendation || ""),
+};
+
 function render() {
   const grid = $("#history-grid");
   const q = ($("#history-filter").value || "").toLowerCase();
+  const sortKey = $("#history-sort").value || "newest";
   grid.innerHTML = "";
   items
     .filter((it) => !q || it.symbol.toLowerCase().includes(q) || (it.sector || "").toLowerCase().includes(q))
+    .slice()
+    .sort(SORTERS[sortKey] || SORTERS.newest)
     .forEach((it) => grid.append(card(it)));
 }
 

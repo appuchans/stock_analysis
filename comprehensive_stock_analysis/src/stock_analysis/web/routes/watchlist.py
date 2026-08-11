@@ -1,9 +1,11 @@
 """Watchlist CRUD endpoints."""
 
 import re
+from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 
+from ...tools.providers import ROUTER
 from .. import db
 from ..jobs import manager
 from ..schemas import (
@@ -42,6 +44,25 @@ def remove_from_watchlist(symbol: str) -> None:
     removed = db.remove_symbol(symbol)
     if not removed:
         raise HTTPException(status_code=404, detail="symbol not found in watchlist")
+
+
+@router.get("/watchlist/quotes")
+def watchlist_quotes() -> Dict[str, Any]:
+    """On-demand live price refresh for the whole watchlist in one batch call.
+
+    Requires Polygon (ROUTER.get_batch_quotes is Polygon-only) — returns an
+    empty quotes dict when it isn't configured, which the UI treats as a
+    no-op rather than an error."""
+    symbols = [row["symbol"] for row in db.list_symbols()]
+    if not symbols:
+        return {"quotes": {}}
+    quotes = ROUTER.get_batch_quotes(symbols)
+    return {
+        "quotes": {
+            s: {"price": q.get("price"), "change_pct": q.get("change_pct")}
+            for s, q in quotes.items()
+        }
+    }
 
 
 @router.post("/watchlist/analyze", status_code=202)

@@ -24,12 +24,63 @@ _logger = logging.getLogger(__name__)
 # Common capitalized tokens that regex-match the ticker pattern but aren't
 # tickers; filtered out of web-search results in fetch_peer_symbols().
 _TICKER_STOPWORDS = {
-    "AND", "OR", "BUT", "FOR", "THE", "WITH", "FROM", "INTO", "OVER", "ITS",
-    "INC", "CORP", "LLC", "LTD", "PLC", "CO", "USA", "US", "UK", "EU",
-    "NYSE", "NASDAQ", "AMEX", "OTC", "ETF", "CEO", "CFO", "IPO", "ESG",
-    "SEC", "GDP", "CPI", "TTM", "YTD", "EPS", "PE", "FY", "Q1", "Q2", "Q3",
-    "Q4", "NEW", "TOP", "VS", "ALSO", "MORE", "WHAT", "WHO", "HOW", "WHY",
-    "ARE", "IS", "IT", "AI", "API", "FAQ", "HTML",
+    "AND",
+    "OR",
+    "BUT",
+    "FOR",
+    "THE",
+    "WITH",
+    "FROM",
+    "INTO",
+    "OVER",
+    "ITS",
+    "INC",
+    "CORP",
+    "LLC",
+    "LTD",
+    "PLC",
+    "CO",
+    "USA",
+    "US",
+    "UK",
+    "EU",
+    "NYSE",
+    "NASDAQ",
+    "AMEX",
+    "OTC",
+    "ETF",
+    "CEO",
+    "CFO",
+    "IPO",
+    "ESG",
+    "SEC",
+    "GDP",
+    "CPI",
+    "TTM",
+    "YTD",
+    "EPS",
+    "PE",
+    "FY",
+    "Q1",
+    "Q2",
+    "Q3",
+    "Q4",
+    "NEW",
+    "TOP",
+    "VS",
+    "ALSO",
+    "MORE",
+    "WHAT",
+    "WHO",
+    "HOW",
+    "WHY",
+    "ARE",
+    "IS",
+    "IT",
+    "AI",
+    "API",
+    "FAQ",
+    "HTML",
 }
 
 
@@ -106,7 +157,9 @@ def summarize_analyst_data(ticker: Any) -> Dict[str, Any]:
         ud = ticker.upgrades_downgrades
         if ud is not None and not ud.empty:
             cutoff = datetime.now() - timedelta(days=180)
-            recent = ud[ud.index >= pd.Timestamp(cutoff)] if hasattr(ud.index, "tz") else ud
+            recent = (
+                ud[ud.index >= pd.Timestamp(cutoff)] if hasattr(ud.index, "tz") else ud
+            )
             out["recent_rating_changes"] = [
                 {
                     "date": _date_label(idx),
@@ -155,7 +208,9 @@ def summarize_analyst_data(ticker: Any) -> Dict[str, Any]:
                 out["revenue_estimates_m"][str(period)] = {
                     "avg": _millions(row.get("avg")),
                     "growth_pct": (
-                        round(g * 100, 1) if (g := _num(row.get("growth"))) is not None else None
+                        round(g * 100, 1)
+                        if (g := _num(row.get("growth"))) is not None
+                        else None
                     ),
                     "analysts": _num(row.get("numberOfAnalysts"), 0),
                 }
@@ -212,7 +267,9 @@ def summarize_ownership(ticker: Any) -> Dict[str, Any]:
                 {
                     "holder": str(r.get("Holder", "")),
                     "pct_held": (
-                        round(v * 100, 2) if (v := _num(r.get("pctHeld"))) is not None else None
+                        round(v * 100, 2)
+                        if (v := _num(r.get("pctHeld"))) is not None
+                        else None
                     ),
                     "value_usd_m": _millions(r.get("Value")),
                 }
@@ -249,7 +306,11 @@ def summarize_ownership(ticker: Any) -> Dict[str, Any]:
                     }
                 )
             out["insider_transactions"] = txns
-            out["insider_recent_summary"] = {"buys": buys, "sells": sells, "sampled": len(txns)}
+            out["insider_recent_summary"] = {
+                "buys": buys,
+                "sells": sells,
+                "sampled": len(txns),
+            }
     except Exception as exc:
         _logger.debug("insider_transactions failed: %s", exc)
 
@@ -269,9 +330,16 @@ def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
             revenue = _row(inc, ["Total Revenue", "TotalRevenue", "Operating Revenue"])
             gross = _row(inc, ["Gross Profit", "GrossProfit"])
             op = _row(
-                inc, ["Operating Income", "OperatingIncome", "Total Operating Income As Reported"]
+                inc,
+                [
+                    "Operating Income",
+                    "OperatingIncome",
+                    "Total Operating Income As Reported",
+                ],
             )
-            net = _row(inc, ["Net Income", "Net Income Common Stockholders", "NetIncome"])
+            net = _row(
+                inc, ["Net Income", "Net Income Common Stockholders", "NetIncome"]
+            )
             annual: Dict[str, Any] = {}
             for i, col in enumerate(cols[:3]):
                 label = _date_label(col)
@@ -283,9 +351,15 @@ def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
                 )
                 annual[label] = {
                     "revenue_m": rev_v,
-                    "gross_profit_m": _millions(gross.get(col)) if gross is not None else None,
-                    "operating_income_m": _millions(op.get(col)) if op is not None else None,
-                    "net_income_m": _millions(net.get(col)) if net is not None else None,
+                    "gross_profit_m": (
+                        _millions(gross.get(col)) if gross is not None else None
+                    ),
+                    "operating_income_m": (
+                        _millions(op.get(col)) if op is not None else None
+                    ),
+                    "net_income_m": (
+                        _millions(net.get(col)) if net is not None else None
+                    ),
                     "revenue_yoy_pct": (
                         round((rev_v - prev_v) / abs(prev_v) * 100, 1)
                         if rev_v is not None and prev_v
@@ -320,9 +394,15 @@ def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
             )
             out["balance_sheet"] = {
                 _date_label(col): {
-                    "total_assets_m": _millions(assets.get(col)) if assets is not None else None,
-                    "cash_and_sti_m": _millions(cash.get(col)) if cash is not None else None,
-                    "total_debt_m": _millions(debt.get(col)) if debt is not None else None,
+                    "total_assets_m": (
+                        _millions(assets.get(col)) if assets is not None else None
+                    ),
+                    "cash_and_sti_m": (
+                        _millions(cash.get(col)) if cash is not None else None
+                    ),
+                    "total_debt_m": (
+                        _millions(debt.get(col)) if debt is not None else None
+                    ),
                     "stockholders_equity_m": (
                         _millions(equity.get(col)) if equity is not None else None
                     ),
@@ -337,7 +417,11 @@ def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
         if cf is not None and not cf.empty:
             cols = list(cf.columns)[:3]
             ocf = _row(
-                cf, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"]
+                cf,
+                [
+                    "Operating Cash Flow",
+                    "Cash Flow From Continuing Operating Activities",
+                ],
             )
             capex = _row(cf, ["Capital Expenditure", "CapitalExpenditure"])
             fcf = _row(cf, ["Free Cash Flow", "FreeCashFlow"])
@@ -345,11 +429,19 @@ def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
             divs = _row(cf, ["Cash Dividends Paid", "Common Stock Dividend Paid"])
             out["cash_flow"] = {
                 _date_label(col): {
-                    "operating_cf_m": _millions(ocf.get(col)) if ocf is not None else None,
+                    "operating_cf_m": (
+                        _millions(ocf.get(col)) if ocf is not None else None
+                    ),
                     "capex_m": _millions(capex.get(col)) if capex is not None else None,
-                    "free_cash_flow_m": _millions(fcf.get(col)) if fcf is not None else None,
-                    "buybacks_m": _millions(buyback.get(col)) if buyback is not None else None,
-                    "dividends_paid_m": _millions(divs.get(col)) if divs is not None else None,
+                    "free_cash_flow_m": (
+                        _millions(fcf.get(col)) if fcf is not None else None
+                    ),
+                    "buybacks_m": (
+                        _millions(buyback.get(col)) if buyback is not None else None
+                    ),
+                    "dividends_paid_m": (
+                        _millions(divs.get(col)) if divs is not None else None
+                    ),
                 }
                 for col in cols
             }
@@ -418,20 +510,26 @@ def summarize_dividends_splits(ticker: Any) -> Dict[str, Any]:
         d = ticker.dividends
         if d is not None and len(d) > 0:
             out["recent_dividends"] = [
-                {"date": _date_label(idx), "amount": _num(val)} for idx, val in d.tail(8).items()
+                {"date": _date_label(idx), "amount": _num(val)}
+                for idx, val in d.tail(8).items()
             ]
             # 5-year dividend CAGR from annual sums
             annual = d.groupby(d.index.year).sum()
             if len(annual) >= 6:
                 first, last = float(annual.iloc[-6]), float(annual.iloc[-1])
                 if first > 0:
-                    out["dividend_cagr_5y_pct"] = round(((last / first) ** 0.2 - 1) * 100, 1)
+                    out["dividend_cagr_5y_pct"] = round(
+                        ((last / first) ** 0.2 - 1) * 100, 1
+                    )
     except Exception as exc:
         _logger.debug("dividends failed: %s", exc)
     try:
         s = ticker.splits
         if s is not None and len(s) > 0:
-            out["last_split"] = {"date": _date_label(s.index[-1]), "ratio": _num(s.iloc[-1])}
+            out["last_split"] = {
+                "date": _date_label(s.index[-1]),
+                "ratio": _num(s.iloc[-1]),
+            }
     except Exception as exc:
         _logger.debug("splits failed: %s", exc)
     return out
@@ -451,7 +549,9 @@ def summarize_etf_portfolio(ticker: Any) -> Dict[str, Any]:
         sw = fd.sector_weightings
         if sw:
             out["sector_weightings_pct"] = {
-                k: round(float(v) * 100, 2) for k, v in sw.items() if _num(v) is not None
+                k: round(float(v) * 100, 2)
+                for k, v in sw.items()
+                if _num(v) is not None
             }
     except Exception as exc:
         _logger.debug("sector_weightings failed: %s", exc)
@@ -459,7 +559,9 @@ def summarize_etf_portfolio(ticker: Any) -> Dict[str, Any]:
         ac = fd.asset_classes
         if ac:
             out["asset_classes_pct"] = {
-                k: round(float(v) * 100, 2) for k, v in ac.items() if _num(v) is not None
+                k: round(float(v) * 100, 2)
+                for k, v in ac.items()
+                if _num(v) is not None
             }
     except Exception as exc:
         _logger.debug("asset_classes failed: %s", exc)
@@ -536,7 +638,11 @@ def fetch_peer_symbols(
         snippet = result.find("a", class_="result__snippet")
         text = " ".join(el.get_text(strip=True) for el in (title, snippet) if el)
         for tok in re.findall(r"\b[A-Z]{1,5}\b", text):
-            if tok != symbol_u and tok not in _TICKER_STOPWORDS and tok not in candidates:
+            if (
+                tok != symbol_u
+                and tok not in _TICKER_STOPWORDS
+                and tok not in candidates
+            ):
                 candidates.append(tok)
     if not candidates:
         return []
@@ -566,37 +672,54 @@ def fetch_peer_symbols(
     return [c for c in candidates if c in validated][:limit]
 
 
+def _key_metrics(
+    sym: str, info: Optional[Dict[str, Any]] = None, yf_module: Any = None
+) -> Optional[Dict[str, Any]]:
+    """Key valuation/size metrics for a single symbol from ``ticker.info``.
+
+    Shared by `summarize_peers` (peer-comparison table) and the web UI's
+    stock-comparison endpoint. Returns None when the symbol has no market cap
+    (i.e. not a valid/tradeable equity), never raises.
+    """
+    if yf_module is None:
+        import yfinance as yf_module  # type: ignore[no-redef]
+    try:
+        if info is None:
+            info = yf_module.Ticker(sym).info or {}
+        if not info.get("marketCap"):
+            return None
+        return {
+            "symbol": sym.upper(),
+            "name": (info.get("shortName") or info.get("longName") or sym)[:28],
+            "current_price": _num(
+                info.get("currentPrice") or info.get("regularMarketPrice"), 2
+            ),
+            "market_cap_b": round(info["marketCap"] / 1e9, 1),
+            "pe_ttm": _num(info.get("trailingPE"), 1),
+            "fwd_pe": _num(info.get("forwardPE"), 1),
+            "beta": _num(info.get("beta"), 2),
+            "low_52w": _num(info.get("fiftyTwoWeekLow"), 2),
+            "high_52w": _num(info.get("fiftyTwoWeekHigh"), 2),
+            "revenue_growth_pct": (
+                round(v * 100, 1)
+                if (v := _num(info.get("revenueGrowth"))) is not None
+                else None
+            ),
+            "operating_margin_pct": (
+                round(v * 100, 1)
+                if (v := _num(info.get("operatingMargins"))) is not None
+                else None
+            ),
+        }
+    except Exception as exc:
+        _logger.debug("key metrics failed for %s: %s", sym, exc)
+        return None
+
+
 def summarize_peers(symbol: str, yf_module: Any = None) -> Dict[str, Any]:
     """Side-by-side key metrics for the subject company and its true business peers."""
     if yf_module is None:
         import yfinance as yf_module  # type: ignore[no-redef]
-
-    def _metrics(sym: str, info: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-        try:
-            if info is None:
-                info = yf_module.Ticker(sym).info or {}
-            if not info.get("marketCap"):
-                return None
-            return {
-                "symbol": sym.upper(),
-                "name": (info.get("shortName") or info.get("longName") or sym)[:28],
-                "market_cap_b": round(info["marketCap"] / 1e9, 1),
-                "pe_ttm": _num(info.get("trailingPE"), 1),
-                "fwd_pe": _num(info.get("forwardPE"), 1),
-                "revenue_growth_pct": (
-                    round(v * 100, 1)
-                    if (v := _num(info.get("revenueGrowth"))) is not None
-                    else None
-                ),
-                "operating_margin_pct": (
-                    round(v * 100, 1)
-                    if (v := _num(info.get("operatingMargins"))) is not None
-                    else None
-                ),
-            }
-        except Exception as exc:
-            _logger.debug("peer metrics failed for %s: %s", sym, exc)
-            return None
 
     try:
         subject_info = yf_module.Ticker(symbol).info or {}
@@ -614,12 +737,12 @@ def summarize_peers(symbol: str, yf_module: Any = None) -> Dict[str, Any]:
         return {}
 
     rows = []
-    subject_row = _metrics(symbol, info=subject_info)
+    subject_row = _key_metrics(symbol, info=subject_info, yf_module=yf_module)
     if subject_row:
         subject_row["is_subject"] = True
         rows.append(subject_row)
     for sym in peers:
-        row = _metrics(sym)
+        row = _key_metrics(sym, yf_module=yf_module)
         if row:
             row["is_subject"] = False
             rows.append(row)
@@ -720,7 +843,9 @@ def summarize_search_interest(symbol: str) -> Dict[str, Any]:
             "keyword": keyword,
             "latest_week_avg": round(latest_week, 1),
             "three_month_avg": round(avg_3m, 1),
-            "momentum_pct": round((latest_week - avg_3m) / avg_3m * 100, 1) if avg_3m else None,
+            "momentum_pct": (
+                round((latest_week - avg_3m) / avg_3m * 100, 1) if avg_3m else None
+            ),
             "source": "google_trends",
         }
     except Exception as exc:

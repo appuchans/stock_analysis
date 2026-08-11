@@ -35,6 +35,14 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2a9 9 0 1 0 6.32 15.43"/><path d="M22 12A9 9 0 0 0 13 3v9z"/></svg>
           Watchlist
         </a>
+        <a href="#/portfolio" data-nav="portfolio" class="sb-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+          Portfolio
+        </a>
+        <a href="#/compare" data-nav="compare" class="sb-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16l4-6 4 3 4-8"/></svg>
+          Compare
+        </a>
         <a href="#/alerts" data-nav="alerts" class="sb-link">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           Alerts
@@ -160,7 +168,15 @@
               <h1 class="page-title">Past analyses</h1>
               <p class="page-sub">Every analysis you've run. Click a card to open it, or refresh to re-run.</p>
             </div>
-            <input id="history-filter" type="search" placeholder="Filter by symbol or sector…" class="filter-input" />
+            <div style="display:flex;gap:10px">
+              <select id="history-sort" class="filter-input" style="width:auto">
+                <option value="newest" selected>Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="symbol">Symbol A–Z</option>
+                <option value="recommendation">Recommendation</option>
+              </select>
+              <input id="history-filter" type="search" placeholder="Filter by symbol or sector…" class="filter-input" />
+            </div>
           </div>
           <div id="history-grid" class="history-grid"></div>
           <div id="history-empty" class="empty-state hidden">No analyses yet. Run one to get started.</div>
@@ -173,7 +189,13 @@
               <h1 class="page-title">Watchlist</h1>
               <p class="page-sub">Symbols you're tracking. Analyze one at a time or all at once.</p>
             </div>
-            <button id="watchlist-analyze-all" type="button" class="btn btn-primary">Analyze all</button>
+            <div style="display:flex;gap:10px">
+              <button id="watchlist-refresh-prices" type="button" class="btn btn-secondary" title="Requires Polygon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+                Refresh prices
+              </button>
+              <button id="watchlist-analyze-all" type="button" class="btn btn-primary">Analyze all</button>
+            </div>
           </div>
           <div class="card">
             <form id="watchlist-form" class="watchlist-form" autocomplete="off">
@@ -188,7 +210,8 @@
               <button id="watchlist-add-btn" type="submit" class="btn btn-secondary">Add</button>
             </form>
           </div>
-          <div class="card table-card">
+          <input id="watchlist-filter" type="search" placeholder="Filter by symbol…" class="filter-input" style="margin:18px 0 0" />
+          <div class="card table-card" style="margin-top:12px">
             <table class="wl-table">
               <thead>
                 <tr>
@@ -200,6 +223,96 @@
             </table>
           </div>
           <div id="watchlist-empty" class="empty-state hidden">Your watchlist is empty. Add a symbol above.</div>
+        </section>
+
+        <!-- Portfolio -->
+        <section id="view-portfolio" class="view">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Portfolio</h1>
+              <p class="page-sub">Positions derived from your transaction history, live-priced, compared against a benchmark.</p>
+            </div>
+            <button id="portfolio-refresh" type="button" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+              Refresh
+            </button>
+          </div>
+
+          <div id="portfolio-dashboard"></div>
+          <div id="portfolio-empty" class="empty-state hidden">No open positions yet. Add a transaction below to get started.</div>
+
+          <div class="panel" style="margin-top:24px">
+            <div class="panel-head"><h3>Add transaction</h3></div>
+            <form id="tx-form" class="automation-form" autocomplete="off">
+              <div class="field field-symbol">
+                <label for="tx-symbol">Ticker</label>
+                <input id="tx-symbol" type="text" placeholder="AAPL" maxlength="10" required />
+              </div>
+              <div class="field">
+                <label for="tx-side">Side</label>
+                <select id="tx-side">
+                  <option value="buy" selected>Buy</option>
+                  <option value="sell">Sell</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="tx-qty">Quantity</label>
+                <input id="tx-qty" type="number" step="any" min="0" required />
+              </div>
+              <div class="field">
+                <label for="tx-price">Price</label>
+                <input id="tx-price" type="number" step="any" min="0" required />
+              </div>
+              <div class="field">
+                <label for="tx-fees">Fees</label>
+                <input id="tx-fees" type="number" step="any" min="0" />
+              </div>
+              <div class="field">
+                <label for="tx-date">Date</label>
+                <input id="tx-date" type="date" required />
+              </div>
+              <div class="field">
+                <label for="tx-note">Note (optional)</label>
+                <input id="tx-note" type="text" placeholder="Why you made this trade" />
+              </div>
+              <button type="submit" class="btn btn-secondary">Add transaction</button>
+            </form>
+          </div>
+
+          <div class="panel" style="margin-top:18px">
+            <div class="panel-head"><h3>Import from CSV</h3></div>
+            <p class="panel-sub">Paste a broker export with columns for date, symbol, side, quantity, price, and fees.</p>
+            <form id="tx-import-form" class="tx-import-form" autocomplete="off">
+              <textarea id="tx-import-text" class="tx-import-text" rows="4" placeholder="date,symbol,side,qty,price,fees&#10;2026-01-15,AAPL,buy,10,195.20,0"></textarea>
+              <div class="alert-settings-actions">
+                <button type="submit" class="btn btn-secondary btn-sm">Import</button>
+                <span id="tx-import-status" class="muted"></span>
+              </div>
+            </form>
+          </div>
+
+          <div class="card table-card" style="margin-top:18px">
+            <table class="peers">
+              <thead><tr><th>Date</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>Fees</th><th></th></tr></thead>
+              <tbody id="tx-body"></tbody>
+            </table>
+          </div>
+          <div id="tx-empty" class="empty-state hidden">No transactions recorded yet.</div>
+        </section>
+
+        <!-- Compare -->
+        <section id="view-compare" class="view">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Compare stocks</h1>
+              <p class="page-sub">Pick up to 4 symbols to compare price performance and key metrics side by side.</p>
+            </div>
+          </div>
+          <div class="panel">
+            <div id="compare-input-host"></div>
+          </div>
+          <div id="compare-results" style="margin-top:18px"></div>
+          <div id="compare-empty" class="empty-state">Add at least one symbol above to start comparing.</div>
         </section>
 
         <!-- Alerts -->

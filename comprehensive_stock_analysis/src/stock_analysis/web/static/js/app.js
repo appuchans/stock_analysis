@@ -4,12 +4,15 @@ import { initAnalyzeForm, refreshSymbol } from "./analyze.js";
 import { renderReport } from "./dashboard.js";
 import { loadHistory } from "./history.js";
 import { loadWatchlist } from "./watchlist.js";
+import { loadPortfolio } from "./portfolio.js";
+import { loadCompare } from "./compare.js";
 import { loadAlerts } from "./alerts.js";
 import { loadAutomation } from "./automation.js";
 
 const VIEWS = {
   new: "view-new", report: "view-report", history: "view-history",
-  watchlist: "view-watchlist", alerts: "view-alerts", automation: "view-automation",
+  watchlist: "view-watchlist", portfolio: "view-portfolio", compare: "view-compare",
+  alerts: "view-alerts", automation: "view-automation",
 };
 
 function showView(name) {
@@ -24,6 +27,8 @@ function route() {
   if (view === "report" && arg) { showView("report"); renderReport(arg); }
   else if (view === "history") { showView("history"); loadHistory(); }
   else if (view === "watchlist") { showView("watchlist"); loadWatchlist(); }
+  else if (view === "portfolio") { showView("portfolio"); loadPortfolio(); }
+  else if (view === "compare") { showView("compare"); loadCompare(); }
   else if (view === "alerts") { showView("alerts"); loadAlerts(); }
   else if (view === "automation") { showView("automation"); loadAutomation(); }
   else showView("new");

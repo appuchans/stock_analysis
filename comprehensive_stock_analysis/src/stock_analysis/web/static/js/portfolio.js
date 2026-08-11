@@ -1,6 +1,6 @@
 // Portfolio view: transactions ledger, live-priced positions, value/benchmark
 // charts, allocation donut, and an "advisor vs position" panel.
-import { $, el, fetchJSON, fmtNum, fmtMoney, badgeClass, theme, navigate } from "./util.js";
+import { $, el, fetchJSON, fmtNum, fmtMoney, badgeClass, theme, navigate, makeSortable } from "./util.js";
 
 let charts = [];
 let recBySymbol = {};
@@ -13,20 +13,32 @@ function destroyCharts() {
 export async function loadPortfolio() {
   $("#tx-form").onsubmit = onAddTransaction;
   $("#tx-import-form").onsubmit = onImportCsv;
+  $("#portfolio-refresh").onclick = onRefresh;
   await Promise.all([loadTransactions(), loadDashboard()]);
+}
+
+async function onRefresh() {
+  const btn = $("#portfolio-refresh");
+  btn.disabled = true;
+  try {
+    await loadDashboard();
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /* ── Transactions ──────────────────────────────────────────────────────── */
 
 async function loadTransactions() {
-  const body = $("#tx-body");
-  body.innerHTML = "";
   let items = [];
   try {
     items = await fetchJSON("/api/portfolio/transactions");
   } catch (_) { items = []; }
   $("#tx-empty").classList.toggle("hidden", items.length > 0);
-  items.slice().reverse().forEach((t) => body.append(txRow(t)));
+  const thead = $("#tx-body").closest("table").querySelector("thead");
+  makeSortable(thead, $("#tx-body"), items.slice().reverse(), txRow, [
+    (t) => t.date, (t) => t.symbol, (t) => t.side, (t) => t.qty, (t) => t.price, (t) => t.fees, null,
+  ]);
 }
 
 function txRow(t) {
@@ -149,19 +161,28 @@ function allocationAndTable(data) {
   return wrap;
 }
 
-function positionsTable(positions) {
-  const head = el("tr", {}, ["Symbol", "Qty", "Avg cost", "Price", "Value", "Unrl. P&L", "Weight"].map((h) => el("th", {}, h)));
-  const rows = positions.map((p) => el("tr", { class: "clickable", onclick: () => navigate(`#/report/${p.symbol}`) },
+function positionRow(p) {
+  return el("tr", { class: "clickable", onclick: () => navigate(`#/report/${p.symbol}`) },
     el("td", {}, p.symbol),
     el("td", {}, fmtNum(p.qty, 4)),
     el("td", {}, fmtMoney(p.avg_cost)),
     el("td", {}, fmtMoney(p.current_price)),
     el("td", {}, fmtMoney(p.market_value)),
     el("td", { class: deltaCls(p.unrealized_pnl) }, fmtMoney(p.unrealized_pnl)),
-    el("td", {}, p.weight != null ? fmtNum(p.weight * 100, 1) + "%" : "—")));
+    el("td", {}, p.weight != null ? fmtNum(p.weight * 100, 1) + "%" : "—"));
+}
+
+function positionsTable(positions) {
+  const head = el("tr", {}, ["Symbol", "Qty", "Avg cost", "Price", "Value", "Unrl. P&L", "Weight"].map((h) => el("th", {}, h)));
+  const thead = el("thead", {}, head);
+  const tbody = el("tbody", {});
+  const table = el("table", { class: "peers" }, thead, tbody);
+  makeSortable(thead, tbody, positions, positionRow, [
+    (p) => p.symbol, (p) => p.qty, (p) => p.avg_cost, (p) => p.current_price,
+    (p) => p.market_value, (p) => p.unrealized_pnl, (p) => p.weight,
+  ]);
   return el("div", { class: "panel" }, el("h3", {}, "Positions"),
-    el("div", { style: "margin-top:12px;overflow-x:auto" },
-      el("table", { class: "peers" }, el("thead", {}, head), el("tbody", {}, rows))));
+    el("div", { style: "margin-top:12px;overflow-x:auto" }, table));
 }
 
 function advisorVsPositionPanel(positions) {

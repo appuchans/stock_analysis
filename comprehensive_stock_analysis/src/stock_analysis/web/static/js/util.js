@@ -119,3 +119,64 @@ export function badgeClass(rec) {
   if (r.includes("hold")) return "badge-hold";
   return "badge-neutral";
 }
+
+// Delay `fn` until `ms` have passed with no further calls — for filter inputs.
+export function debounce(fn, ms = 250) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
+// Sort a copy of `items` by `accessor(item)`; strings use localeCompare,
+// everything else numeric comparison, nulls always sort last regardless of
+// direction. Shared comparator behind both sort helpers below.
+export function sortByAccessor(items, accessor, dir = 1) {
+  return items.slice().sort((a, b) => {
+    const av = accessor(a);
+    const bv = accessor(b);
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const cmp = typeof av === "string" ? av.localeCompare(bv) : av - bv;
+    return cmp * dir;
+  });
+}
+
+// Lower-level sort-header wiring for callers that already own their own
+// render loop (e.g. a table combined with an independent text filter, where
+// sort and filter must both apply on every render). `columns` is aligned 1:1
+// with the <th>s already in `thead`; a null entry marks that column as not
+// sortable. `onSort(accessor, dir)` fires on every header click/toggle —
+// the caller re-renders using `sortByAccessor(rows, accessor, dir)`.
+export function attachSortHeaders(thead, columns, onSort) {
+  const ths = $$("th", thead);
+  let sortIdx = null;
+  let sortDir = 1;
+  ths.forEach((th, i) => {
+    if (!columns[i]) return;
+    th.classList.add("sortable");
+    th.addEventListener("click", () => {
+      sortDir = sortIdx === i ? -sortDir : 1;
+      sortIdx = i;
+      ths.forEach((t, j) => {
+        t.classList.toggle("sort-asc", j === sortIdx && sortDir === 1);
+        t.classList.toggle("sort-desc", j === sortIdx && sortDir === -1);
+      });
+      onSort(columns[i], sortDir);
+    });
+  });
+}
+
+// All-in-one sortable table for the common case: no independent filter, the
+// helper owns tbody's contents entirely. `columns` is aligned 1:1 with the
+// <th>s already in `thead`; a null entry marks that column as not sortable.
+export function makeSortable(thead, tbody, data, renderRow, columns) {
+  function render(rows) {
+    tbody.innerHTML = "";
+    rows.forEach((item) => tbody.append(renderRow(item)));
+  }
+  attachSortHeaders(thead, columns, (accessor, dir) => render(sortByAccessor(data, accessor, dir)));
+  render(data);
+}

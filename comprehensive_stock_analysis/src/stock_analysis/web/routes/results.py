@@ -1,12 +1,13 @@
 """Serve a symbol's self-contained HTML report and chart-data JSON."""
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from .. import _paths
+from ..price_series import DEFAULT_PERIOD, fetch_price_series
 from ..schemas import RecHistoryResponse, RecommendationDiff
 
 router = APIRouter(prefix="/api/reports", tags=["results"])
@@ -32,6 +33,19 @@ def report_chart(symbol: str) -> FileResponse:
     return FileResponse(path, media_type="application/json")
 
 
+@router.get("/{symbol}/prices")
+def report_prices(
+    symbol: str, period: str = DEFAULT_PERIOD, compare: Optional[str] = None
+) -> Dict[str, Any]:
+    """Live price series for the report Overview chart: the report's own
+    symbol plus any user-added comparison symbols, for a selectable period."""
+    sym = _paths.safe_symbol(symbol)
+    if sym is None:
+        raise HTTPException(status_code=400, detail="invalid symbol")
+    compare_symbols = [s for s in (compare or "").split(",") if s.strip()]
+    return fetch_price_series([sym, *compare_symbols], period)
+
+
 @router.get("/{symbol}/diff", response_model=RecommendationDiff)
 def recommendation_diff(symbol: str) -> Dict[str, Any]:
     sym = _paths.safe_symbol(symbol)
@@ -50,7 +64,9 @@ def recommendation_diff(symbol: str) -> Dict[str, Any]:
         cur = json.loads(cur_path.read_text(encoding="utf-8"))
         prev = json.loads(prev_path.read_text(encoding="utf-8"))
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"failed to parse recommendation files: {exc}")
+        raise HTTPException(
+            status_code=500, detail=f"failed to parse recommendation files: {exc}"
+        )
 
     def _to_float(v: Any):
         try:
@@ -84,11 +100,18 @@ def recommendation_diff(symbol: str) -> Dict[str, Any]:
             "confidence": prev_conf,
             "risk_level": prev.get("risk_level"),
         },
-        "recommendation_changed": cur.get("recommendation") != prev.get("recommendation"),
-        "target_price_delta": (cur_price - prev_price)
-            if cur_price is not None and prev_price is not None else None,
-        "confidence_delta": (cur_conf - prev_conf)
-            if cur_conf is not None and prev_conf is not None else None,
+        "recommendation_changed": cur.get("recommendation")
+        != prev.get("recommendation"),
+        "target_price_delta": (
+            (cur_price - prev_price)
+            if cur_price is not None and prev_price is not None
+            else None
+        ),
+        "confidence_delta": (
+            (cur_conf - prev_conf)
+            if cur_conf is not None and prev_conf is not None
+            else None
+        ),
         "new_risks": [r for r in cur_risks if r not in prev_risks],
         "removed_risks": [r for r in prev_risks if r not in cur_risks],
         "new_opportunities": [o for o in cur_opps if o not in prev_opps],
