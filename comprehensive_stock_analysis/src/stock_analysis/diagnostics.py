@@ -185,8 +185,16 @@ def attach_uvicorn_logging(level: Optional[int] = None) -> None:
     console only — invisible in the persistent log. Call this *after*
     ``uvicorn.run`` has configured logging (i.e. from the app's lifespan hook).
     """
-    for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "asyncio"):
+    for name in ("uvicorn", "uvicorn.error", "asyncio"):
         lg = logging.getLogger(name)
         lg.propagate = True
         if level is not None:
             lg.setLevel(level)
+
+    # uvicorn.access logs a line per request — one page load is ~17 lines of
+    # static assets, which would bury the lifecycle records this module exists
+    # to preserve. Let it propagate only at WARNING+; uvicorn.error is the
+    # logger that actually carries startup/shutdown lines and tracebacks.
+    access = logging.getLogger("uvicorn.access")
+    access.propagate = True
+    access.setLevel(logging.WARNING)

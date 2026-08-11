@@ -131,7 +131,13 @@ class Settings(BaseSettings):
         return v.strip().lower()
 
     model_config = {
-        "env_file": ".env",
+        # Anchored to PROJECT_ROOT for the same reason the output paths are: a
+        # bare ".env" resolves against the *cwd*, so launching from anywhere
+        # other than the project directory silently loaded no settings at all —
+        # no API keys, no LOG_LEVEL — and the app started up looking healthy.
+        # A cwd-local .env is still honoured and still wins (later file wins in
+        # pydantic-settings), so an explicit per-directory override keeps working.
+        "env_file": (str(PROJECT_ROOT / ".env"), ".env"),
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
         "populate_by_name": True,

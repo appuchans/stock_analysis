@@ -10,12 +10,34 @@ import logging
 
 import pytest
 
-from stock_analysis.web.jobs import (
+from stock_analysis.web.jobs import (  # noqa: E402
     _SHUTDOWN_MESSAGE,
     Job,
     JobManager,
     _is_shutdown_error,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fresh_db(monkeypatch, tmp_path):
+    """Redirect the job store to a per-test SQLite file.
+
+    JobManager._run() persists through db, so without this these tests write
+    real rows into data/app.db — which happened once, leaving a bogus MSFT
+    "provider returned 500" job in the user's history.
+
+    report_output_dir is redirected for the same reason: _run()'s finally block
+    calls write_run_status(), which otherwise overwrites the real
+    reports/<SYM>/<SYM>_run_status.json and makes a genuinely completed run
+    show as failed in the gallery.
+    """
+    from stock_analysis.config import settings as settings_mod
+    from stock_analysis.web import db as db_mod
+
+    monkeypatch.setattr(db_mod, "_db_path", lambda: tmp_path / "jobs.db")
+    monkeypatch.setattr(db_mod, "_initialized", False)
+    monkeypatch.setattr(settings_mod.settings, "report_output_dir", str(tmp_path))
+    yield
 
 
 class TestShutdownErrorDetection:
