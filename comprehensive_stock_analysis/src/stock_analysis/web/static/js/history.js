@@ -1,5 +1,5 @@
 // History gallery: cards with sparkline + refresh, click → report view.
-import { $, el, fetchJSON, fmtNum, fmtMoney, badgeClass, navigate, sparkline, theme } from "./util.js";
+import { $, el, fetchJSON, fmtNum, fmtCompact, fmtMoney, badgeClass, navigate, sparkline, theme } from "./util.js";
 import { refreshSymbol } from "./analyze.js";
 
 let items = [];
@@ -55,6 +55,10 @@ function card(it) {
   const viewable = it.has_html;
   const upside = it.target_price && it.current_price
     ? ((it.target_price - it.current_price) / it.current_price) * 100 : null;
+  // Negative by construction (price sits at or below the 52w high), so it reads
+  // as a drawdown from the peak rather than a gain.
+  const offHigh = it.high_52w && it.current_price
+    ? ((it.current_price - it.high_52w) / it.high_52w) * 100 : null;
 
   const classes = ["report-card", viewable ? "viewable" : "not-viewable", completed ? recClass(it.recommendation) : ""];
   const node = el("div", { class: classes.filter(Boolean).join(" ") }, el("div", { class: "accent-rail" }));
@@ -82,14 +86,38 @@ function card(it) {
     node.append(row("AUM", it.aum_bn != null ? "$" + fmtNum(it.aum_bn, 2) + "B" : "—"));
     node.append(row("Expense", pctTxt(it.expense_ratio)));
     node.append(row("YTD", it.ytd_return != null ? pctEl(it.ytd_return) : "—"));
+    if (it.distribution_yield != null) node.append(row("Yield", pctTxt(it.distribution_yield)));
   } else if (completed) {
+    // Every row below is rendered only when its datum exists, so a tile is as
+    // full as the data allows rather than a fixed short list. Price and YTD are
+    // the two constants — YTD is derived from the charted series server-side,
+    // so it is present for stocks as well as ETFs.
     node.append(row("Price", fmtMoney(it.current_price)));
+    if (it.ytd_return != null) node.append(row("YTD", pctEl(it.ytd_return)));
     if (it.target_price != null) node.append(row("Target", fmtMoney(it.target_price)));
     if (upside !== null) node.append(row("Upside", upsideEl(upside)));
-    node.append(row("P/E", fmtNum(it.pe_ratio, 1)));
+    if (it.pe_ratio != null) node.append(row("P/E", fmtNum(it.pe_ratio, 1)));
+    if (it.market_cap != null) node.append(row("Mkt cap", fmtCompact(it.market_cap)));
+    if (it.dividend_yield != null) node.append(row("Yield", pctTxt(it.dividend_yield)));
+    if (it.beta != null) node.append(row("Beta", fmtNum(it.beta, 2)));
+    if (offHigh !== null) node.append(row("Off 52w high", upsideEl(offHigh)));
   } else {
     node.append(el("div", { class: "rc-row muted" }, el("span", {},
       viewable ? "Showing the last completed report" : "No report was produced")));
+  }
+
+  // A run can complete and still be missing data the tile needs (see
+  // run_review.py). Surface that here rather than leaving the user to notice a
+  // half-rendered card by eye.
+  if (completed && it.review && !it.review.ok) {
+    const detail = (it.review.issues || [])
+      .filter((i) => i.severity === "error")
+      .map((i) => i.detail)
+      .join("\n");
+    node.append(el("div", { class: "rc-row rc-review", title: detail },
+      el("span", { class: "lbl warn" }, "⚠ Incomplete data"),
+      el("span", { class: "num warn" },
+        it.review.error_count + (it.review.error_count === 1 ? " issue" : " issues"))));
   }
 
   node.append(el("div", { class: "rc-foot" },

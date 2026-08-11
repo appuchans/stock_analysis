@@ -88,6 +88,13 @@ class StockAnalysisState(BaseModel):
     recommendation: Dict[str, Any] = Field(default_factory=dict)
     report: str = ""
     errors: List[str] = Field(default_factory=list)
+    # Failures that were caught and worked around rather than aborting the run.
+    # The flow degrades by design (a partial report beats no report), but until
+    # these were recorded a degraded run was indistinguishable from a clean one:
+    # the recommendation crew 400'd on every run for over a week while the run
+    # still reported "completed". `errors` fails the run; `degradations` does
+    # not — it makes the compromise visible to the caller and the UI.
+    degradations: List[str] = Field(default_factory=list)
 
 
 def _step_callback(step_output: Any) -> None:
@@ -597,6 +604,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             bundle["chart"] = chart
         except Exception as exc:
             _logger.warning("Chart data generation failed: %s", exc)
+            self.state.degradations.append(
+                f"chart data: {exc} (the interactive Overview and every history "
+                "tile statistic are built from this file)"
+            )
 
         # Recorded once here (not at apply time) so it survives a cache hit and
         # always reflects when the underlying data was actually pulled — the
@@ -858,6 +869,11 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 self.state.symbol,
                 exc,
             )
+            self.state.degradations.append(
+                f"recommendation: {exc}"
+                " (no investment_recommendation.json — the report and history "
+                "tile lose their rating, target price and confidence)"
+            )
             return
 
         self.state.recommendation = {"result": rec_text}
@@ -922,6 +938,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 sym,
                 exc,
             )
+            self.state.degradations.append(
+                f"report narrative: {exc} (HTML falls back to the executive summary)"
+            )
             narrative = ""
 
         if narrative.count("## ") >= 3:
@@ -931,6 +950,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             _logger.warning(
                 "Narrative still malformed; "
                 "HTML will fall back to the executive summary"
+            )
+            self.state.degradations.append(
+                "report narrative: malformed (fewer than 3 sections) — HTML falls "
+                "back to the executive summary"
             )
             self.state.report = narrative
 
@@ -943,6 +966,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 self.state.report = rendered["report_path"]
         except Exception as exc:
             _logger.warning("HTML render failed for %s: %s", sym, exc)
+            self.state.degradations.append(
+                f"html render: {exc} (no viewable report for this run)"
+            )
 
     # ── public API ─────────────────────────────────────────────────────────────
 
@@ -962,6 +988,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             # Explicitly clear mutable state so repeated calls on the same
             # flow instance never bleed results from a prior symbol into the next.
             self.state.errors = []
+            self.state.degradations = []
             self.state.report = ""
             self.state.recommendation = {}
             self.state.technical = {}
@@ -986,6 +1013,16 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             )
             token_meter.check_alert()
             errors = list(self.state.errors)
+            degradations = list(self.state.degradations)
+            if degradations:
+                # Logged at WARNING at each site too, but a single consolidated
+                # line means one grep answers "what did this run not produce?"
+                _logger.warning(
+                    "[degraded] %s completed with %d degradation(s): %s",
+                    symbol,
+                    len(degradations),
+                    "; ".join(degradations),
+                )
             return {
                 "symbol": symbol,
                 "analysis_depth": analysis_depth,
@@ -994,6 +1031,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 "status": "failed" if errors else "completed",
                 "error": "; ".join(errors) if errors else None,
                 "errors": errors,
+                # Deliberately does not change `status`: a degraded run is still
+                # worth showing. It travels with the result so the caller can
+                # surface it instead of it living only in the log.
+                "degradations": degradations,
                 "token_usage": token_meter.snapshot(),
                 "tool_usage": tool_telemetry.snapshot(),
                 "llm_calls": _llm_calls_used(),

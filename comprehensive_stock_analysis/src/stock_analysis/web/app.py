@@ -51,7 +51,9 @@ async def _lifespan(_app: FastAPI):
 
         backfill_rec_history()
     except Exception:
-        pass  # best-effort; never block startup
+        # Best-effort; never block startup — but say so, or a permanently
+        # failing backfill looks identical to "there was nothing to backfill".
+        _logger.exception("rec_history backfill failed at startup (continuing)")
     scheduler.start()
     yield
     # Order matters: stop the scheduler first so nothing new is queued, then

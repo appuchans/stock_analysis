@@ -325,6 +325,11 @@ th.sortable.sort-desc::after { content: "\2193"; opacity: 1; color: var(--accent
 .rc-spark { display: block; width: 100%; height: 34px; margin: 4px 0 12px; }
 .rc-row { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
 .rc-row .lbl { color: var(--text-3); }
+/* Post-run review flag: a completed run missing data the tile needs. Sits
+   above the footer rule, muted rather than alarming — the card is still
+   usable, just incomplete. */
+.rc-review { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); cursor: help; }
+.rc-row .warn { color: var(--warn, #d99a2b); }
 .rc-foot { margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .rc-foot .when { font-size: 11.5px; color: var(--text-3); }
 .btn-refresh { color: var(--text-2); }

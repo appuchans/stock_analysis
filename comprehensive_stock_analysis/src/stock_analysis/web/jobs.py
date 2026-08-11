@@ -69,6 +69,9 @@ class Job:
     error: Optional[str] = None
     company_name: Optional[str] = None
     cancel_requested: bool = False
+    # Post-run display-contract verdict (see run_review.py); None until a run
+    # completes, since only a completed run has artifacts worth checking.
+    review: Optional[Dict[str, Any]] = None
     created_at: str = field(default_factory=_now)
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
@@ -281,14 +284,23 @@ class JobManager:
         job.tracker = progress.StageTracker()
         progress.set_active(job.tracker)
         self._persist(job)
+
+        # The outcome is accumulated here and only published onto `job` in the
+        # finally, *after* the status marker is on disk. Assigning job.state
+        # directly would make the job observably terminal while its artifacts
+        # were still being written: the UI polls every second, so it could see
+        # "completed" and open a report whose marker did not exist yet. That
+        # race was real and intermittently failed test_cancel_marks_job_aborted.
+        pending_state = "failed"
+        pending_stage = "Failed"
+        pending_error: Optional[str] = None
+        pending_progress: Optional[float] = None
         try:
             from ..tools.free_data_collection import resolve_symbol
 
             info = resolve_symbol(job.symbol)
             if info is None:
-                job.state = "failed"
-                job.stage = "Failed"
-                job.error = (
+                pending_error = (
                     f"'{job.symbol}' doesn't look like a valid stock or ETF symbol"
                 )
                 return
@@ -303,8 +315,15 @@ class JobManager:
                 prev = _p.prev_recommendation_path(job.symbol)
                 if cur and prev and cur.exists():
                     shutil.copy2(cur, prev)
-            except Exception:
-                pass
+            except Exception as exc:
+                # Not fatal, but the recommendation diff silently compares
+                # against a stale snapshot when this fails — say so.
+                _logger.warning(
+                    "could not archive previous recommendation for %s: %s "
+                    "(the before/after diff will be stale)",
+                    job.symbol,
+                    exc,
+                )
             app = StockAnalysisApp(
                 depth=job.depth,
                 asset_type=job.asset_type,
@@ -315,12 +334,12 @@ class JobManager:
             job.token_usage = result.get("token_usage") or {}
             job.llm_calls = int(result.get("llm_calls") or 0)
             if result.get("status") == "completed":
-                job.state = "completed"
-                job.stage = "Completed"
-                job.progress = 1.0
+                pending_state = "completed"
+                pending_stage = "Completed"
+                pending_progress = 1.0
             elif job.cancel_requested:
-                job.state = "aborted"
-                job.stage = "Aborted"
+                pending_state = "aborted"
+                pending_stage = "Aborted"
             elif _is_shutdown_error(result.get("error")):
                 # Not a real analysis failure — the process was going down.
                 # Classified by message as well as by flag, so a shutdown that
@@ -331,13 +350,13 @@ class JobManager:
                     job.id,
                     job.symbol,
                 )
-                job.state = "aborted"
-                job.stage = "Aborted"
-                job.error = _SHUTDOWN_MESSAGE
+                pending_state = "aborted"
+                pending_stage = "Aborted"
+                pending_error = _SHUTDOWN_MESSAGE
             else:
-                job.state = "failed"
-                job.error = result.get("error") or "analysis failed"
-                job.stage = "Failed"
+                pending_state = "failed"
+                pending_stage = "Failed"
+                pending_error = result.get("error") or "analysis failed"
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
             if _is_shutdown_error(str(exc)):
                 _logger.warning(
@@ -345,24 +364,46 @@ class JobManager:
                     job.id,
                     job.symbol,
                 )
-                job.state = "aborted"
-                job.stage = "Aborted"
-                job.error = _SHUTDOWN_MESSAGE
+                pending_state = "aborted"
+                pending_stage = "Aborted"
+                pending_error = _SHUTDOWN_MESSAGE
             else:
                 _logger.exception("analysis job %s failed", job.id)
-                job.state = "aborted" if job.cancel_requested else "failed"
-                job.stage = "Aborted" if job.cancel_requested else "Failed"
-                job.error = None if job.cancel_requested else str(exc)
+                pending_state = "aborted" if job.cancel_requested else "failed"
+                pending_stage = "Aborted" if job.cancel_requested else "Failed"
+                pending_error = None if job.cancel_requested else str(exc)
         finally:
-            job.finished_at = _now()
             progress.set_active(None)
-            self._persist(job)
+            # Review a completed run against the display contract before the
+            # status is written, so the marker carries the verdict. A run that
+            # "completed" can still be missing pieces the UI needs — the flow
+            # degrades rather than aborts by design — and nothing else notices.
+            if pending_state == "completed":
+                try:
+                    from .run_review import review_and_log
+
+                    job.review = review_and_log(
+                        job.symbol,
+                        degradations=(job.result or {}).get("degradations"),
+                    )
+                except Exception:  # review must never affect the outcome
+                    _logger.exception("run review failed for %s", job.symbol)
             try:
                 from .reports_index import write_run_status
 
-                write_run_status(job.symbol, job.state)
+                write_run_status(job.symbol, pending_state, review=job.review)
             except Exception:  # status persistence is best-effort
                 pass
+
+            # Publish the outcome only now: everything a client can reach after
+            # seeing a terminal state already exists on disk.
+            job.finished_at = _now()
+            job.stage = pending_stage
+            job.error = pending_error
+            if pending_progress is not None:
+                job.progress = pending_progress
+            job.state = pending_state
+            self._persist(job)
             self._post_run_alerts_and_history(job)
 
     def _post_run_alerts_and_history(self, job: Job) -> None:
@@ -385,7 +426,14 @@ class JobManager:
             if job.state == "completed" and cur_rec:
                 self._capture_rec_history(job, cur_rec)
         except Exception:
-            pass
+            # This block owns alert dispatch. Swallowing it silently meant a
+            # broken alert path looked exactly like "no alerts were due" —
+            # nothing anywhere would have said otherwise.
+            _logger.exception(
+                "post-run alerts/history failed for %s — any alerts due for "
+                "this run were NOT dispatched",
+                job.symbol,
+            )
 
     def _capture_rec_history(self, job: Job, rec: Dict[str, Any]) -> None:
         """Append a recommendation snapshot (raw material for the scorecard)."""
@@ -409,8 +457,14 @@ class JobManager:
                 confidence=_num(rec.get("confidence")),
                 price_at_rec=_num(price),
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            # Silent failure here leaves gaps in rec_history that only show up
+            # much later, as a recommendation trend with missing points.
+            _logger.warning(
+                "could not record recommendation history for %s: %s",
+                job.symbol,
+                exc,
+            )
 
     # ── startup recovery ─────────────────────────────────────────────────────
     def recover(self) -> None:

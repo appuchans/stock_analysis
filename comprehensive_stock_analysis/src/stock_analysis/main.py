@@ -107,6 +107,11 @@ class StockAnalysisApp:
                     result.get("llm_calls") or 0,
                 )
                 _print_tool_usage(symbol, result.get("tool_usage") or {})
+                # A run can complete having silently worked around a failed
+                # stage. Print that: the CLI has no history tile to show it on,
+                # and "completed" alone reads as "everything worked".
+                for degradation in result.get("degradations") or []:
+                    print(f"  Degraded: {degradation}")
                 report_path = result.get("report_path")
                 if not report_path:
                     report_dir = (

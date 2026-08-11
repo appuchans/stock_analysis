@@ -88,10 +88,16 @@ class HistoryItem(BaseModel):
     pe_ratio: Optional[float] = None
     high_52w: Optional[float] = None
     low_52w: Optional[float] = None
+    beta: Optional[float] = None
+    dividend_yield: Optional[float] = None
     aum_bn: Optional[float] = None
     expense_ratio: Optional[float] = None
     distribution_yield: Optional[float] = None
     ytd_return: Optional[float] = None
+    # Post-run display-contract verdict (run_review.py). Anything added to the
+    # gallery payload must be declared here — response_model filtering silently
+    # drops undeclared keys, so an omission looks like missing data, not a bug.
+    review: Optional[Dict[str, Any]] = None
     has_html: bool = False
     has_chart: bool = False
     spark: List[float] = Field(default_factory=list)

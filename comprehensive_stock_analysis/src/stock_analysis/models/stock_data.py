@@ -173,8 +173,16 @@ class InvestmentRecommendation(BaseModel):
     recommendation: RecommendationType = Field(
         ..., description="Investment recommendation"
     )
-    target_price: Optional[Decimal] = Field(None, description="Target price")
-    stop_loss: Optional[Decimal] = Field(None, description="Stop loss price")
+    # float, not Decimal, and this is load-bearing: this model is handed to
+    # CrewAI as `output_pydantic`, which becomes an OpenAI structured-output
+    # schema. Pydantic renders Decimal as anyOf[number, string] where the
+    # string branch carries the pattern "^(?!^[-+.]*$)...", and OpenAI rejects
+    # the (?!...) lookaround with "Invalid JSON schema: regex lookaround is not
+    # supported". That 400 failed the recommendation crew on every run, so no
+    # <SYM>_investment_recommendation.json was written and every report fell
+    # back to an N/A rating. Keep these JSON-schema-safe.
+    target_price: Optional[float] = Field(None, description="Target price")
+    stop_loss: Optional[float] = Field(None, description="Stop loss price")
     time_horizon: str = Field(..., description="Investment time horizon")
     risk_level: RiskLevel = Field(..., description="Risk level")
     confidence: float = Field(..., description="Confidence level (0-1)")
@@ -208,7 +216,7 @@ class InvestmentRecommendation(BaseModel):
             match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", v)
             if match is None:
                 return None
-            return Decimal(match.group(0).replace(",", ""))
+            return float(match.group(0).replace(",", ""))
         return v
 
     @field_validator("confidence")
