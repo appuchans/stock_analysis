@@ -32,6 +32,17 @@ _logger = logging.getLogger(__name__)
 _ACTIVE_STATES = ("queued", "running")
 _DEPTH_RANK = {"quick": 0, "standard": 1, "deep": 2}
 
+# Python sets a process-global flag at interpreter shutdown, after which every
+# ThreadPoolExecutor.submit() — ours and litellm's alike — raises this. An
+# analysis still running in the worker thread then fails one stage at a time
+# with a message that says nothing about the real cause, so translate it.
+_SHUTDOWN_ERROR = "cannot schedule new futures after shutdown"
+_SHUTDOWN_MESSAGE = "server shut down while the analysis was running"
+
+
+def _is_shutdown_error(text: Optional[str]) -> bool:
+    return bool(text) and _SHUTDOWN_ERROR in str(text)
+
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
@@ -76,6 +87,7 @@ class JobManager:
         self._active_id: Optional[str] = None
         self._lock = threading.Lock()
         self._recovered = False
+        self._shutting_down = False
 
     # ── persistence (best-effort — the in-memory queue is authoritative) ──────
     def _persist(self, job: Job) -> None:
@@ -196,6 +208,48 @@ class JobManager:
         )
         return True
 
+    def shutdown(self) -> None:
+        """Stop accepting work and abort any in-flight analysis.
+
+        Called from the web app's lifespan shutdown. Without it the worker
+        thread keeps running a doomed analysis while the interpreter tears
+        down: once Python's global executor-shutdown flag is set every
+        ``submit()`` in the process raises, so each remaining stage fails in
+        turn while the interpreter blocks joining the (non-daemon) worker.
+        That turned one Ctrl-C into a ~70s hang plus a job recorded as
+        ``failed`` with an inscrutable error. Aborting up front makes shutdown
+        prompt and the outcome honestly labelled ``aborted``.
+
+        Queued jobs are deliberately left in ``queued`` so ``recover()``
+        re-queues them on the next start rather than marking them failed.
+        """
+        with self._lock:
+            if self._shutting_down:
+                return
+            self._shutting_down = True
+            active = self._jobs.get(self._active_id) if self._active_id else None
+            queued = len(self._pending)
+            if active is not None:
+                active.cancel_requested = True
+
+        if active is not None:
+            from ..llm_budget import request_abort
+
+            request_abort()
+            _logger.warning(
+                "shutdown: aborting in-flight job %s (%s); %d queued job(s) "
+                "left for recovery on next start",
+                active.id,
+                active.symbol,
+                queued,
+            )
+        else:
+            _logger.info("shutdown: no active job; %d queued job(s) left", queued)
+
+        # Don't wait: abort is cooperative (it lands at the next LLM budget
+        # checkpoint), and cancel_futures stops queued work from starting.
+        self._executor.shutdown(wait=False, cancel_futures=True)
+
     # ── worker (runs in the single worker thread) ────────────────────────────
     def _run_wrapper(self, job_id: str) -> None:
         job = self._jobs.get(job_id)
@@ -267,15 +321,38 @@ class JobManager:
             elif job.cancel_requested:
                 job.state = "aborted"
                 job.stage = "Aborted"
+            elif _is_shutdown_error(result.get("error")):
+                # Not a real analysis failure — the process was going down.
+                # Classified by message as well as by flag, so a shutdown that
+                # bypasses JobManager.shutdown() (a hard kill) still reads
+                # correctly in history instead of as a mystery failure.
+                _logger.warning(
+                    "job %s (%s) ended because the server shut down mid-run",
+                    job.id,
+                    job.symbol,
+                )
+                job.state = "aborted"
+                job.stage = "Aborted"
+                job.error = _SHUTDOWN_MESSAGE
             else:
                 job.state = "failed"
                 job.error = result.get("error") or "analysis failed"
                 job.stage = "Failed"
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
-            _logger.exception("analysis job %s failed", job.id)
-            job.state = "aborted" if job.cancel_requested else "failed"
-            job.stage = "Aborted" if job.cancel_requested else "Failed"
-            job.error = None if job.cancel_requested else str(exc)
+            if _is_shutdown_error(str(exc)):
+                _logger.warning(
+                    "job %s (%s) ended because the server shut down mid-run",
+                    job.id,
+                    job.symbol,
+                )
+                job.state = "aborted"
+                job.stage = "Aborted"
+                job.error = _SHUTDOWN_MESSAGE
+            else:
+                _logger.exception("analysis job %s failed", job.id)
+                job.state = "aborted" if job.cancel_requested else "failed"
+                job.stage = "Aborted" if job.cancel_requested else "Failed"
+                job.error = None if job.cancel_requested else str(exc)
         finally:
             job.finished_at = _now()
             progress.set_active(None)

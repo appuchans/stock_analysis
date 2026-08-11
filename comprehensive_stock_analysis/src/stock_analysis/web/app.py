@@ -1,5 +1,6 @@
 """FastAPI application for the local stock-analysis web UI."""
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,6 +22,8 @@ from .routes import (
     watchlist,
 )
 
+_logger = logging.getLogger(__name__)
+
 _WEB_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _WEB_DIR / "static"
 _INDEX = _WEB_DIR / "templates" / "index.html"
@@ -28,6 +31,17 @@ _INDEX = _WEB_DIR / "templates" / "index.html"
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    # uvicorn configures its own logging with propagate=False, so its startup/
+    # shutdown lines and any event-loop traceback never reach our file handler.
+    # Re-attach here, once uvicorn's config is in place, so the persistent log
+    # records how the server ended and not just that it stopped.
+    try:
+        from .. import diagnostics
+
+        diagnostics.attach_uvicorn_logging()
+    except Exception:  # pragma: no cover - never block startup on logging
+        pass
+    _logger.info("application startup")
     # Resume any jobs still queued when the process last stopped.
     manager.recover()
     # Backfill rec_history from pre-existing report snapshots (idempotent —
@@ -40,7 +54,16 @@ async def _lifespan(_app: FastAPI):
         pass  # best-effort; never block startup
     scheduler.start()
     yield
+    # Order matters: stop the scheduler first so nothing new is queued, then
+    # abort the in-flight analysis. Skipping the second step is what let a
+    # doomed run grind on through interpreter teardown, failing every stage.
+    _logger.info("application shutdown starting")
     scheduler.stop()
+    try:
+        manager.shutdown()
+    except Exception:  # pragma: no cover - shutdown must never raise
+        _logger.exception("job manager shutdown failed")
+    _logger.info("application shutdown complete")
 
 
 app = FastAPI(
