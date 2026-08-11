@@ -245,6 +245,8 @@ def list_reports() -> List[Dict[str, Any]]:
                 "review": status_data.get("review"),
                 "asset_type": chart.get("asset_type"),
                 "recommendation": rec.get("recommendation"),
+                # The advisor's plain-English opening for the Overview.
+                "summary": rec.get("summary"),
                 "target_price": _num(rec.get("target_price")),
                 "confidence": rec.get("confidence"),
                 "risk_level": rec.get("risk_level"),

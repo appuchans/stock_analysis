@@ -80,6 +80,7 @@ class HistoryItem(BaseModel):
     status: str = "completed"  # completed | aborted | failed | incomplete
     asset_type: Optional[str] = None
     recommendation: Optional[str] = None
+    summary: Optional[str] = None
     target_price: Optional[float] = None
     confidence: Optional[Any] = None
     risk_level: Optional[str] = None

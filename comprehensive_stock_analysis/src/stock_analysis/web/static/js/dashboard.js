@@ -77,7 +77,7 @@ function buildDashboard() {
   // What the company is and where the stock stands, before any chart. Reading
   // six numeric tiles and a price line should not be the only way to find out
   // what you are looking at.
-  const summary = summaryPanel(company, chart, isEtf);
+  const summary = summaryPanel(company, chart, isEtf, rec);
   if (summary) host.append(summary);
   host.append(isEtf
     ? etfTiles(chart.key_stats || {}, chart.etf_profile || {}, symbol)
@@ -181,9 +181,17 @@ const meta = (k, v, cls) => el("span", {}, el("b", { class: cls || "" }, v), doc
 // the charts. Every part is conditional: with no description or no analyst
 // coverage the panel shrinks rather than showing empty scaffolding, and it is
 // omitted entirely when there is nothing worth saying.
-function summaryPanel(company, chart, isEtf) {
+function summaryPanel(company, chart, isEtf, rec) {
   const facts = companyFacts(company, chart, isEtf);
-  const points = stockSummaryPoints(chart, isEtf);
+  // Prefer the advisor's own two sentences — it can say *why* a stock moved
+  // ("stumbled after a Q2 miss and softer guidance"), which no amount of
+  // string assembly over price series can. The generated sentences stay as
+  // the fallback so a run whose recommendation stage failed still opens with
+  // something readable rather than nothing.
+  const written = (rec && typeof rec.summary === "string" && rec.summary.trim())
+    ? [{ a: rec.summary.trim() }]
+    : null;
+  const points = written || stockSummaryPoints(chart, isEtf);
   const description = (company.description || "").trim();
   if (!description && !facts.length && !points.length) return null;
 
@@ -250,137 +258,101 @@ function companyFacts(company, chart, isEtf) {
 // leans. Figures appear only where no chart carries them (e.g. earnings
 // timing). Deterministic and LLM-free, so it survives a failed recommendation
 // stage.
+// Plain-English opening: what the stock has actually done, whether that was
+// the company or just the market, and what has been in the news. Written the
+// way you would answer "how's it doing?" out loud.
+//
+// Explicitly NOT here: DCF bands, short interest, put/call ratios, target
+// dispersion. Those are analysis, and they belong further down the report
+// where a reader has asked for them — not as the first thing on the page.
 function stockSummaryPoints(chart, isEtf) {
   const stats = chart.key_stats || {};
-  const analyst = chart.analyst || {};
-  const counts = analyst.rating_counts || {};
-  const pt = analyst.price_targets || {};
   const noun = isEtf ? "The fund" : "The stock";
   const price = stats.current_price;
-
-  // ── "How is it doing?" — recent behaviour, in prose.
-  const doing = [];
-  const trend = trendPhrase(chart.price_history || [], price);
-  const range = rangePhrase(price, stats.low_52w, stats.high_52w);
-  if (trend || range) doing.push([trend, range].filter(Boolean).join(", ") + ".");
-
-  const rated = ["strong_buy", "buy", "hold", "sell", "strong_sell"]
-    .reduce((n, k) => n + (counts[k] || 0), 0);
-  if (rated > 0) {
-    const bullShare = ((counts.strong_buy || 0) + (counts.buy || 0)) / rated;
-    const bears = (counts.sell || 0) + (counts.strong_sell || 0);
-    let s = bullShare >= 0.8 ? "Analyst coverage is overwhelmingly positive"
-      : bullShare >= 0.6 ? "Analysts lean positive"
-      : bullShare >= 0.4 ? "Analysts are split"
-      : "Analysts lean cautious";
-    if (!bears && rated >= 5) s += ", with no sell ratings";
-    doing.push(s + ".");
-  }
-
-  // ── "Anything to keep in mind?" — the caveats and context behind that
-  // picture. Descriptive only: it lays out what the data shows and leaves the
-  // judgement to the reader.
-  const mind = [];
-  const dcf = dcfPhrase(chart.valuation_scenarios || [], price);
-  if (dcf) mind.push(dcf);
-
-  // Dispersion belongs here rather than above: a wide spread is the reason to
-  // treat the consensus target cautiously.
-  if (pt.mean && pt.high && pt.low) {
-    const spread = (pt.high - pt.low) / pt.mean;
-    if (spread > 0.6) {
-      mind.push("Price targets vary widely, so the consensus figure hides real disagreement about what it is worth.");
-    } else if (spread < 0.25) {
-      mind.push("Price targets cluster tightly, so there is little disagreement among analysts.");
-    }
-  }
-
-  if (!isEtf) {
-    const pos = positioningPhrase(chart.sentiment_snapshot || {});
-    if (pos) mind.push(pos);
-  }
-
-  const weeks = weeksUntil((chart.catalysts || {}).next_earnings_date);
-  if (weeks != null) {
-    mind.push(weeks <= 0 ? "Earnings are due imminently, which can move the price sharply."
-      : weeks <= 2 ? `Earnings land within ${weeks === 1 ? "a week" : "two weeks"}, which can move the price sharply.`
-      : `Earnings are roughly ${weeks} weeks away.`);
-  }
-
   const out = [];
-  if (doing.length) {
-    out.push({
-      q: isEtf ? "How is this fund doing?" : "How is the stock doing?",
-      a: doing.join(" ").replace(/^The stock |^The fund /, noun + " "),
-    });
+
+  const first = [];
+  const move = marketRelativePhrase(chart, price, noun);
+  if (move) first.push(move);
+  const range = rangeSentence(price, stats.low_52w, stats.high_52w, noun);
+  if (range) first.push(range);
+  if (first.length) out.push({ a: first.join(" ") });
+
+  const news = newsSentence(chart.news || [], chart.symbol, (chart.company || {}).name);
+  const weeks = weeksUntil((chart.catalysts || {}).next_earnings_date);
+  const second = [];
+  if (news) second.push(news);
+  if (weeks != null && weeks >= 0) {
+    second.push(weeks <= 1 ? "Earnings are due within the week."
+      : weeks <= 4 ? `Earnings are due in about ${weeks} weeks.`
+      : `Earnings are not due for another ${weeks} weeks.`);
   }
-  if (mind.length) {
-    out.push({ q: "Anything to keep in mind?", a: mind.join(" ") });
-  }
+  if (second.length) out.push({ a: second.join(" ") });
   return out;
 }
 
-function trendPhrase(history, price) {
-  const closes = history.map((p) => p && p.close).filter((c) => typeof c === "number");
+// The whole point of a benchmark: "down 8%" means nothing until you know the
+// market was down 10%.
+function marketRelativePhrase(chart, price, noun) {
+  const closes = (chart.price_history || []).map((p) => p && p.close).filter((c) => typeof c === "number");
   if (closes.length < 8 || !price) return "";
-  const ago = (n) => closes[Math.max(0, closes.length - 1 - n)];
-  const chg = (n) => { const a = ago(n); return a ? ((price - a) / a) * 100 : null; };
-  const m1 = chg(4), m6 = chg(26), y1 = closes.length >= 50 ? chg(52) : null;
-  if (m1 == null || m6 == null) return "";
-  const word = (v) => v > 12 ? "sharply higher" : v > 3 ? "higher" : v < -12 ? "sharply lower" : v < -3 ? "lower" : "roughly flat";
-  const near = word(m1), far = word(m6);
-  // Call out an inflection explicitly — a recovery reads very differently from
-  // a steady climb, and the price line alone makes you infer it.
-  let lead;
-  if (m1 > 3 && m6 < -3) lead = "Recovering after a weak six months";
-  else if (m1 < -3 && m6 > 3) lead = "Pulling back after a strong six months";
-  else if (near === far) lead = `Trading ${near} over both the past month and six months`;
-  else lead = `${near.charAt(0).toUpperCase() + near.slice(1)} over the past month, ${far} over six`;
-  // A strong recent run that still hasn't recovered the year is a materially
-  // different picture from one making new highs, and no chart states it.
-  if (y1 != null && m6 > 3 && y1 < -3) lead += ", though still below where it traded a year ago";
-  else if (y1 != null && m6 < -3 && y1 > 3) lead += ", though still above where it traded a year ago";
-  return lead;
+  const chg = (series, n) => {
+    const a = series[Math.max(0, series.length - 1 - n)];
+    const last = series[series.length - 1];
+    return a && last ? ((last - a) / a) * 100 : null;
+  };
+  const withPrice = closes.slice(0, -1).concat(price);
+  const m6 = chg(withPrice, 26);
+  if (m6 == null) return "";
+
+  const dir = m6 > 15 ? "risen strongly" : m6 > 3 ? "risen" : m6 < -15 ? "fallen sharply" : m6 < -3 ? "fallen" : "been broadly flat";
+  let s = `${noun} has ${dir} over the past six months`;
+
+  const bench = ((chart.benchmark || {}).history || []).map((p) => p && p.close).filter((c) => typeof c === "number");
+  const b6 = bench.length >= 27 ? chg(bench, 26) : null;
+  if (b6 != null) {
+    const gap = m6 - b6;
+    const raw = (chart.benchmark || {}).symbol || "the market";
+    const name = raw === "the market" ? raw : `the ${raw}`;
+    s += Math.abs(gap) < 3 ? `, broadly in line with ${name}`
+      : gap > 0 ? `, doing better than ${name}`
+      : `, lagging ${name}`;
+  }
+  return s + ".";
 }
 
-function rangePhrase(price, low, high) {
+function rangeSentence(price, low, high, noun) {
   if (!price || !low || !high || high <= low) return "";
   const pos = (price - low) / (high - low);
-  return pos >= 0.9 ? "and sits near the top of its 52-week range"
-    : pos >= 0.66 ? "in the upper part of its 52-week range"
-    : pos >= 0.33 ? "around the middle of its 52-week range"
-    : pos >= 0.1 ? "in the lower part of its 52-week range"
-    : "and sits near the bottom of its 52-week range";
+  const where = pos >= 0.9 ? "close to its highest point of the past year"
+    : pos >= 0.66 ? "nearer the top of its range for the past year"
+    : pos >= 0.33 ? "around the middle of its range for the past year"
+    : pos >= 0.1 ? "nearer the bottom of its range for the past year"
+    : "close to its lowest point of the past year";
+  return `That leaves it ${where}.`;
 }
 
-// The DCF panel plots the scenarios; what it doesn't say is which side of them
-// the market price falls on.
-function dcfPhrase(scenarios, price) {
-  if (!price || !scenarios.length) return "";
-  const val = (name) => (scenarios.find((s) => (s.scenario || "").toLowerCase() === name) || {}).intrinsic_per_share;
-  const bear = val("bear"), base = val("base"), bull = val("bull");
-  if (!base) return "";
-  if (bull && price > bull) return "The market price sits above even the bull-case DCF, so expectations run ahead of the model's assumptions.";
-  if (bear && price < bear) return "The market price sits below the bear-case DCF, so the model sees more value than the market does.";
-  if (price > base) return "The market price sits above the base-case DCF but within the bull case.";
-  return "The market price sits below the base-case DCF but above the bear case.";
-}
+// The actual reason a reader opens a report: what happened.
+//
+// Yahoo's feed mixes company stories with market-wide wire copy ("Stock Market
+// Today: Dow Falls…"). Taking the newest item surfaced that generic noise over
+// the company's own $240M deal, so prefer headlines that actually name the
+// company and fall back to the raw feed only when none do.
+function newsSentence(news, symbol, companyName) {
+  const items = news.filter((n) => n && n.title);
+  if (!items.length) return "";
 
-function positioningPhrase(sent) {
-  const bits = [];
-  if (sent.short_pct_of_float != null) {
-    bits.push(sent.short_pct_of_float < 2 ? "short interest is negligible"
-      : sent.short_pct_of_float < 5 ? "short interest is modest"
-      : sent.short_pct_of_float < 10 ? "short interest is elevated"
-      : "short interest is heavy");
-  }
-  if (sent.put_call_oi_ratio != null) {
-    bits.push(sent.put_call_oi_ratio < 0.7 ? "options positioning leans bullish"
-      : sent.put_call_oi_ratio > 1.3 ? "options positioning leans defensive"
-      : "options positioning is balanced");
-  }
-  if (!bits.length) return "";
-  return bits.join(" and ").replace(/^./, (c) => c.toUpperCase()) + ".";
+  const needles = [String(symbol || "").toLowerCase()];
+  const firstWord = String(companyName || "").split(/[\s,]+/)[0];
+  if (firstWord && firstWord.length > 3) needles.push(firstWord.toLowerCase());
+  const aboutCompany = items.filter((n) =>
+    needles.some((w) => w && n.title.toLowerCase().includes(w)));
+
+  const chosen = (aboutCompany.length ? aboutCompany : items).slice(0, 2);
+  const cite = (n) => `“${n.title}”` + (n.publisher ? ` (${n.publisher})` : "");
+  let s = `In the news: ${cite(chosen[0])}.`;
+  if (chosen[1]) s += ` Also: ${cite(chosen[1])}.`;
+  return s;
 }
 
 function weeksUntil(iso) {

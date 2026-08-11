@@ -212,6 +212,18 @@ recommendation:
     A smart reader who knows nothing about this stock should finish your memo
     understanding the business and your investment thesis.
 
+    Also fill the `summary` field: two sentences, plain spoken English, of the
+    kind you would say to a friend who asked how this stock is doing and
+    whether to buy it. Lead with how it has actually performed and what drove
+    it — an earnings miss, a guidance change, a major deal — then what kind of
+    holding it is and the main reservation. No jargon, no ratios, no DCF or
+    positioning talk. This is read first, above the charts, so it must stand
+    on its own. For example:
+      "IBM's stock is up solidly this year but stumbled after a Q2 earnings
+      miss and softer guidance, so growth momentum looks shaky. It's a decent,
+      income-generating holding thanks to steady cash flow and dividends, but
+      not a strong growth bet right now."
+
     Analyses to draw from:
     {analyses_summary}
 
@@ -221,7 +233,8 @@ recommendation:
     the prior calls recorded above, and explain why.
   expected_output: >-
     Investment recommendation: type, target price, stop-loss, time horizon,
-    confidence, reasoning, risks, opportunities.
+    confidence, summary (two plain-English sentences), reasoning, risks,
+    opportunities.
 
 report:
   description: |

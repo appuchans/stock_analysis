@@ -183,6 +183,12 @@ class InvestmentRecommendation(BaseModel):
     # back to an N/A rating. Keep these JSON-schema-safe.
     target_price: Optional[float] = Field(None, description="Target price")
     stop_loss: Optional[float] = Field(None, description="Stop loss price")
+    # Two plain-spoken sentences shown at the top of the Overview, above the
+    # charts. Optional so an older recommendation file still validates.
+    summary: Optional[str] = Field(
+        None,
+        description="Two plain-English sentences: how it is doing and what to know",
+    )
     time_horizon: str = Field(..., description="Investment time horizon")
     risk_level: RiskLevel = Field(..., description="Risk level")
     confidence: float = Field(..., description="Confidence level (0-1)")

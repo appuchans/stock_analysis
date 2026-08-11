@@ -537,6 +537,43 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             # these replace the stock-only tiles (P/E, beta, analyst target).
             if structured.get("etf_profile"):
                 chart["etf_profile"] = structured["etf_profile"]
+
+            # Recent headlines: the "why" behind a price move, and the first
+            # thing a reader wants at the top of a report. Collected already —
+            # it simply was not reaching the UI.
+            news = (yf_result or {}).get("recent_news") or []
+            if news:
+                chart["news"] = [
+                    {
+                        "title": n.get("title"),
+                        "publisher": n.get("publisher"),
+                        "published": n.get("published"),
+                    }
+                    for n in news[:5]
+                    if n.get("title")
+                ]
+
+            # S&P 500 over the same weekly grid, so the report can say whether
+            # a move was the company or simply the market. Without a benchmark
+            # "down 8%" is unreadable — it means nothing in a market down 10%.
+            try:
+                import yfinance as _yf
+
+                spx = _yf.Ticker("^GSPC").history(period="1y", interval="1wk")
+                if spx is not None and not spx.empty:
+                    chart["benchmark"] = {
+                        "symbol": "S&P 500",
+                        "history": [
+                            {
+                                "date": idx.date().isoformat(),
+                                "close": round(float(row["Close"]), 2),
+                            }
+                            for idx, row in spx.iterrows()
+                            if row["Close"] == row["Close"]
+                        ],
+                    }
+            except Exception as exc:
+                _logger.debug("benchmark history unavailable: %s", exc)
             if hist is not None and not hist.empty:
                 chart["price_history"] = [
                     {
