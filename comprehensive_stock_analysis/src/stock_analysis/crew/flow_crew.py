@@ -523,6 +523,15 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 "sector": ci.get("sector"),
                 "industry": ci.get("industry"),
                 "exchange": ci.get("exchange"),
+                # CompanyInfo already collects these; they were being dropped
+                # here, which left the Overview with no way to say what the
+                # company actually does.
+                "description": ci.get("description"),
+                "employees": ci.get("employees"),
+                "country": ci.get("country"),
+                "headquarters": ci.get("headquarters"),
+                "ceo": ci.get("ceo"),
+                "currency": ci.get("currency"),
             }
             # ETF fund facts (expense ratio, AUM, yield, …) for the dashboard —
             # these replace the stock-only tiles (P/E, beta, analyst target).

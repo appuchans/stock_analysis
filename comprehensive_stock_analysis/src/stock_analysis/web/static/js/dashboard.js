@@ -74,6 +74,11 @@ function buildDashboard() {
   if (chart.data_fetched_at) host.append(freshnessChip(chart.data_fetched_at));
   if (rec && rec.recommendation) host.append(recBanner(rec));
   if (diff && diff.has_diff) host.append(diffPanel(diff));
+  // What the company is and where the stock stands, before any chart. Reading
+  // six numeric tiles and a price line should not be the only way to find out
+  // what you are looking at.
+  const summary = summaryPanel(company, chart, isEtf);
+  if (summary) host.append(summary);
   host.append(isEtf
     ? etfTiles(chart.key_stats || {}, chart.etf_profile || {}, symbol)
     : keyTiles(chart.key_stats || {}, chart.analyst || {}));
@@ -170,6 +175,220 @@ function recBanner(rec) {
   );
 }
 const meta = (k, v, cls) => el("span", {}, el("b", { class: cls || "" }, v), document.createTextNode(k));
+
+// ── Summary ────────────────────────────────────────────────────────────────
+// Company identity + a plain-language read on where the stock stands, above
+// the charts. Every part is conditional: with no description or no analyst
+// coverage the panel shrinks rather than showing empty scaffolding, and it is
+// omitted entirely when there is nothing worth saying.
+function summaryPanel(company, chart, isEtf) {
+  const facts = companyFacts(company, chart, isEtf);
+  const points = stockSummaryPoints(chart, isEtf);
+  const description = (company.description || "").trim();
+  if (!description && !facts.length && !points.length) return null;
+
+  const body = el("div", { class: "summary-body" });
+
+  if (description) {
+    // Long yfinance summaries run several hundred words; clamp with CSS and
+    // let the user expand, so the charts stay above the fold.
+    const p = el("p", { class: "summary-desc is-clamped" }, description);
+    body.append(p);
+    if (description.length > 320) {
+      const toggle = el("button", { class: "btn btn-ghost btn-sm summary-more" }, "Show more");
+      toggle.addEventListener("click", () => {
+        const clamped = p.classList.toggle("is-clamped");
+        toggle.textContent = clamped ? "Show more" : "Show less";
+      });
+      body.append(toggle);
+    }
+  }
+
+  if (facts.length) {
+    body.append(el("div", { class: "summary-facts" },
+      facts.map(([k, v]) => el("div", { class: "summary-fact" },
+        el("span", { class: "k" }, k),
+        v && v.nodeType ? v : el("span", { class: "v" }, v)))));
+  }
+
+  if (points.length) {
+    // The two questions these paragraphs answer ("how is it doing", "anything
+    // to keep in mind") shape the content but are not shown — the prose reads
+    // as the answer, not as a FAQ.
+    body.append(el("div", { class: "summary-read" },
+      points.map(({ a }) => el("p", { class: "summary-para" }, a))));
+  }
+
+  return el("div", { class: "panel summary-panel" },
+    el("h3", {}, isEtf ? "About this fund" : "About the company"),
+    body);
+}
+
+function companyFacts(company, chart, isEtf) {
+  const out = [];
+  const line = [company.sector, company.industry].filter(Boolean).join(" · ");
+  if (line) out.push(["Sector", line]);
+  if (company.headquarters || company.country) {
+    out.push(["Headquarters", [company.headquarters, company.country].filter(Boolean).join(", ")]);
+  }
+  if (company.employees) out.push(["Employees", fmtCompact(company.employees)]);
+  if (company.ceo) out.push(["CEO", company.ceo]);
+  if (company.exchange) out.push(["Listed on", company.exchange]);
+  if (company.website) {
+    // rel=noopener: the report is user-supplied content reached from a fetch.
+    out.push(["Website", el("a", {
+      class: "v", href: company.website, target: "_blank", rel: "noopener noreferrer",
+    }, company.website.replace(/^https?:\/\//, ""))]);
+  }
+  return out;
+}
+
+// Qualitative characterisations, not a re-reading of the tiles and charts —
+// those already show the numbers. Each line says what the data *means*: where
+// the stock sits in its own recent range, how one-sided analyst coverage is,
+// whether the price sits inside or outside the DCF band, how positioning
+// leans. Figures appear only where no chart carries them (e.g. earnings
+// timing). Deterministic and LLM-free, so it survives a failed recommendation
+// stage.
+function stockSummaryPoints(chart, isEtf) {
+  const stats = chart.key_stats || {};
+  const analyst = chart.analyst || {};
+  const counts = analyst.rating_counts || {};
+  const pt = analyst.price_targets || {};
+  const noun = isEtf ? "The fund" : "The stock";
+  const price = stats.current_price;
+
+  // ── "How is it doing?" — recent behaviour, in prose.
+  const doing = [];
+  const trend = trendPhrase(chart.price_history || [], price);
+  const range = rangePhrase(price, stats.low_52w, stats.high_52w);
+  if (trend || range) doing.push([trend, range].filter(Boolean).join(", ") + ".");
+
+  const rated = ["strong_buy", "buy", "hold", "sell", "strong_sell"]
+    .reduce((n, k) => n + (counts[k] || 0), 0);
+  if (rated > 0) {
+    const bullShare = ((counts.strong_buy || 0) + (counts.buy || 0)) / rated;
+    const bears = (counts.sell || 0) + (counts.strong_sell || 0);
+    let s = bullShare >= 0.8 ? "Analyst coverage is overwhelmingly positive"
+      : bullShare >= 0.6 ? "Analysts lean positive"
+      : bullShare >= 0.4 ? "Analysts are split"
+      : "Analysts lean cautious";
+    if (!bears && rated >= 5) s += ", with no sell ratings";
+    doing.push(s + ".");
+  }
+
+  // ── "Anything to keep in mind?" — the caveats and context behind that
+  // picture. Descriptive only: it lays out what the data shows and leaves the
+  // judgement to the reader.
+  const mind = [];
+  const dcf = dcfPhrase(chart.valuation_scenarios || [], price);
+  if (dcf) mind.push(dcf);
+
+  // Dispersion belongs here rather than above: a wide spread is the reason to
+  // treat the consensus target cautiously.
+  if (pt.mean && pt.high && pt.low) {
+    const spread = (pt.high - pt.low) / pt.mean;
+    if (spread > 0.6) {
+      mind.push("Price targets vary widely, so the consensus figure hides real disagreement about what it is worth.");
+    } else if (spread < 0.25) {
+      mind.push("Price targets cluster tightly, so there is little disagreement among analysts.");
+    }
+  }
+
+  if (!isEtf) {
+    const pos = positioningPhrase(chart.sentiment_snapshot || {});
+    if (pos) mind.push(pos);
+  }
+
+  const weeks = weeksUntil((chart.catalysts || {}).next_earnings_date);
+  if (weeks != null) {
+    mind.push(weeks <= 0 ? "Earnings are due imminently, which can move the price sharply."
+      : weeks <= 2 ? `Earnings land within ${weeks === 1 ? "a week" : "two weeks"}, which can move the price sharply.`
+      : `Earnings are roughly ${weeks} weeks away.`);
+  }
+
+  const out = [];
+  if (doing.length) {
+    out.push({
+      q: isEtf ? "How is this fund doing?" : "How is the stock doing?",
+      a: doing.join(" ").replace(/^The stock |^The fund /, noun + " "),
+    });
+  }
+  if (mind.length) {
+    out.push({ q: "Anything to keep in mind?", a: mind.join(" ") });
+  }
+  return out;
+}
+
+function trendPhrase(history, price) {
+  const closes = history.map((p) => p && p.close).filter((c) => typeof c === "number");
+  if (closes.length < 8 || !price) return "";
+  const ago = (n) => closes[Math.max(0, closes.length - 1 - n)];
+  const chg = (n) => { const a = ago(n); return a ? ((price - a) / a) * 100 : null; };
+  const m1 = chg(4), m6 = chg(26), y1 = closes.length >= 50 ? chg(52) : null;
+  if (m1 == null || m6 == null) return "";
+  const word = (v) => v > 12 ? "sharply higher" : v > 3 ? "higher" : v < -12 ? "sharply lower" : v < -3 ? "lower" : "roughly flat";
+  const near = word(m1), far = word(m6);
+  // Call out an inflection explicitly — a recovery reads very differently from
+  // a steady climb, and the price line alone makes you infer it.
+  let lead;
+  if (m1 > 3 && m6 < -3) lead = "Recovering after a weak six months";
+  else if (m1 < -3 && m6 > 3) lead = "Pulling back after a strong six months";
+  else if (near === far) lead = `Trading ${near} over both the past month and six months`;
+  else lead = `${near.charAt(0).toUpperCase() + near.slice(1)} over the past month, ${far} over six`;
+  // A strong recent run that still hasn't recovered the year is a materially
+  // different picture from one making new highs, and no chart states it.
+  if (y1 != null && m6 > 3 && y1 < -3) lead += ", though still below where it traded a year ago";
+  else if (y1 != null && m6 < -3 && y1 > 3) lead += ", though still above where it traded a year ago";
+  return lead;
+}
+
+function rangePhrase(price, low, high) {
+  if (!price || !low || !high || high <= low) return "";
+  const pos = (price - low) / (high - low);
+  return pos >= 0.9 ? "and sits near the top of its 52-week range"
+    : pos >= 0.66 ? "in the upper part of its 52-week range"
+    : pos >= 0.33 ? "around the middle of its 52-week range"
+    : pos >= 0.1 ? "in the lower part of its 52-week range"
+    : "and sits near the bottom of its 52-week range";
+}
+
+// The DCF panel plots the scenarios; what it doesn't say is which side of them
+// the market price falls on.
+function dcfPhrase(scenarios, price) {
+  if (!price || !scenarios.length) return "";
+  const val = (name) => (scenarios.find((s) => (s.scenario || "").toLowerCase() === name) || {}).intrinsic_per_share;
+  const bear = val("bear"), base = val("base"), bull = val("bull");
+  if (!base) return "";
+  if (bull && price > bull) return "The market price sits above even the bull-case DCF, so expectations run ahead of the model's assumptions.";
+  if (bear && price < bear) return "The market price sits below the bear-case DCF, so the model sees more value than the market does.";
+  if (price > base) return "The market price sits above the base-case DCF but within the bull case.";
+  return "The market price sits below the base-case DCF but above the bear case.";
+}
+
+function positioningPhrase(sent) {
+  const bits = [];
+  if (sent.short_pct_of_float != null) {
+    bits.push(sent.short_pct_of_float < 2 ? "short interest is negligible"
+      : sent.short_pct_of_float < 5 ? "short interest is modest"
+      : sent.short_pct_of_float < 10 ? "short interest is elevated"
+      : "short interest is heavy");
+  }
+  if (sent.put_call_oi_ratio != null) {
+    bits.push(sent.put_call_oi_ratio < 0.7 ? "options positioning leans bullish"
+      : sent.put_call_oi_ratio > 1.3 ? "options positioning leans defensive"
+      : "options positioning is balanced");
+  }
+  if (!bits.length) return "";
+  return bits.join(" and ").replace(/^./, (c) => c.toUpperCase()) + ".";
+}
+
+function weeksUntil(iso) {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return null;
+  return Math.round((then - Date.now()) / (7 * 24 * 3600 * 1000));
+}
 
 function tiles(items) {
   return el("div", { class: "tiles" }, items.filter(Boolean).map((it) =>
