@@ -660,7 +660,9 @@ _BACKTICKED_IDENT_RE = re.compile(r"`[A-Za-z0-9_]+(?:[._\[\]][A-Za-z0-9_ \[\]]*)
 # '**Source:** user-provided "4. Financial Performance → annual_income"'.
 # Outside the appendix the entire line goes; keeping it would leave a dangling
 # bold "Source:" label with nothing useful after it.
-_SOURCE_LINE_RE = re.compile(r"^\s*(?:[-*+]\s+)?[*_]{0,2}\s*sources?\b[*_]{0,2}\s*:", re.IGNORECASE)
+_SOURCE_LINE_RE = re.compile(
+    r"^\s*(?:[-*+]\s+)?[*_]{0,2}\s*sources?\b[*_]{0,2}\s*:", re.IGNORECASE
+)
 
 
 # Pipeline narration: which source answered, what a run did or did not fetch.
@@ -724,7 +726,9 @@ def _strip_run_commentary(line: str) -> str:
     # and an orphaned connective left dangling at the end of a clause.
     out = re.sub(r"\s+([.,;:)])", r"\1", out)
     out = re.sub(r"\(\s*\)", "", out)
-    out = re.sub(r"\b(?:though|however|although|but|while)\s*([.;,])", r"\1", out, flags=re.I)
+    out = re.sub(
+        r"\b(?:though|however|although|but|while)\s*([.;,])", r"\1", out, flags=re.I
+    )
     out = re.sub(r"[ \t]{2,}", " ", out)
     return out
 
@@ -741,7 +745,11 @@ def _write_run_report(symbol: str, gaps: List[Tuple[str, str]]) -> Optional[Path
     """
     if not gaps:
         return None
-    path = Path(settings.report_output_dir) / symbol.upper() / f"{symbol.upper()}_run_report.md"
+    path = (
+        Path(settings.report_output_dir)
+        / symbol.upper()
+        / f"{symbol.upper()}_run_report.md"
+    )
     lines = [
         f"# {symbol.upper()} — Run Report",
         "",

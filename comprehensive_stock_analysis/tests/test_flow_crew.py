@@ -290,9 +290,7 @@ class TestPremiumProviderEnrichment:
         flow._enrich_with_premium_providers("AAPL", structured)
         assert structured == {}
 
-    def test_non_deep_depth_gets_segments_but_not_the_bulky_extras(
-        self, monkeypatch
-    ):
+    def test_non_deep_depth_gets_segments_but_not_the_bulky_extras(self, monkeypatch):
         """Segments are one small dict and the most-asked-for fundamental fact,
         so they run at every depth; the transcript alone roughly doubles prompt
         volume, so it stays gated to deep."""
@@ -338,7 +336,10 @@ class TestPremiumProviderEnrichment:
         monkeypatch.setattr(
             ROUTER,
             "get_filing_sections",
-            lambda symbol: {"sections": {"risk_factors": "x" * 300}, "source": "sec_api"},
+            lambda symbol: {
+                "sections": {"risk_factors": "x" * 300},
+                "source": "sec_api",
+            },
         )
 
         flow = self._make_flow(depth="standard")

@@ -240,8 +240,20 @@ class TestRedditOAuth:
                 return {
                     "data": {
                         "children": [
-                            {"data": {"score": 10, "num_comments": 4, "upvote_ratio": 0.9}},
-                            {"data": {"score": 20, "num_comments": 6, "upvote_ratio": 0.7}},
+                            {
+                                "data": {
+                                    "score": 10,
+                                    "num_comments": 4,
+                                    "upvote_ratio": 0.9,
+                                }
+                            },
+                            {
+                                "data": {
+                                    "score": 20,
+                                    "num_comments": 6,
+                                    "upvote_ratio": 0.7,
+                                }
+                            },
                         ]
                     }
                 }
@@ -259,7 +271,8 @@ class TestRedditOAuth:
 
         monkeypatch.setattr(ss, "_reddit_oauth_token", lambda: "tok")
         monkeypatch.setattr(
-            ss, "_fetch_reddit_oauth",
+            ss,
+            "_fetch_reddit_oauth",
             lambda *a: (_ for _ in ()).throw(RuntimeError("429")),
         )
         monkeypatch.setattr(ss, "_fetch_reddit_json", lambda s: {"via": "json"})
@@ -277,8 +290,13 @@ class TestRedditOAuth:
                 return {
                     "data": {
                         "children": [
-                            {"data": {"score": 1, "title": "AMZN TO THE MOON",
-                                      "selftext": "buy now"}}
+                            {
+                                "data": {
+                                    "score": 1,
+                                    "title": "AMZN TO THE MOON",
+                                    "selftext": "buy now",
+                                }
+                            }
                         ]
                     }
                 }

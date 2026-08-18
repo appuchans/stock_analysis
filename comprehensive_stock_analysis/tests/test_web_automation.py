@@ -183,7 +183,9 @@ class TestEarningsWithinDaysRule:
         monkeypatch.setattr(
             router_mod.ROUTER,
             "get_calendar",
-            lambda s: {"next_earnings": {"date": earnings_date}} if earnings_date else {},
+            lambda s: (
+                {"next_earnings": {"date": earnings_date}} if earnings_date else {}
+            ),
         )
         fired = []
         monkeypatch.setattr(

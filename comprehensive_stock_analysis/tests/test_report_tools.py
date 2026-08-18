@@ -619,9 +619,7 @@ class TestPrintStylesheet:
         # affordances with no meaning on paper.
         assert ".toc, .to-top { display: none; }" in print_css
 
-    def test_beforeprint_handler_still_present_for_standalone_viewing(
-        self, report_dir
-    ):
+    def test_beforeprint_handler_still_present_for_standalone_viewing(self, report_dir):
         """Belt and braces: when the report is opened directly, script runs and
         opens the panels too, so they are expanded on screen as well as in the
         PDF."""

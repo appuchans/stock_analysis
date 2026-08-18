@@ -368,3 +368,73 @@ class TestInvestorFeatureSummarizers:
 
         monkeypatch.setattr(builtins, "__import__", _no_pytrends)
         assert ys.summarize_search_interest("NVDA") == {}
+
+
+class TestHolderAggregation:
+    """13F filer rows must collapse to economic owners before truncation."""
+
+    def test_filers_merge_into_one_family(self):
+        from src.stock_analysis.tools.yf_summaries import _aggregate_holders
+
+        rows = _aggregate_holders(
+            [
+                {
+                    "Holder": "Vanguard Capital Management",
+                    "pctHeld": 0.065,
+                    "Value": 240_000_000_000,
+                },
+                {
+                    "Holder": "Vanguard Portfolio Management",
+                    "pctHeld": 0.0226,
+                    "Value": 83_000_000_000,
+                },
+                {
+                    "Holder": "Blackrock Inc.",
+                    "pctHeld": 0.071,
+                    "Value": 262_000_000_000,
+                },
+            ]
+        )
+        vanguard = next(r for r in rows if r["holder"] == "Vanguard Group")
+        # 6.50% + 2.26% — reported separately this understated the real stake.
+        assert vanguard["pct_held"] == 8.76
+        assert vanguard["filers"] == 2
+        # A single-filer holder carries no filer count.
+        assert "filers" not in next(r for r in rows if r["holder"] == "BlackRock")
+
+    def test_merge_happens_before_truncation(self):
+        """A split holder must not lose slots to its own duplicate rows."""
+        from src.stock_analysis.tools.yf_summaries import _aggregate_holders
+
+        records = [
+            {"Holder": f"Vanguard Fund {i}", "pctHeld": 0.01, "Value": 1e9}
+            for i in range(8)
+        ] + [{"Holder": "Real Holder", "pctHeld": 0.05, "Value": 5e9}]
+        rows = _aggregate_holders(records, top=2)
+        assert [r["holder"] for r in rows] == ["Vanguard Group", "Real Holder"]
+
+
+class TestDividendCagr:
+    def test_partial_current_year_excluded(self):
+        """The in-progress year must not be compared against full years.
+
+        MSFT scored -4.6% while the payout was rising, because 2026 had only
+        two of four payments banked.
+        """
+        from datetime import datetime
+
+        from src.stock_analysis.tools.yf_summaries import summarize_dividends_splits
+
+        this_year = datetime.now().year
+        first_year = this_year - 6
+        dates, amounts = [], []
+        for year in range(first_year, this_year + 1):
+            paid = 2 if year == this_year else 4  # current year still in progress
+            for q in range(paid):
+                dates.append(pd.Timestamp(f"{year}-{3 * q + 1:02d}-15"))
+                amounts.append(0.50 + 0.05 * (year - first_year))
+        out = summarize_dividends_splits(
+            _FakeTicker(dividends=pd.Series(amounts, index=pd.DatetimeIndex(dates)))
+        )
+        assert out["dividend_cagr_5y_pct"] > 0
+        assert out["dividend_cagr_window"] == f"{first_year}-{this_year - 1}"

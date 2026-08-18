@@ -675,10 +675,10 @@ class TestSecApiProvider:
                     },
                     "nonDerivativeTable": {
                         "transactions": [
-                            _txn("S", True, 100, 10.0),   # open-market sale
-                            _txn("P", False, 50, 10.0),   # open-market buy
-                            _txn("G", True, 9999, 0),     # gift — must be excluded
-                            _txn("A", False, 5000, 0),    # grant — must be excluded
+                            _txn("S", True, 100, 10.0),  # open-market sale
+                            _txn("P", False, 50, 10.0),  # open-market buy
+                            _txn("G", True, 9999, 0),  # gift — must be excluded
+                            _txn("A", False, 5000, 0),  # grant — must be excluded
                         ]
                     },
                 }
@@ -745,7 +745,9 @@ class TestSecApiProvider:
 
         class _GetResp:
             status_code = 200
-            text = "Item 1. Business ##TABLE_END Management&#8217;s view. " + "y" * 20000
+            text = (
+                "Item 1. Business ##TABLE_END Management&#8217;s view. " + "y" * 20000
+            )
 
         monkeypatch.setattr(sec_api._http, "post", lambda *a, **k: _PostResp())
         monkeypatch.setattr(sec_api._http, "get", lambda *a, **k: _GetResp())

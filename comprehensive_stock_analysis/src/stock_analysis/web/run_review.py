@@ -243,19 +243,49 @@ _LEAK_PATTERNS: List[Tuple[str, "re.Pattern[str]"]] = [
         re.compile(r"RIGOR REQUIREMENTS|expected_output|analyses_summary"),
     ),
     (
+        # The reader is told about the machinery that produced the report:
+        # "the data package provided in the prompt", "I cannot cite ...".
+        # These come from asking for citations while banning tool names, and
+        # they read as an auto-generated dump rather than a research note.
+        "pipeline_narrated",
+        re.compile(
+            r"\b(?:I\s+)?cannot\s+cite\b"
+            r"|\bdata\s+package\b"
+            r"|\bprovided\s+in\s+the\s+prompt\b"
+            r"|\bcollected\s+data\s+package\b"
+            r"|\bsource\s+material\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        # Emitted whenever rec_history is empty *or* the lookup raised, so a
+        # plain CLI run says it every time. It is internal bookkeeping.
+        "run_bookkeeping_leaked",
+        re.compile(
+            r"first\s+recorded\s+recommendation"
+            r"|no\s+prior\s+analysis\s+on\s+record",
+            re.IGNORECASE,
+        ),
+    ),
+    (
         "placeholder_uninterpolated",
         # A real interpolation failure — the reader would see literal
         # {financials_data} in the report.
-        re.compile(r"\{(?:symbol|analyst|financials|ownership|sentiment|technical|"
-                   r"collected|segments|peers|earnings_surprises|filing_sections|"
-                   r"shareholder_returns|statements_10y|transcript)[a-z_]*\}"),
+        re.compile(
+            r"\{(?:symbol|analyst|financials|ownership|sentiment|technical|"
+            r"collected|segments|peers|earnings_surprises|filing_sections|"
+            r"shareholder_returns|statements_10y|transcript)[a-z_]*\}"
+        ),
     ),
 ]
 
 # Files a reader actually sees. The run report is operator output and is
 # allowed to quote whatever it likes.
-_READER_FACING_SUFFIXES = ("_analysis.md", "_comprehensive_report.md",
-                           "_investment_recommendation.json")
+_READER_FACING_SUFFIXES = (
+    "_analysis.md",
+    "_comprehensive_report.md",
+    "_investment_recommendation.json",
+)
 
 
 def _check_prompt_leaks(symbol: str, issues: List[Dict[str, str]]) -> None:
@@ -276,11 +306,23 @@ def _check_prompt_leaks(symbol: str, issues: List[Dict[str, str]]) -> None:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
+        # The "Data Sources & Gaps" footer is operator-facing — the renderer
+        # strips it into the run report before the reader sees anything. Scan
+        # only what actually ships, or every stage file trips the pipeline
+        # patterns on prose no client ever reads.
+        if path.name.endswith(".md"):
+            from ..tools.report_tools import _split_gaps
+
+            text = _split_gaps(text)[0]
         for code, pattern in _LEAK_PATTERNS:
             match = pattern.search(text)
             if match:
                 issues.append(
                     _issue(
+                        # Warning, not error: the report still displays. This
+                        # module's contract is that `ok` is False only when the
+                        # UI cannot show the run — leaked prose is ugly, not
+                        # fatal. Blocking publication is the abort gate's job.
                         "warning",
                         code,
                         f"{path.name}: prompt text reached the report "

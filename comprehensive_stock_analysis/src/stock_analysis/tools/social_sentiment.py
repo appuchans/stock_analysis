@@ -190,9 +190,7 @@ def _fetch_reddit_oauth(symbol: str, token: str) -> Dict[str, Any]:
         # Upvote ratio is Reddit's own crowd signal and is the closest thing to
         # a bullish/bearish read available without reading post text.
         "avg_upvote_ratio": (
-            round(
-                sum(float(p.get("upvote_ratio") or 0) for p in posts) / len(posts), 3
-            )
+            round(sum(float(p.get("upvote_ratio") or 0) for p in posts) / len(posts), 3)
             if posts
             else None
         ),
@@ -212,8 +210,9 @@ def _fetch_reddit(symbol: str) -> Dict[str, Any]:
         try:
             return _fetch_reddit_oauth(symbol, token)
         except Exception as exc:
-            _logger.info("reddit oauth search failed (%s); trying anonymous",
-                         type(exc).__name__)
+            _logger.info(
+                "reddit oauth search failed (%s); trying anonymous", type(exc).__name__
+            )
     try:
         return _fetch_reddit_json(symbol)
     except Exception as exc:

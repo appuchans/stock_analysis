@@ -85,7 +85,9 @@ class FinnhubProvider(base.ProviderBase):
             if not rows:
                 return {}
             trend: List[Dict[str, Any]] = []
-            for r in sorted(rows, key=lambda r: r.get("period") or "", reverse=True)[:6]:
+            for r in sorted(rows, key=lambda r: r.get("period") or "", reverse=True)[
+                :6
+            ]:
                 strong_buy = r.get("strongBuy") or 0
                 buy = r.get("buy") or 0
                 hold = r.get("hold") or 0
@@ -104,11 +106,17 @@ class FinnhubProvider(base.ProviderBase):
                         # Share of analysts positive — the single number the
                         # sentiment stage actually reasons about.
                         "bullish_pct": (
-                            round((strong_buy + buy) / total * 100, 1) if total else None
+                            round((strong_buy + buy) / total * 100, 1)
+                            if total
+                            else None
                         ),
                     }
                 )
-            return {"symbol": symbol, "recommendation_trend": trend, "source": self.name}
+            return {
+                "symbol": symbol,
+                "recommendation_trend": trend,
+                "source": self.name,
+            }
         except _Unavailable:
             return {}
         except Exception as exc:
@@ -204,7 +212,9 @@ class FinnhubProvider(base.ProviderBase):
             rows = self._get("stock/peers", symbol=symbol) or []
             # The subject company is included in its own peer list; drop it so
             # callers never compare a company against itself.
-            peers = [p for p in rows if isinstance(p, str) and p.upper() != symbol.upper()]
+            peers = [
+                p for p in rows if isinstance(p, str) and p.upper() != symbol.upper()
+            ]
             if not peers:
                 return {}
             return {"symbol": symbol, "peers": peers[:10], "source": self.name}
@@ -231,9 +241,9 @@ class FinnhubProvider(base.ProviderBase):
             from datetime import datetime as _dt
 
             items = []
-            for r in sorted(
-                rows, key=lambda r: r.get("datetime") or 0, reverse=True
-            )[:15]:
+            for r in sorted(rows, key=lambda r: r.get("datetime") or 0, reverse=True)[
+                :15
+            ]:
                 ts = r.get("datetime")
                 items.append(
                     {

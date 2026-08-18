@@ -52,9 +52,7 @@ class Settings(BaseSettings):
     )
     # Marketaux — sentiment-scored news, used as the backup to Alpha Vantage.
     # Different daily budget (~100/day vs ~25), so one covers the other.
-    marketaux_api_key: Optional[str] = Field(
-        None, validation_alias="MARKETAUX_API_KEY"
-    )
+    marketaux_api_key: Optional[str] = Field(None, validation_alias="MARKETAUX_API_KEY")
     # Reddit — a free registered app (reddit.com/prefs/apps, "script" type).
     # Anonymous JSON search is now 403-ed, and the RSS fallback carries no
     # scores or comment counts, so without these the sentiment stage can report

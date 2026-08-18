@@ -13,7 +13,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -104,6 +104,75 @@ def _row(df: pd.DataFrame, labels: List[str]) -> Optional[pd.Series]:
         if label in df.index:
             return df.loc[label]
     return None
+
+
+# yfinance returns 13F *filer* entities, so one asset manager arrives split
+# across several rows ("Vanguard Capital Management", "Vanguard Portfolio
+# Management"). Reported raw that understates concentration, and because the
+# list is then truncated the split entries also push genuine holders off it.
+# Matched on a lowercased substring of the filer name; first match wins.
+_HOLDER_FAMILIES: List[Tuple[str, str]] = [
+    ("vanguard", "Vanguard Group"),
+    ("blackrock", "BlackRock"),
+    ("state street", "State Street Global Advisors"),
+    ("geode", "Geode Capital Management"),
+    ("fmr ", "FMR (Fidelity)"),
+    ("fidelity", "FMR (Fidelity)"),
+    ("t. rowe", "T. Rowe Price"),
+    ("capital research", "Capital Group"),
+    ("capital world", "Capital Group"),
+    ("morgan stanley", "Morgan Stanley"),
+    ("jpmorgan", "JPMorgan"),
+    ("j.p. morgan", "JPMorgan"),
+    ("goldman sachs", "Goldman Sachs"),
+    ("northern trust", "Northern Trust"),
+    ("invesco", "Invesco"),
+    ("wellington", "Wellington Management"),
+]
+
+
+def _holder_family(name: str) -> str:
+    """Map a 13F filer name onto its economic owner, or return it unchanged."""
+    low = name.lower()
+    for needle, family in _HOLDER_FAMILIES:
+        if needle in low:
+            return family
+    return name
+
+
+def _aggregate_holders(
+    records: List[Dict[str, Any]], top: int = 8
+) -> List[Dict[str, Any]]:
+    """Combine filer rows into economic holders, then take the largest ``top``.
+
+    Aggregation happens before truncation — doing it after would keep the split
+    rows competing for the same slots.
+    """
+    merged: Dict[str, Dict[str, Any]] = {}
+    for r in records:
+        raw = str(r.get("Holder", "")).strip()
+        if not raw:
+            continue
+        family = _holder_family(raw)
+        entry = merged.setdefault(
+            family,
+            {"holder": family, "pct_held": None, "value_usd_m": None, "filers": 0},
+        )
+        entry["filers"] += 1
+        if (v := _num(r.get("pctHeld"))) is not None:
+            entry["pct_held"] = round((entry["pct_held"] or 0.0) + v * 100, 2)
+        if (m := _millions(r.get("Value"))) is not None:
+            entry["value_usd_m"] = round((entry["value_usd_m"] or 0.0) + m, 2)
+    rows = sorted(
+        merged.values(),
+        key=lambda e: e["pct_held"] or e["value_usd_m"] or 0,
+        reverse=True,
+    )
+    for e in rows:
+        # Only meaningful where a merge actually happened; drop the noise.
+        if e["filers"] < 2:
+            e.pop("filers")
+    return rows[:top]
 
 
 def _date_label(col: Any) -> str:
@@ -263,18 +332,7 @@ def summarize_ownership(ticker: Any) -> Dict[str, Any]:
     try:
         ih = ticker.institutional_holders
         if ih is not None and not ih.empty:
-            out["top_institutions"] = [
-                {
-                    "holder": str(r.get("Holder", "")),
-                    "pct_held": (
-                        round(v * 100, 2)
-                        if (v := _num(r.get("pctHeld"))) is not None
-                        else None
-                    ),
-                    "value_usd_m": _millions(r.get("Value")),
-                }
-                for r in ih.head(8).to_dict("records")
-            ]
+            out["top_institutions"] = _aggregate_holders(ih.to_dict("records"))
     except Exception as exc:
         _logger.debug("institutional_holders failed: %s", exc)
 
@@ -375,14 +433,20 @@ def summarize_financial_statements(ticker: Any) -> Dict[str, Any]:
         if bs is not None and not bs.empty:
             cols = list(bs.columns)[:3]
             assets = _row(bs, ["Total Assets", "TotalAssets"])
-            cash = _row(
-                bs,
-                [
-                    "Cash Cash Equivalents And Short Term Investments",
-                    "Cash And Cash Equivalents",
-                    "Cash Financial",
-                ],
-            )
+            # These labels are NOT equivalent — the first includes short-term
+            # investments, the others do not. Whichever one yfinance happens to
+            # expose changes the concept, not just the vintage, which is how one
+            # report quoted $76,651M and $76,843M for "cash" in adjacent
+            # sections. Report the matched label so the concept is named.
+            cash_labels = [
+                "Cash Cash Equivalents And Short Term Investments",
+                "Cash And Cash Equivalents",
+                "Cash Financial",
+            ]
+            cash = _row(bs, cash_labels)
+            cash_label = next((lb for lb in cash_labels if lb in bs.index), None)
+            if cash_label:
+                out["cash_basis"] = cash_label
             debt = _row(bs, ["Total Debt", "TotalDebt"])
             equity = _row(
                 bs,
@@ -513,13 +577,21 @@ def summarize_dividends_splits(ticker: Any) -> Dict[str, Any]:
                 {"date": _date_label(idx), "amount": _num(val)}
                 for idx, val in d.tail(8).items()
             ]
-            # 5-year dividend CAGR from annual sums
+            # 5-year dividend CAGR from annual sums. The current calendar year
+            # is dropped: it is still in progress, so its partial total would be
+            # compared against full years and read as a dividend cut. MSFT with
+            # two of four 2026 payments banked scored -4.6% while the payout was
+            # actually rising $0.75 -> $0.91.
             annual = d.groupby(d.index.year).sum()
+            annual = annual[annual.index < datetime.now().year]
             if len(annual) >= 6:
                 first, last = float(annual.iloc[-6]), float(annual.iloc[-1])
                 if first > 0:
                     out["dividend_cagr_5y_pct"] = round(
                         ((last / first) ** 0.2 - 1) * 100, 1
+                    )
+                    out["dividend_cagr_window"] = (
+                        f"{int(annual.index[-6])}-{int(annual.index[-1])}"
                     )
     except Exception as exc:
         _logger.debug("dividends failed: %s", exc)

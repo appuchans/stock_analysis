@@ -205,7 +205,9 @@ class SecApiProvider(base.ProviderBase):
                     text = (resp.text or "").strip()
                     # The extractor marks table boundaries with a sentinel that
                     # means nothing to a reader or an LLM.
-                    text = text.replace("##TABLE_END", " ").replace("##TABLE_START", " ")
+                    text = text.replace("##TABLE_END", " ").replace(
+                        "##TABLE_START", " "
+                    )
                     # Filing text carries raw HTML entities (&#8217; etc.);
                     # left as-is they reach the report as literal escape codes.
                     text = html.unescape(text)

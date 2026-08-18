@@ -618,7 +618,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             # Revenue mix by business unit — charted on the Overview so the
             # split is visible without reading the narrative.
             seg = structured.get("segments") or {}
-            for axis, key in (("by_product", "revenue_by_segment"), ("by_geography", "revenue_by_geography")):
+            for axis, key in (
+                ("by_product", "revenue_by_segment"),
+                ("by_geography", "revenue_by_geography"),
+            ):
                 periods = seg.get(axis) or []
                 if not periods:
                     continue
@@ -735,10 +738,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         of Amazon is AWS?"), and no keyless source provides it — so it runs at
         every depth while the bulky extras stay gated.
         """
+        from .. import run_diagnostics as diag
         from ..config.settings import settings
         from ..tools.providers import ROUTER
         from ..tools.providers.base import is_capable
-        from .. import run_diagnostics as diag
 
         def _attempt(item: str, source: str, key: Any, fn, apply) -> None:
             """Run one optional enrichment and record why it produced nothing.
@@ -779,6 +782,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             for item in ("insider transactions", "10-K sections", "earnings surprises"):
                 diag.record(item, diag.NOT_APPLICABLE, "", "funds file no 10-K")
         else:
+
             def _apply_insider(r):
                 own = structured.setdefault("ownership", {})
                 if not r.get("insider_trades"):
@@ -789,22 +793,31 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 return True
 
             _attempt(
-                "insider transactions", "sec-api.io", sec_key,
-                lambda: ROUTER.get_insider_trades(symbol), _apply_insider,
+                "insider transactions",
+                "sec-api.io",
+                sec_key,
+                lambda: ROUTER.get_insider_trades(symbol),
+                _apply_insider,
             )
             _attempt(
-                "10-K sections (business/risk/MD&A)", "sec-api.io", sec_key,
+                "10-K sections (business/risk/MD&A)",
+                "sec-api.io",
+                sec_key,
                 lambda: ROUTER.get_filing_sections(symbol),
                 lambda r: bool(structured.__setitem__("filing_sections", r) or True),
             )
             _attempt(
-                "earnings surprises", "finnhub", fin_key,
+                "earnings surprises",
+                "finnhub",
+                fin_key,
                 lambda: ROUTER.get_earnings_surprises(symbol),
                 lambda r: bool(r.get("quarters"))
                 and bool(structured.__setitem__("earnings_surprises", r) or True),
             )
             _attempt(
-                "insider sentiment trend", "finnhub", fin_key,
+                "insider sentiment trend",
+                "finnhub",
+                fin_key,
                 lambda: ROUTER.get_insider_sentiment(symbol),
                 lambda r: bool(r.get("months"))
                 and bool(
@@ -816,7 +829,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             )
 
         _attempt(
-            "analyst recommendation trend", "finnhub", fin_key,
+            "analyst recommendation trend",
+            "finnhub",
+            fin_key,
             lambda: ROUTER.get_recommendation_trends(symbol),
             lambda r: bool(r.get("recommendation_trend"))
             and bool(
@@ -844,12 +859,16 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             return True
 
         _attempt(
-            "news sentiment scores", "alpha vantage / marketaux", news_key,
-            lambda: ROUTER.get_news_sentiment(symbol), _apply_news,
+            "news sentiment scores",
+            "alpha vantage / marketaux",
+            news_key,
+            lambda: ROUTER.get_news_sentiment(symbol),
+            _apply_news,
         )
 
         _attempt(
-            "peer comparables", "fmp / finnhub",
+            "peer comparables",
+            "fmp / finnhub",
             settings.fmp_api_key or fin_key,
             lambda: ROUTER.get_peers(symbol),
             lambda r: bool(r.get("peers"))
@@ -857,13 +876,17 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         )
 
         _attempt(
-            "shareholder yield & dividends", "fmp", settings.fmp_api_key,
+            "shareholder yield & dividends",
+            "fmp",
+            settings.fmp_api_key,
             lambda: ROUTER.get_shareholder_returns(symbol),
             lambda r: bool(structured.__setitem__("shareholder_returns", r) or True),
         )
 
         _attempt(
-            "revenue segmentation", "fmp", settings.fmp_api_key,
+            "revenue segmentation",
+            "fmp",
+            settings.fmp_api_key,
             lambda: ROUTER.get_revenue_segments(symbol),
             lambda r: bool(structured.__setitem__("segments", r) or True),
         )
@@ -872,19 +895,21 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # roughly doubles prompt volume for the fundamental stage.
         if self.state.analysis_depth != "deep":
             for item in ("10-year statements", "earnings-call transcript"):
-                diag.record(
-                    item, diag.NOT_APPLICABLE, "", "deep-depth runs only"
-                )
+                diag.record(item, diag.NOT_APPLICABLE, "", "deep-depth runs only")
             return
 
         fmp_key = settings.fmp_api_key
         _attempt(
-            "10-year statements", "fmp", fmp_key,
+            "10-year statements",
+            "fmp",
+            fmp_key,
             lambda: ROUTER.get_statements(symbol, years=10),
             lambda r: bool(structured.__setitem__("statements_10y", r) or True),
         )
         _attempt(
-            "analyst estimate revisions", "fmp", fmp_key,
+            "analyst estimate revisions",
+            "fmp",
+            fmp_key,
             lambda: ROUTER.get_estimates(symbol),
             lambda r: bool(r.get("estimate_revisions"))
             and bool(
@@ -895,13 +920,17 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             ),
         )
         _attempt(
-            "earnings-call transcript", "fmp", fmp_key,
+            "earnings-call transcript",
+            "fmp",
+            fmp_key,
             lambda: ROUTER.get_transcript(symbol),
             lambda r: bool(structured.__setitem__("transcript", r) or True),
         )
         if self._is_etf:
             _attempt(
-                "ETF holdings & sector weights", "fmp", fmp_key,
+                "ETF holdings & sector weights",
+                "fmp",
+                fmp_key,
                 lambda: ROUTER.get_etf_holdings(symbol),
                 lambda r: bool(
                     structured.__setitem__(
@@ -1050,8 +1079,14 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             if len(text) >= self._MIN_RESUMABLE_CHARS:
                 setattr(self.state, key, {"result": text})
                 self.state.resumed_stages.append(key)
-                _logger.info("[resume] reusing existing %s analysis for %s", key, self.state.symbol)
-                print(f"  ↻ {key.replace('_', ' ').title()} analysis (reused)", flush=True)
+                _logger.info(
+                    "[resume] reusing existing %s analysis for %s",
+                    key,
+                    self.state.symbol,
+                )
+                print(
+                    f"  ↻ {key.replace('_', ' ').title()} analysis (reused)", flush=True
+                )
             else:
                 todo.append(spec)
         return todo

@@ -211,8 +211,11 @@ class ProviderRouter:
         fallback and still beats the qualitative-only comparison the competitor
         stage fell back to before.
         """
-        return self._try(self._fundamentals_chain() + [_f for _f in [_finnhub()] if _f],
-                         "get_peers", symbol)
+        return self._try(
+            self._fundamentals_chain() + [_f for _f in [_finnhub()] if _f],
+            "get_peers",
+            symbol,
+        )
 
     def get_shareholder_returns(self, symbol: str) -> Dict[str, Any]:
         return self._try(self._fundamentals_chain(), "get_shareholder_returns", symbol)

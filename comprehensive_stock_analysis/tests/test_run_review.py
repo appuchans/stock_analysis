@@ -272,7 +272,8 @@ class TestPromptLeakDetection:
 
     def test_catches_the_real_world_instruction_echo(self, tmp_path, monkeypatch):
         self._seed(
-            tmp_path, monkeypatch,
+            tmp_path,
+            monkeypatch,
             "TEST_investment_recommendation.json",
             '{"reasoning": "The core reason is plain English: it owns the stack."}',
         )
@@ -282,7 +283,8 @@ class TestPromptLeakDetection:
     def test_catches_uninterpolated_placeholder(self, tmp_path, monkeypatch):
         """A literal {financials_data} in output means interpolation failed."""
         self._seed(
-            tmp_path, monkeypatch,
+            tmp_path,
+            monkeypatch,
             "TEST_fundamental_analysis.md",
             "Revenue trends are covered in {financials_data} for the period.",
         )
@@ -291,7 +293,8 @@ class TestPromptLeakDetection:
 
     def test_catches_prompt_scaffolding(self, tmp_path, monkeypatch):
         self._seed(
-            tmp_path, monkeypatch,
+            tmp_path,
+            monkeypatch,
             "TEST_risk_analysis.md",
             "RIGOR REQUIREMENTS:\n- Cite every claim.",
         )
@@ -300,7 +303,8 @@ class TestPromptLeakDetection:
 
     def test_clean_report_produces_no_findings(self, tmp_path, monkeypatch):
         self._seed(
-            tmp_path, monkeypatch,
+            tmp_path,
+            monkeypatch,
             "TEST_fundamental_analysis.md",
             "Revenue was $130,497M in FY2025, up 11% year over year. "
             "In plain English, the business is compounding.",
@@ -310,7 +314,8 @@ class TestPromptLeakDetection:
     def test_run_report_is_not_scanned(self, tmp_path, monkeypatch):
         """Operator output may quote prompt text freely."""
         self._seed(
-            tmp_path, monkeypatch,
+            tmp_path,
+            monkeypatch,
             "TEST_run_report.md",
             "RIGOR REQUIREMENTS were not met by the sentiment stage.",
         )
@@ -321,10 +326,57 @@ class TestPromptLeakDetection:
         from src.stock_analysis.web import run_review
 
         self._seed(
-            tmp_path, monkeypatch,
+            tmp_path,
+            monkeypatch,
             "TEST_investment_recommendation.json",
             '{"reasoning": "The core reason is plain English: x"}',
         )
         issues = []
         run_review._check_prompt_leaks("TEST", issues)
         assert all(i["severity"] == "warning" for i in issues)
+
+
+class TestPipelineNarrationLeaks:
+    """The three phrases a reviewer found in a shipped MSFT report."""
+
+    def _seed(self, tmp_path, monkeypatch, name, text):
+        from src.stock_analysis.config.settings import settings
+
+        monkeypatch.setattr(settings, "report_output_dir", str(tmp_path))
+        d = tmp_path / "TEST"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / name).write_text(text, encoding="utf-8")
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "I cannot cite a source for this figure.",
+            "per the data package provided in the prompt",
+            "This is the first recorded recommendation for MSFT.",
+        ],
+    )
+    def test_narration_is_flagged(self, tmp_path, monkeypatch, phrase):
+        from src.stock_analysis.web import run_review
+
+        self._seed(
+            tmp_path, monkeypatch, "TEST_comprehensive_report.md", f"## X\n\n{phrase}\n"
+        )
+        issues = []
+        run_review._check_prompt_leaks("TEST", issues)
+        assert issues, f"not flagged: {phrase}"
+
+    def test_operator_gaps_footer_is_not_a_leak(self, tmp_path, monkeypatch):
+        """The gaps footer is stripped before rendering, so it must not trip."""
+        from src.stock_analysis.web import run_review
+
+        self._seed(
+            tmp_path,
+            monkeypatch,
+            "TEST_fundamental_analysis.md",
+            "## Analysis\n\nRevenue grew.\n\n"
+            "## Data Sources & Gaps\n\n"
+            "- Segment detail: not in the data package provided in the prompt.\n",
+        )
+        issues = []
+        run_review._check_prompt_leaks("TEST", issues)
+        assert issues == []

@@ -188,7 +188,9 @@ class FMPProvider(base.ProviderBase):
                     breakdown = r.get("data") or {}
                     if not isinstance(breakdown, dict) or not breakdown:
                         continue
-                    total = sum(v for v in breakdown.values() if isinstance(v, (int, float)))
+                    total = sum(
+                        v for v in breakdown.values() if isinstance(v, (int, float))
+                    )
                     out.append(
                         {
                             "fiscal_year": r.get("fiscalYear"),
@@ -206,9 +208,9 @@ class FMPProvider(base.ProviderBase):
                                 }
                                 for k, v in sorted(
                                     breakdown.items(),
-                                    key=lambda kv: kv[1]
-                                    if isinstance(kv[1], (int, float))
-                                    else 0,
+                                    key=lambda kv: (
+                                        kv[1] if isinstance(kv[1], (int, float)) else 0
+                                    ),
                                     reverse=True,
                                 )
                             },
@@ -263,6 +265,7 @@ class FMPProvider(base.ProviderBase):
         ownership and capital-allocation section is built around, and one the
         reports repeatedly flagged as uncomputable.
         """
+
         # Each sub-call is tolerated independently: these three endpoints sit on
         # different FMP tiers, and `dividends` in particular answers 402 on the
         # free plan. A shared try-block would have thrown away the yields that
@@ -313,9 +316,7 @@ class FMPProvider(base.ProviderBase):
                 ]
             # Drop keys with nothing in them so a sparse payload does not read
             # as a full one with zeros.
-            populated = {
-                k: v for k, v in out.items() if v not in (None, [], "")
-            }
+            populated = {k: v for k, v in out.items() if v not in (None, [], "")}
             return populated if len(populated) > 2 else {}
         except _NotInPlan:
             return {}
@@ -418,7 +419,11 @@ class FMPProvider(base.ProviderBase):
                     break
             if not next_earnings:
                 return {}
-            return {"symbol": symbol, "next_earnings": next_earnings, "source": self.name}
+            return {
+                "symbol": symbol,
+                "next_earnings": next_earnings,
+                "source": self.name,
+            }
         except _NotInPlan:
             return {}
         except Exception as exc:
@@ -434,7 +439,10 @@ class FMPProvider(base.ProviderBase):
             return {
                 "symbol": symbol,
                 "top_holdings": [
-                    {"name": r.get("name") or r.get("asset"), "weight_pct": r.get("weightPercentage")}
+                    {
+                        "name": r.get("name") or r.get("asset"),
+                        "weight_pct": r.get("weightPercentage"),
+                    }
                     for r in (holdings or [])[:10]
                 ],
                 "sector_weightings_pct": {
