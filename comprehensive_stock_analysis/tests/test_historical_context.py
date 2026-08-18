@@ -8,14 +8,18 @@ from src.stock_analysis.crew.flow_crew import StockAnalysisFlow
 
 
 class TestFormatHistoricalContext:
-    def test_empty_history_returns_fallback(self):
-        """When no prior analyses exist, return a safe fallback string."""
+    def test_empty_history_returns_nothing(self):
+        """No history must produce no block at all.
+
+        A filler string ("No prior analysis on record") plus the prompt's
+        unconditional "state whether this departs from prior calls" made the
+        advisor tell readers it was writing "the first recorded recommendation"
+        — internal bookkeeping in a client-facing memo.
+        """
         flow = StockAnalysisFlow()
         flow.state.symbol = "AAPL"
         with patch("src.stock_analysis.web.db.list_rec_history", return_value=[]):
-            context = flow._format_historical_context()
-            assert "No prior analysis" in context
-            assert "AAPL" in context
+            assert flow._format_historical_context() == ""
 
     def test_formats_multiple_prior_recommendations(self):
         """Format the last 5 entries from rec_history as a readable block."""
@@ -69,16 +73,19 @@ class TestFormatHistoricalContext:
             assert "2025-01-01" not in context
 
     def test_gracefully_handles_db_error(self):
-        """When db.list_rec_history raises an exception, degrade to fallback."""
+        """A lookup failure emits no block, but is recorded as a degradation.
+
+        Previously it returned the same filler as a genuinely new ticker, so a
+        broken DB was indistinguishable from having no history.
+        """
         flow = StockAnalysisFlow()
         flow.state.symbol = "AAPL"
         with patch(
             "src.stock_analysis.web.db.list_rec_history",
             side_effect=Exception("DB connection failed"),
         ):
-            context = flow._format_historical_context()
-            assert "No prior analysis" in context
-            assert "AAPL" in context
+            assert flow._format_historical_context() == ""
+        assert any("recommendation history" in d for d in flow.state.degradations)
 
     def test_gracefully_handles_missing_fields_in_history_entry(self):
         """Missing fields in history entries should be shown as '?', not crash."""

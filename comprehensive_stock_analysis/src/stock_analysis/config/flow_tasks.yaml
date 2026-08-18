@@ -64,6 +64,44 @@ shared:
       used (with as-of date) and each data item that was unavailable or
       qualitatively substituted.
 
+  # Appended to the synthesis stages (recommendation, report). Those produce
+  # client-facing prose but do NOT take the collected-data wrapper or the full
+  # rigor_footer, so until this existed they were the only stages with no ban on
+  # narrating the pipeline — which is exactly where "I cannot cite", "the data
+  # package provided in the prompt" and "this is the first recorded
+  # recommendation" reached shipped reports. Deliberately a short subset of
+  # rigor_footer: these stages write no 'Data Sources & Gaps' section, so the
+  # rules about where provenance belongs do not apply to them.
+  client_prose_rules: |
+    WRITING RULES:
+    - NEVER narrate the pipeline. The reader is a client, not an operator. They
+      must never learn what was fetched, what was missing, which source
+      answered, or that a data package/prompt/run exists. Phrases like 'the
+      data package provided in the prompt', 'I cannot cite', 'in the provided
+      dataset', 'from the source material', 'in this run' and 'not available in
+      the collected data' must never appear. If something is unknown, either
+      make the point qualitatively or omit it — never explain the absence.
+    - NEVER mention internal bookkeeping. Whether a prior recommendation exists
+      on record is not the reader's concern: never write 'this is the first
+      recorded recommendation', 'no prior analysis on record', or any comment
+      on the absence of history.
+    - NEVER print internal tool or function names, raw error messages, HTTP
+      status codes, stack traces, or the words 'failed'/'error'.
+    - Write numbers in prose, not machine fields: no key=value pairs, no JSON
+      fragments, no snake_case field names.
+    - Never invent a number. Quote a price only from the stated as-of snapshot.
+
+  # Prepended to {historical_context} by _format_historical_context, but ONLY
+  # when prior calls actually exist. Previously the instruction sat
+  # unconditionally in the recommendation prompt beside a "No prior analysis on
+  # record" filler, so every first-time (and every CLI) run dutifully told the
+  # reader it was "the first recorded recommendation" — internal bookkeeping in
+  # a client document. No history now means no block and nothing to comment on.
+  history_instruction: |
+    State whether your recommendation is consistent with, or a departure from,
+    the prior calls recorded above, and explain why. Do not mention the record
+    itself — write about the view, not about what is on file.
+
   # Collected-data context appended to every analysis stage description
   with_data_suffix: |
     Use the following pre-collected data as your primary source:
@@ -107,16 +145,21 @@ collect_data:
     Funds have no management team, earnings calls, guidance or insiders — do
     not look for those, and do not report their absence. Pull from the fund's
     own factsheet and prospectus rather than corporate filings.
-  expected_output: >-
-    A structured data package covering: fund mandate and methodology, fund
-    facts and costs, holdings and concentration, performance and distributions,
-    liquidity, current market data, and the macro backdrop for the theme.
-
-  expected_output: >-
-    A structured data package covering: business description, product/service
-    strategy, management guidance and promises, execution track record,
-    company-stated risks, current financials and valuation metrics, and macro
-    context.
+  # Two variants, keyed like the descriptions above. These were previously two
+  # sibling `expected_output` keys, so YAML kept only the last: every ETF run
+  # was asked for "management guidance and promises" and an "execution track
+  # record" that the etf description immediately above tells it do not exist.
+  expected_output:
+    stock: >-
+      A structured data package covering: business description, product/service
+      strategy, management guidance and promises, execution track record,
+      company-stated risks, current financials and valuation metrics, and macro
+      context.
+    etf: >-
+      A structured data package covering: fund mandate and methodology, fund
+      facts and costs, holdings and concentration, performance and
+      distributions, liquidity, current market data, and the macro backdrop for
+      the theme.
 
 technical:
   brief: >-
@@ -407,10 +450,7 @@ recommendation:
     Analyses to draw from:
     {analyses_summary}
 
-    Historical Context:
     {historical_context}
-    State whether your recommendation is consistent with, or a departure from,
-    the prior calls recorded above, and explain why.
   etf: |
     Write a clear investment recommendation memo for {symbol}, an ETF. Your
     memo must follow this structure:
@@ -454,10 +494,7 @@ recommendation:
     Analyses to draw from:
     {analyses_summary}
 
-    Historical Context:
     {historical_context}
-    State whether your recommendation is consistent with, or a departure from,
-    the prior calls recorded above, and explain why.
   expected_output: >-
     Investment recommendation: type, target price, stop-loss, time horizon,
     confidence, summary (two plain-English sentences), reasoning, risks,

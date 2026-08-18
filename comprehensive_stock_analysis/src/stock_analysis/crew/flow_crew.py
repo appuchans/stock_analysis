@@ -303,6 +303,29 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             + shared["rigor_footer"].strip()
         )
 
+    def _with_prose_rules(self, description: str) -> str:
+        """Append the client-prose rules to a synthesis stage description.
+
+        The recommendation and report stages take neither the collected-data
+        wrapper nor the full rigor footer — they synthesize the stage outputs.
+        That left them as the only client-facing stages with no ban on narrating
+        the pipeline, which is where 'I cannot cite', 'the data package provided
+        in the prompt' and 'this is the first recorded recommendation' entered
+        shipped reports.
+        """
+        return (
+            description.strip()
+            + "\n\n"
+            + self._prompts["shared"]["client_prose_rules"].strip()
+        )
+
+    def _expected_for(self, key: str) -> str:
+        """Expected-output text, honouring stock/ETF variants like _desc_for."""
+        spec = self._prompts[key]["expected_output"]
+        if isinstance(spec, dict):
+            return str(spec["etf" if self._is_etf else "stock"])
+        return str(spec)
+
     def _resolve_asset_type(self, symbol: str) -> str:
         if self._raw_asset_type != "auto":
             return self._raw_asset_type
@@ -343,7 +366,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
 
             history = db.list_rec_history(self.state.symbol)
             if not history:
-                return f"No prior analysis on record for {self.state.symbol}."
+                return ""
             # Take last 5 entries, format compactly
             recent = history[-5:]
             lines = [f"Prior analyses for {self.state.symbol} (newest first):"]
@@ -357,10 +380,19 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                     f"  {date}: {rec} (confidence: {conf}), target: {target}, "
                     f"price: {price_at_rec}"
                 )
+            lines.append("")
+            lines.append(self._prompts["shared"]["history_instruction"].strip())
             return "\n".join(lines)
         except Exception as exc:
+            # A lookup failure is not the same as a genuinely new ticker, and
+            # neither is the reader's business: emit nothing either way, but
+            # record the failure so it is not mistaken for "no history".
             _logger.debug("Could not fetch recommendation history: %s", exc)
-            return f"No prior analysis on record for {self.state.symbol}."
+            self.state.degradations.append(
+                f"recommendation history: {exc} (the memo was written without "
+                "reference to prior calls)"
+            )
+            return ""
 
     # ── stage 1: data collection ──────────────────────────────────────────────
 
@@ -372,7 +404,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         t = Task(
             name="Data Collection",
             description=self._desc_for("collect_data"),
-            expected_output=cd["expected_output"],
+            expected_output=self._expected_for("collect_data"),
             agent=agent,
         )
         result = _run_crew([agent], [t], self._inputs())
@@ -1166,7 +1198,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         rec = self._prompts["recommendation"]
         t = Task(
             name="Investment Recommendation",
-            description=self._desc_for("recommendation"),
+            description=self._with_prose_rules(self._desc_for("recommendation")),
             expected_output=rec["expected_output"],
             agent=agent,
             output_pydantic=InvestmentRecommendation,
@@ -1235,7 +1267,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         rep = self._prompts["report"]
         t = Task(
             name="Report Generation",
-            description=self._desc_for("report"),
+            description=self._with_prose_rules(self._desc_for("report")),
             expected_output=rep["expected_output"],
             agent=agent,
             # Native output validation: CrewAI re-prompts the agent with the
