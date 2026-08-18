@@ -46,6 +46,28 @@ def report_prices(
     return fetch_price_series([sym, *compare_symbols], period)
 
 
+@router.post("/{symbol}/summary")
+def backfill_summary(symbol: str, force: bool = False) -> Dict[str, Any]:
+    """Derive the Overview summary from this symbol's existing recommendation.
+
+    One LLM call over artifacts already on disk — the point is that a report
+    predating the `summary` field should not need a full re-analysis (~11
+    calls) to gain two sentences.
+    """
+    sym = _paths.safe_symbol(symbol)
+    if sym is None:
+        raise HTTPException(status_code=400, detail="invalid symbol")
+    from ..rec_summary import ensure_summary
+
+    summary = ensure_summary(sym, force=force)
+    if summary is None:
+        raise HTTPException(
+            status_code=404,
+            detail="no recommendation to summarise for this symbol",
+        )
+    return {"symbol": sym, "summary": summary}
+
+
 @router.get("/{symbol}/diff", response_model=RecommendationDiff)
 def recommendation_diff(symbol: str) -> Dict[str, Any]:
     sym = _paths.safe_symbol(symbol)

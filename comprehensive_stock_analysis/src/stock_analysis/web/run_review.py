@@ -20,9 +20,12 @@ This never raises and never changes a run's outcome. It reports.
 
 import json
 import logging
+import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
+from ..config.settings import settings
 from . import _paths
 
 _logger = logging.getLogger(__name__)
@@ -217,6 +220,75 @@ def _check_recommendation(
         )
 
 
+# Text that only ever appears when the model echoed its own instructions back
+# instead of following them. Real leaks seen in output: "The core reason is
+# plain English: Microsoft owns…" (from "the core reason in plain English"),
+# and unreplaced {placeholders} when interpolation silently failed.
+_LEAK_PATTERNS: List[Tuple[str, "re.Pattern[str]"]] = [
+    (
+        "instruction_echoed",
+        re.compile(
+            r"\b(?:the\s+)?core\s+reason\s+is\s+plain\s+English\b"
+            r"|\bassume\s+the\s+reader\s+has\s+never\s+heard\s+of\s+it\b"
+            r"|\bin\s+plain,?\s+direct\s+prose\b"
+            r"|\bstated\s+as\s+business\s+risks\s+not\s+beta\s+values\b"
+            r"|\btwo\s+plain-English\s+sentences\b"
+            r"|\bYour\s+memo\s+must\s+follow\b"
+            r"|\bheading\s+lines\s+contain\s+ONLY\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "prompt_scaffold_leaked",
+        re.compile(r"RIGOR REQUIREMENTS|expected_output|analyses_summary"),
+    ),
+    (
+        "placeholder_uninterpolated",
+        # A real interpolation failure — the reader would see literal
+        # {financials_data} in the report.
+        re.compile(r"\{(?:symbol|analyst|financials|ownership|sentiment|technical|"
+                   r"collected|segments|peers|earnings_surprises|filing_sections|"
+                   r"shareholder_returns|statements_10y|transcript)[a-z_]*\}"),
+    ),
+]
+
+# Files a reader actually sees. The run report is operator output and is
+# allowed to quote whatever it likes.
+_READER_FACING_SUFFIXES = ("_analysis.md", "_comprehensive_report.md",
+                           "_investment_recommendation.json")
+
+
+def _check_prompt_leaks(symbol: str, issues: List[Dict[str, str]]) -> None:
+    """Flag instruction text that leaked into reader-facing output.
+
+    A model that restates its brief ("the core reason is plain English:")
+    produces prose that is subtly wrong in a way no other check catches — the
+    artifacts all exist and validate, the sentence is simply not English. It
+    has to be caught by inspection after generation, which is what this is.
+    """
+    report_dir = Path(settings.report_output_dir) / symbol.upper()
+    if not report_dir.is_dir():
+        return
+    for path in sorted(report_dir.iterdir()):
+        if not path.is_file() or not path.name.endswith(_READER_FACING_SUFFIXES):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for code, pattern in _LEAK_PATTERNS:
+            match = pattern.search(text)
+            if match:
+                issues.append(
+                    _issue(
+                        "warning",
+                        code,
+                        f"{path.name}: prompt text reached the report "
+                        f"— {match.group(0)[:60]!r}",
+                    )
+                )
+
+
 def review_run(symbol: str, degradations: Optional[List[str]] = None) -> Dict[str, Any]:
     """Check a completed run against what the UI needs to display it.
 
@@ -237,6 +309,7 @@ def review_run(symbol: str, degradations: Optional[List[str]] = None) -> Dict[st
         _check_chart_data(symbol, issues)
         chart = _read_json(_paths.chart_path(symbol)) or {}
         _check_recommendation(symbol, chart.get("asset_type"), issues)
+        _check_prompt_leaks(symbol, issues)
         for detail in degradations or []:
             issues.append(_issue("warning", "stage_degraded", detail))
     except Exception as exc:  # pragma: no cover - review must never break a run

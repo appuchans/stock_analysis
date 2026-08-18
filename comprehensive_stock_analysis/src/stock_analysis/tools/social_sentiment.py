@@ -7,8 +7,9 @@ cached but total failures are retried (cached_tool skips caching error dicts).
 """
 
 import logging
+import time
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from crewai.tools import BaseTool
 
@@ -112,8 +113,107 @@ def _fetch_reddit_rss(symbol: str) -> Dict[str, Any]:
     }
 
 
+# Reddit tokens last an hour; cached module-level so a batch run does not
+# request a new one per symbol.
+_reddit_token: Dict[str, Any] = {"value": None, "expires_at": 0.0}
+
+
+def _reddit_oauth_token() -> Optional[str]:
+    """Client-credentials token, or None when no app is configured.
+
+    Reddit began 403-ing anonymous JSON requests, which is why the RSS fallback
+    exists — but RSS carries no scores or comment counts, so no bullish/bearish
+    ratio can be computed from it. A free registered app restores the real
+    numbers.
+    """
+    from ..config.settings import settings
+
+    client_id = settings.reddit_client_id
+    client_secret = settings.reddit_client_secret
+    if not (client_id and client_secret):
+        return None
+
+    now = time.time()
+    if _reddit_token["value"] and now < _reddit_token["expires_at"]:
+        return _reddit_token["value"]
+
+    try:
+        resp = _http.post(
+            "https://www.reddit.com/api/v1/access_token",
+            data={"grant_type": "client_credentials"},
+            auth=(client_id, client_secret),
+            headers={"User-Agent": _REDDIT_UA},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        payload = resp.json() or {}
+        token = payload.get("access_token")
+        if not token:
+            return None
+        # Renew a minute early rather than racing the expiry.
+        _reddit_token["value"] = token
+        _reddit_token["expires_at"] = now + max(
+            60, int(payload.get("expires_in") or 3600) - 60
+        )
+        return token
+    except Exception as exc:
+        _logger.info("reddit oauth failed (%s)", type(exc).__name__)
+        return None
+
+
+def _fetch_reddit_oauth(symbol: str, token: str) -> Dict[str, Any]:
+    """Authenticated search — the only path that yields scores and comments."""
+    resp = _http.get(
+        "https://oauth.reddit.com/r/stocks+wallstreetbets+investing/search",
+        params={
+            "q": symbol,
+            "restrict_sr": "on",
+            "sort": "new",
+            "t": "week",
+            "limit": 25,
+        },
+        headers={
+            "Authorization": f"Bearer {token}",
+            "User-Agent": _REDDIT_UA,
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    posts = [c.get("data", {}) for c in resp.json().get("data", {}).get("children", [])]
+    # Volume/engagement aggregates only — titles and bodies are deliberately
+    # not collected, so they can never be quoted in a report.
+    scores = [int(p.get("score", 0)) for p in posts]
+    return {
+        "posts_last_week": len(posts),
+        "total_score": sum(scores),
+        "total_comments": sum(int(p.get("num_comments", 0)) for p in posts),
+        # Upvote ratio is Reddit's own crowd signal and is the closest thing to
+        # a bullish/bearish read available without reading post text.
+        "avg_upvote_ratio": (
+            round(
+                sum(float(p.get("upvote_ratio") or 0) for p in posts) / len(posts), 3
+            )
+            if posts
+            else None
+        ),
+        "via": "oauth",
+    }
+
+
 def _fetch_reddit(symbol: str) -> Dict[str, Any]:
-    """Reddit activity with JSON→RSS fallback."""
+    """Reddit activity: OAuth → anonymous JSON → RSS.
+
+    Each step down loses information (OAuth has scores and upvote ratios, JSON
+    has scores, RSS has only post counts), so the order matters — but any of
+    them beats reporting nothing.
+    """
+    token = _reddit_oauth_token()
+    if token:
+        try:
+            return _fetch_reddit_oauth(symbol, token)
+        except Exception as exc:
+            _logger.info("reddit oauth search failed (%s); trying anonymous",
+                         type(exc).__name__)
     try:
         return _fetch_reddit_json(symbol)
     except Exception as exc:

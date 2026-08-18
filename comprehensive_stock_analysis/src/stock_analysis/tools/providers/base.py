@@ -52,6 +52,15 @@ class MarketDataProvider(Protocol):
         """Sector weightings and top holdings for an ETF."""
         ...
 
+    def get_revenue_segments(self, symbol: str) -> Dict[str, Any]:
+        """Revenue split by product line and by geography.
+
+        No keyless source exposes this — the SEC's companyfacts API carries
+        only consolidated, non-dimensional facts — so yfinance reports it as a
+        capability gap and the section is simply absent without an FMP key.
+        """
+        ...
+
 
 class ProviderBase:
     """Shared no-op defaults so a concrete provider only needs to override
@@ -82,6 +91,33 @@ class ProviderBase:
         return {}
 
     def get_etf_holdings(self, symbol: str) -> Dict[str, Any]:
+        return {}
+
+    def get_revenue_segments(self, symbol: str) -> Dict[str, Any]:
+        return {}
+
+    def get_filing_sections(self, symbol: str) -> Dict[str, Any]:
+        return {}
+
+    def get_recommendation_trends(self, symbol: str) -> Dict[str, Any]:
+        return {}
+
+    def get_earnings_surprises(self, symbol: str) -> Dict[str, Any]:
+        return {}
+
+    def get_insider_sentiment(self, symbol: str, months: int = 12) -> Dict[str, Any]:
+        return {}
+
+    def get_company_news(self, symbol: str, days: int = 14) -> Dict[str, Any]:
+        return {}
+
+    def get_news_sentiment(self, symbol: str, limit: int = 50) -> Dict[str, Any]:
+        return {}
+
+    def get_peers(self, symbol: str) -> Dict[str, Any]:
+        return {}
+
+    def get_shareholder_returns(self, symbol: str) -> Dict[str, Any]:
         return {}
 
 

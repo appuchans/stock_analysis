@@ -85,13 +85,18 @@ class StockAnalysisApp:
         depth: str = "standard",
         asset_type: str = "auto",
         use_data_cache: bool = True,
+        resume: bool = False,
     ):
         self.llm_provider = llm_provider
         self.model = model
         self.depth = depth
         self.asset_type = asset_type
         self.crew = StockAnalysisFlow(
-            llm_provider, model, asset_type=asset_type, use_data_cache=use_data_cache
+            llm_provider,
+            model,
+            asset_type=asset_type,
+            use_data_cache=use_data_cache,
+            resume=resume,
         )
 
     def analyze_stock(self, symbol: str, **kwargs: Any) -> Dict[str, Any]:

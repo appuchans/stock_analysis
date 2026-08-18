@@ -37,17 +37,25 @@ _QUOTE_POLL_MINUTES = 15
 
 
 def _poll_price_rules() -> None:
-    """Internal periodic job (not a user-visible schedule row): evaluates
-    every enabled price-based rule against a fresh quote. Zero LLM calls, so
-    it's safe to run even while an analysis is in progress. A no-op cycle
-    (no price rules configured) costs nothing — evaluate_all_price_rules
-    returns immediately without any network call."""
-    try:
-        from . import rules as rules_mod
+    """Internal periodic job (not a user-visible schedule row): evaluates every
+    enabled price-based and calendar-based rule. Zero LLM calls, so it's safe
+    to run even while an analysis is in progress. A no-op cycle (no such rules
+    configured) costs nothing — both batch helpers return immediately without
+    any network call.
 
+    Calendar rules ride this same job because they also fire on the passage of
+    time rather than on an analysis completing.
+    """
+    from . import rules as rules_mod
+
+    try:
         rules_mod.evaluate_all_price_rules()
     except Exception as exc:
         _logger.debug("price-rule poll skipped: %s", exc)
+    try:
+        rules_mod.evaluate_all_calendar_rules()
+    except Exception as exc:
+        _logger.debug("calendar-rule poll skipped: %s", exc)
 
 
 def _now_iso() -> str:

@@ -178,3 +178,112 @@ class TestSocialSentimentTool:
         ):
             out = SocialSentimentTool()._run("NVDA")
         assert out["aggregate"]["overall_bias"] == "insufficient_data"
+
+
+class TestRedditOAuth:
+    """Anonymous Reddit search is 403-ed and the RSS fallback carries no
+    engagement data, so a free registered app is what restores the numbers the
+    sentiment stage needs. It must stay entirely optional."""
+
+    def _clear_token(self):
+        from src.stock_analysis.tools import social_sentiment as ss
+
+        ss._reddit_token["value"] = None
+        ss._reddit_token["expires_at"] = 0.0
+
+    def test_no_credentials_means_no_token_and_no_request(self, monkeypatch):
+        from src.stock_analysis.config import settings as settings_mod
+        from src.stock_analysis.tools import social_sentiment as ss
+
+        self._clear_token()
+        monkeypatch.setattr(settings_mod.settings, "reddit_client_id", None)
+        monkeypatch.setattr(settings_mod.settings, "reddit_client_secret", None)
+
+        def _boom(*a, **k):
+            raise AssertionError("must not call Reddit without credentials")
+
+        monkeypatch.setattr(ss._http, "post", _boom)
+        assert ss._reddit_oauth_token() is None
+
+    def test_token_is_cached_between_calls(self, monkeypatch):
+        """A batch run must not request a fresh token per symbol."""
+        from src.stock_analysis.config import settings as settings_mod
+        from src.stock_analysis.tools import social_sentiment as ss
+
+        self._clear_token()
+        monkeypatch.setattr(settings_mod.settings, "reddit_client_id", "id")
+        monkeypatch.setattr(settings_mod.settings, "reddit_client_secret", "secret")
+        calls = []
+
+        class _R:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"access_token": "tok", "expires_in": 3600}
+
+        monkeypatch.setattr(
+            ss._http, "post", lambda *a, **k: (calls.append(1), _R())[1]
+        )
+        assert ss._reddit_oauth_token() == "tok"
+        assert ss._reddit_oauth_token() == "tok"
+        assert len(calls) == 1
+
+    def test_oauth_search_returns_engagement_metrics(self, monkeypatch):
+        from src.stock_analysis.tools import social_sentiment as ss
+
+        class _R:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {
+                    "data": {
+                        "children": [
+                            {"data": {"score": 10, "num_comments": 4, "upvote_ratio": 0.9}},
+                            {"data": {"score": 20, "num_comments": 6, "upvote_ratio": 0.7}},
+                        ]
+                    }
+                }
+
+        monkeypatch.setattr(ss._http, "get", lambda *a, **k: _R())
+        out = ss._fetch_reddit_oauth("AMZN", "tok")
+        assert out["posts_last_week"] == 2
+        assert out["total_score"] == 30
+        assert out["total_comments"] == 10
+        assert out["avg_upvote_ratio"] == 0.8
+        assert out["via"] == "oauth"
+
+    def test_oauth_failure_falls_through_to_the_anonymous_chain(self, monkeypatch):
+        from src.stock_analysis.tools import social_sentiment as ss
+
+        monkeypatch.setattr(ss, "_reddit_oauth_token", lambda: "tok")
+        monkeypatch.setattr(
+            ss, "_fetch_reddit_oauth",
+            lambda *a: (_ for _ in ()).throw(RuntimeError("429")),
+        )
+        monkeypatch.setattr(ss, "_fetch_reddit_json", lambda s: {"via": "json"})
+        assert ss._fetch_reddit("AMZN")["via"] == "json"
+
+    def test_no_post_text_is_ever_collected(self, monkeypatch):
+        """Retail chatter must never be quotable in a report."""
+        from src.stock_analysis.tools import social_sentiment as ss
+
+        class _R:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {
+                    "data": {
+                        "children": [
+                            {"data": {"score": 1, "title": "AMZN TO THE MOON",
+                                      "selftext": "buy now"}}
+                        ]
+                    }
+                }
+
+        monkeypatch.setattr(ss._http, "get", lambda *a, **k: _R())
+        out = ss._fetch_reddit_oauth("AMZN", "tok")
+        assert "TO THE MOON" not in str(out)
+        assert "buy now" not in str(out)

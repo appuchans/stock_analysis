@@ -77,7 +77,19 @@ export function el(tag, attrs = {}, ...children) {
 export async function fetchJSON(url, opts) {
   const res = await fetch(url, opts);
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.detail || `${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    // FastAPI's `detail` may be a string or a structured object. Stringifying
+    // an object here yields "[object Object]", so keep the parsed value on the
+    // error and let callers branch on it.
+    const detail = body.detail;
+    const message = typeof detail === "string"
+      ? detail
+      : (detail && detail.message) || `${res.status} ${res.statusText}`;
+    const err = new Error(message);
+    err.status = res.status;
+    err.detail = detail;
+    throw err;
+  }
   return body;
 }
 

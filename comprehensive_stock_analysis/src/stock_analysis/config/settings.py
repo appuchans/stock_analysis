@@ -35,6 +35,42 @@ class Settings(BaseSettings):
     # for the capabilities they cover and falls back to yfinance otherwise.
     fmp_api_key: Optional[str] = Field(None, validation_alias="FMP_API_KEY")
     polygon_api_key: Optional[str] = Field(None, validation_alias="POLYGON_API_KEY")
+    # sec-api.io — structured access to SEC filings (Form 4 insider
+    # transactions, and 10-K/10-Q section extraction). Distinct from
+    # sec_edgar_email above: EDGAR itself is keyless and only needs a contact
+    # email, this is a commercial layer over the same filings that returns
+    # parsed JSON instead of HTML that has to be scraped.
+    sec_api_key: Optional[str] = Field(None, validation_alias="SEC_API_KEY")
+    # Finnhub — analyst recommendation trends, earnings surprises, insider
+    # sentiment and structured company news. Free tier covers all of these.
+    finnhub_api_key: Optional[str] = Field(None, validation_alias="FINNHUB_API_KEY")
+    # Alpha Vantage — used only for its NEWS_SENTIMENT endpoint (per-article
+    # sentiment scores). Its free tier is ~25 requests/day, so it is queried
+    # once per analysis at most.
+    alpha_vantage_api_key: Optional[str] = Field(
+        None, validation_alias="ALPHA_VANTAGE_API_KEY"
+    )
+    # Marketaux — sentiment-scored news, used as the backup to Alpha Vantage.
+    # Different daily budget (~100/day vs ~25), so one covers the other.
+    marketaux_api_key: Optional[str] = Field(
+        None, validation_alias="MARKETAUX_API_KEY"
+    )
+    # Reddit — a free registered app (reddit.com/prefs/apps, "script" type).
+    # Anonymous JSON search is now 403-ed, and the RSS fallback carries no
+    # scores or comment counts, so without these the sentiment stage can report
+    # post volume but no engagement signal.
+    # A manual re-run inside this window is refused unless explicitly forced.
+    # A full analysis costs real money (~130k tokens), and the underlying data
+    # barely moves within a day, so an accidental Refresh minutes after a run
+    # is almost always a mistake rather than an intent. Scheduled runs are
+    # exempt — their cadence is already the user's decision. 0 disables.
+    min_rerun_interval_hours: float = Field(
+        24.0, validation_alias="MIN_RERUN_INTERVAL_HOURS"
+    )
+    reddit_client_id: Optional[str] = Field(None, validation_alias="REDDIT_CLIENT_ID")
+    reddit_client_secret: Optional[str] = Field(
+        None, validation_alias="REDDIT_CLIENT_SECRET"
+    )
 
     # ── Application ───────────────────────────────────────────────────────────
     debug: bool = Field(False, validation_alias="DEBUG")

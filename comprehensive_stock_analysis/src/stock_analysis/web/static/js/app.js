@@ -1,7 +1,7 @@
 // Router + shell chrome (theme toggle, mobile drawer, refresh) — no build step.
 import { $, $$ } from "./util.js";
 import { initAnalyzeForm, refreshSymbol } from "./analyze.js";
-import { renderReport } from "./dashboard.js";
+import { renderReport, downloadReportPdf } from "./dashboard.js";
 import { loadHistory } from "./history.js";
 import { loadWatchlist } from "./watchlist.js";
 import { loadPortfolio } from "./portfolio.js";
@@ -65,6 +65,10 @@ function initChrome() {
   $("#report-refresh")?.addEventListener("click", (e) => {
     const btn = e.currentTarget;
     if (btn.dataset.symbol) refreshSymbol(btn.dataset.symbol, btn.dataset.asset);
+  });
+  $("#report-pdf")?.addEventListener("click", (e) => {
+    const symbol = e.currentTarget.dataset.symbol;
+    if (symbol) downloadReportPdf(symbol);
   });
   syncThemeUI();
 }

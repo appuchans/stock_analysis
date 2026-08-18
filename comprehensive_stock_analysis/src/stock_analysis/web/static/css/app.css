@@ -228,6 +228,14 @@ a { color: var(--accent); text-decoration: none; }
 .progress-meta { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 99px; padding: 5px 12px; font-size: 12.5px; color: var(--text-2); }
 .chip b { color: var(--text); font-weight: 600; }
+/* Other runs the user queued while one is active — proof the first one is
+   still going rather than having been cancelled by the newer submission. */
+.progress-queue { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+.queue-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 99px; padding: 4px 11px; font-size: 12px; color: var(--text-2); }
+.queue-chip a { color: var(--pos); text-decoration: none; font-weight: 600; }
+.queue-chip a:hover { text-decoration: underline; }
+.queue-chip.is-running { border-color: var(--accent); color: var(--text); }
+.queue-chip.is-failed, .queue-chip.is-aborted { color: var(--neg); }
 .error-banner { margin-top: 16px; padding: 12px 15px; background: var(--neg-bg); color: var(--neg); border-radius: var(--r-sm); font-size: 13.5px; }
 
 /* ── Report header / tabs ──────────────────────────────────────────────── */
@@ -319,6 +327,10 @@ th.sortable.sort-desc::after { content: "\2193"; opacity: 1; color: var(--accent
 .report-card.buy .accent-rail { background: var(--pos); }
 .report-card.hold .accent-rail { background: var(--warn); }
 .report-card.sell .accent-rail { background: var(--neg); }
+/* An incomplete run must not wear a rating colour — the rail is the fastest
+   read on the card, and green on a half-finished report is a lie. */
+.report-card.is-incomplete .accent-rail { background: var(--warn, #d99a2b); }
+.badge-incomplete { cursor: help; border: 1px dashed var(--warn, #d99a2b); color: var(--warn, #d99a2b); background: transparent; }
 .rc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .rc-sym { font-weight: 800; font-size: 18px; letter-spacing: .01em; }
 .rc-name { font-size: 12.5px; color: var(--text-3); margin: 3px 0 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

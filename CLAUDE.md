@@ -2,6 +2,35 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Guiding Principle: commonsense minimalism
+
+**Solve the problem that was actually reported, with the least machinery that
+holds.** This is a single-user local app, not a platform. Prefer the obvious
+solution a sensible person would reach for first.
+
+In practice:
+
+- **Fix it where the problem is.** Guard the endpoint the user actually hits;
+  don't thread a flag through four layers so every hypothetical caller is
+  covered. If callers that bypass the fix are already deliberate user actions
+  (a scheduled run, a bulk "analyze all"), that is not a gap to close.
+- **Don't build abstractions for one caller.** A custom exception class, a
+  structured error payload, and a settings knob to pass one number is worse
+  than a plain 409 with a readable message.
+- **Prefer config and prompts over Python.** Stage behaviour lives in
+  `flow_tasks.yaml`; `_desc_for` already resolves stock/ETF variants. Adding a
+  YAML key beats adding a code path.
+- **Test what would actually break.** Two tests that pin the real behaviour beat
+  eight that enumerate every branch. Edge cases written reflexively are cost,
+  not coverage.
+- **Reuse before adding.** `price_series.py`, `_http.SESSION`, `cache.py`, the
+  provider `ROUTER`, and the shared JS modules exist so features don't each grow
+  their own version. Extend them.
+
+When a change starts sprawling — new classes, new plumbing, new flags — stop and
+ask whether the five-line version would hold. It usually does. If it genuinely
+would not, say why in a comment where the complexity lives.
+
 ## Common Commands
 
 All commands run from `comprehensive_stock_analysis/`.

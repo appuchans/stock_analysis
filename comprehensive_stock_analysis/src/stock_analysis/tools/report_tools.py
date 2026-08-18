@@ -3,9 +3,10 @@
 import html
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from crewai.tools import BaseTool
 
@@ -114,11 +115,25 @@ _HTML_TEMPLATE = """\
   li { margin: 4px 0; }
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   @media (max-width: 640px) { .two-col, .toc ul { grid-template-columns: 1fr; columns: 1; } }
-  .md-content p { margin: 10px 0; }
+  /* Appendix body copy is dense reference material read in long stretches, so
+     it gets a narrower measure and more line spacing than the main narrative —
+     ~75 characters is where continuous prose stays comfortable to scan. */
+  .md-content { max-width: 68ch; line-height: 1.72; }
+  .md-content p { margin: 12px 0; }
   .md-content ul, .md-content ol { padding-left: 24px; }
-  .md-content h1 { font-size: 1.3em; color: var(--brand); }
-  .md-content h2 { font-size: 1.15em; color: var(--accent); border-bottom: 1px solid var(--line); }
-  .md-content h3 { font-size: 1.02em; }
+  .md-content li { margin: 6px 0; }
+  /* Specialist workpapers carry their own h1/h2 hierarchy. Inside an appendix
+     these must read as sub-headings, not compete with the report's own
+     section headings — hence the step down in size and weight. */
+  .md-content h1 { font-size: 1.18em; color: var(--brand); margin: 22px 0 8px; }
+  .md-content h2 { font-size: 1.06em; color: var(--accent); border-bottom: 1px solid var(--line);
+                   padding-bottom: 3px; margin: 20px 0 8px; }
+  .md-content h3 { font-size: 0.98em; color: var(--ink-soft); margin: 16px 0 6px;
+                   text-transform: none; letter-spacing: 0.01em; }
+  /* The lead-in label the renderer bolds — give it a little air so the item
+     structure is visible at a glance. */
+  .md-content p > strong:first-child { color: var(--ink); }
+  .md-content table { font-size: 0.94em; }
   .md-content code { background: #edf2f7; padding: 2px 5px; border-radius: 3px; font-size: 0.88em; }
   .md-content pre { background: #f1f5f9; padding: 14px; border-radius: 6px; overflow: auto; }
   .md-content blockquote { border-left: 3px solid #4299e1; margin: 10px 0; padding-left: 14px; color: #555; }
@@ -137,8 +152,72 @@ _HTML_TEMPLATE = """\
   }
   .narrative h3::after, .narrative h4::after { content: ". "; font-weight: 700; }
   .narrative h3 + p, .narrative h4 + p { display: inline; }
-  @media print { .toc { display: none; } body { font-size: 12px; }
-    details.detail-section { page-break-inside: avoid; } }
+  @media print {
+    .toc, .to-top { display: none; }
+    /* Print gets a serif body: on paper a serif holds up better at small sizes
+       over long stretches than the screen sans, and the report is read as a
+       document rather than scanned as a page. */
+    body { font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+           font-size: 10.5pt; line-height: 1.5; max-width: none; padding: 0;
+           color: #000; }
+    h1, h2, h3, h4, .report-header .company,
+    .rec-badge, .stat .label, th { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+    h2 { font-size: 13pt; letter-spacing: -0.01em; }
+    h3 { font-size: 11.5pt; }
+    /* Masthead: logo and company sit together on the cover page, then the
+       running header carries the identity on every page after it. */
+    .report-header { border-bottom: 2pt solid #1a365d; padding: 0 0 8pt;
+                     margin-bottom: 10pt; }
+    .report-header .logo img { max-height: 34pt; }
+    .report-body { padding: 0; }
+    /* Ratings and stat tiles must survive losing their screen backgrounds. */
+    .rec-badge, .chip { border: 0.6pt solid #666; background: none !important;
+                        color: #000 !important; padding: 1pt 4pt; }
+    .stat { border: 0.5pt solid #bbb; background: none !important; }
+    .card, .panel { border: 0.5pt solid #ccc; background: none !important;
+                    box-shadow: none !important; }
+    table { border-collapse: collapse; width: 100%; }
+    th { background: #eee !important; border-bottom: 0.8pt solid #333; }
+    td, th { border-bottom: 0.4pt solid #ddd; padding: 3pt 5pt; }
+    /* A link's href is invisible on paper, so surface the ones that carry
+       information and leave in-page anchors silent. */
+    a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 8pt; color: #555; }
+    a[href^="#"]::after { content: none; }
+    /* Appendices must appear in a PDF whether or not script ran. The
+       beforeprint handler below opens them, but it never fires when the page
+       is embedded in the app's sandboxed iframe, so force the content visible
+       in CSS as well — a printed report missing its appendices is the one
+       failure this feature exists to prevent. */
+    details.detail-section > *,
+    details.detail-section[open] > * { display: revert !important; }
+    details.detail-section summary { list-style: none; font-weight: 700; }
+    details.detail-section summary::-webkit-details-marker { display: none; }
+    details.detail-section { page-break-inside: auto; break-inside: auto;
+      border: none; padding: 0; margin: 14px 0; }
+    /* Keep a heading with the text it introduces, and never strand a line. */
+    h1, h2, h3 { page-break-after: avoid; break-after: avoid-page; }
+    table, .stat-grid, svg { page-break-inside: avoid; break-inside: avoid; }
+    p, li { orphans: 3; widows: 3; }
+    a { text-decoration: none; color: inherit; }
+    .report-header { page-break-after: avoid; }
+  }
+  /* Page furniture: a named running header/footer with the symbol, the
+     document type and a page number, so a printed copy is identifiable once it
+     leaves the screen. Browsers vary in @page margin-box support; where it is
+     ignored the report simply prints without the furniture. */
+  @page {
+    size: A4;
+    margin: 16mm 14mm 18mm;
+    @top-left { content: "{{ symbol }} — {{ "ETF" if asset_type == "etf" else "Equity" }} Research";
+                font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color: #555; }
+    @top-right { content: "{{ generated_at }}";
+                 font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color: #555; }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages);
+                    font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color: #555; }
+    @bottom-left { content: "Generated for research purposes — not investment advice.";
+                   font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; color: #777; }
+  }
+  @page :first { @top-left { content: ""; } @top-right { content: ""; } }
   html { scroll-behavior: smooth; }
   .to-top { position: fixed; right: 22px; bottom: 22px; width: 42px; height: 42px;
     border-radius: 50%; background: var(--brand); color: #fff; display: flex;
@@ -252,7 +331,6 @@ _HTML_TEMPLATE = """\
     {% for slug, title, _ in detail_sections %}
     <li><a href="#detail-{{ slug }}">Appendix {{ loop.index }}: {{ title }}</a></li>
     {% endfor %}
-    {% if consolidated_gaps %}<li><a href="#data-sources-gaps">Appendix: Data Sources &amp; Gaps</a></li>{% endif %}
   </ul>
 </div>
 
@@ -503,15 +581,6 @@ _HTML_TEMPLATE = """\
 {% endfor %}
 {% endif %}
 
-{% if consolidated_gaps %}
-<details class="detail-section" id="data-sources-gaps">
-  <summary><strong>Appendix: Data Sources &amp; Gaps</strong></summary>
-  {% for title, gaps_html in consolidated_gaps %}
-  <h3>{{ title }}</h3>
-  <div class="md-content">{{ gaps_html }}</div>
-  {% endfor %}
-</details>
-{% endif %}
 
 <script>
   window.addEventListener("beforeprint", function () {
@@ -559,21 +628,329 @@ _HTML_TEMPLATE = """\
 """
 
 
+_LIST_ITEM_RE = re.compile(r"^\s{0,3}(?:[-*+]\s+|\d{1,3}[.)]\s+)\S")
+_TABLE_ROW_RE = re.compile(r"^\s{0,3}\|")
+
+# Parenthetical provenance notes the prompts forbid but models still emit —
+# "(source: Yahoo Finance, as of 2026-08-14)", "(*same source*)", "(as-of ...)".
+# Bounded, no-nesting character classes keep this linear-time; a naive
+# `[^()]{0,100}?` alternation backtracked badly on real report text.
+_SOURCE_PAREN_RE = re.compile(
+    r"\s*\((?=[^()]{0,140}\))"  # open paren whose contents hold no nested parens
+    r"[^()]*?\b(?:sources?|as[-\s]of|per\s+the)\b[^()]*?\)",
+    re.IGNORECASE,
+)
+# Same note rendered as a trailing bracket note rather than parentheses.
+_SOURCE_BRACKET_RE = re.compile(
+    r"\s*\[(?=[^\[\]]{0,140}\])[^\[\]]*?\b(?:sources?|as[-\s]of)\b[^\[\]]*?\]",
+    re.IGNORECASE,
+)
+# Bare machine identifiers that leaked into prose (tool/function names).
+_TOOL_NAME_RE = re.compile(
+    r"`?\b(?:free_[a-z_]+|[a-z_]+_tool|[a-z_]+_collector)\b`?", re.IGNORECASE
+)
+# "source label: `analyst_consensus_and_estimates`" — a machine field dressed up
+# as a citation. Meaningless to a reader wherever it appears, appendix included.
+_SOURCE_LABEL_RE = re.compile(
+    r"\(?\s*\bsource\s+labels?\s*:\s*[^)\n]*\)?", re.IGNORECASE
+)
+# Backticked machine paths like `social.market_mood` or `x.y[0].Holding Percent`.
+_BACKTICKED_IDENT_RE = re.compile(r"`[A-Za-z0-9_]+(?:[._\[\]][A-Za-z0-9_ \[\]]*)+`")
+# A whole line that is nothing but an attribution, e.g.
+# '**Source:** user-provided "4. Financial Performance → annual_income"'.
+# Outside the appendix the entire line goes; keeping it would leave a dangling
+# bold "Source:" label with nothing useful after it.
+_SOURCE_LINE_RE = re.compile(r"^\s*(?:[-*+]\s+)?[*_]{0,2}\s*sources?\b[*_]{0,2}\s*:", re.IGNORECASE)
+
+
+# Pipeline narration: which source answered, what a run did or did not fetch.
+# Operator detail that means nothing to a client reading a research report.
+_RUN_STATE = (
+    r"(?:in|during|for)\s+th(?:is|e)\s+run"
+    r"|in\s+the\s+(?:current|present)\s+run"
+    r"|(?:in|from|within)\s+the\s+(?:provided|supplied|collected|given)\s+"
+    r"(?:data(?:set)?|inputs?|pull|content|material)(?:\s+pull)?"
+    r"|from\s+provided\s+dataset"
+    r"|(?:not\s+available\s+in|,\s*)\s*provided\s+dataset"
+    r"|see\s+Data\s+Sources\s*&?\s*(?:amp;)?\s*Gaps"
+    r"|not\s+quantified\s+in\s+(?:the\s+)?(?:provided|supplied)"
+    r"|the\s+tool\s+(?:returned|output)"
+    r"|(?:we\s+)?fell\s+back\s+to"
+    r"|since\s+\w[\w\s]{0,30}?\s+(?:was|were)\s+unavailable"
+)
+# As a parenthetical: "(since FRED was unavailable in this run)".
+_RUN_PAREN_RE = re.compile(
+    rf"\s*\((?=[^()]{{0,140}}\))[^()]*?(?:{_RUN_STATE})[^()]*?\)", re.IGNORECASE
+)
+# As a trailing qualifier inside a sentence: "…are not available in this run".
+_RUN_CLAUSE_RE = re.compile(rf"[,;]?\s*(?:{_RUN_STATE})", re.IGNORECASE)
+# A whole line whose only content is "X: not available …" — a placeholder row
+# that tells the reader nothing except that the pipeline came up short.
+_NOT_AVAILABLE_LINE_RE = re.compile(
+    r"^\s*(?:[-*+]\s+)?[*_]{0,2}[^:*_\n]{2,60}[*_]{0,2}\s*:\s*"
+    r"[*_]{0,2}\s*(?:not\s+available|unavailable|n/?a)\b.*$",
+    re.IGNORECASE,
+)
+
+
+# Pipeline narration in *subject* position — "Your provided dataset does not
+# include…", "The provided dataset shows…". Deleting the phrase would leave a
+# headless sentence, so the whole sentence goes.
+_RUN_SENTENCE_RE = re.compile(
+    r"(?:the|your|our|this)\s+(?:provided|supplied|collected)\s+"
+    r"(?:data(?:set)?|inputs?|content|material)"
+    r"|\bprovided\s+dataset\b"
+    r"|\bin\s+provided\s+(?:data(?:set)?|inputs?)\b",
+    re.IGNORECASE,
+)
+# Sentence boundary that tolerates the markdown around it.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _drop_run_sentences(text: str) -> str:
+    """Drop whole sentences that exist only to narrate the data supply."""
+    if not _RUN_SENTENCE_RE.search(text):
+        return text
+    kept = [s for s in _SENTENCE_SPLIT_RE.split(text) if not _RUN_SENTENCE_RE.search(s)]
+    return " ".join(kept)
+
+
+def _strip_run_commentary(line: str) -> str:
+    """Remove pipeline narration from a single body line."""
+    out = _RUN_PAREN_RE.sub("", line)
+    out = _RUN_CLAUSE_RE.sub("", out)
+    out = _drop_run_sentences(out)
+    # Tidy what the removal stranded: doubled spaces, space-before-punctuation,
+    # and an orphaned connective left dangling at the end of a clause.
+    out = re.sub(r"\s+([.,;:)])", r"\1", out)
+    out = re.sub(r"\(\s*\)", "", out)
+    out = re.sub(r"\b(?:though|however|although|but|while)\s*([.;,])", r"\1", out, flags=re.I)
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    return out
+
+
+def _write_run_report(symbol: str, gaps: List[Tuple[str, str]]) -> Optional[Path]:
+    """Write the operator-facing run report: sources used and what was missing.
+
+    Kept deliberately out of the client report. A reader wants the analysis; an
+    operator wants to know which sources answered, what was substituted, and
+    where a rerun would add value. Mixing the two made the research document
+    read like a job log.
+
+    Best-effort: a failure here must never cost the user their report.
+    """
+    if not gaps:
+        return None
+    path = Path(settings.report_output_dir) / symbol.upper() / f"{symbol.upper()}_run_report.md"
+    lines = [
+        f"# {symbol.upper()} — Run Report",
+        "",
+        f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}.",
+        "",
+        "Operator notes on data provenance and coverage for this analysis. "
+        "Not part of the client-facing report.",
+        "",
+        "## Why data was unavailable",
+        "",
+        "Recorded where the fetch happened, so a missing API key is "
+        "distinguishable from a provider tier limit or a failed request.",
+        "",
+    ]
+    try:
+        from .. import run_diagnostics
+
+        lines += [run_diagnostics.as_markdown(), ""]
+    except Exception:  # diagnostics must never cost the run report
+        lines += ["Diagnostics unavailable for this run.", ""]
+
+    lines += [
+        "## Gaps reported by each analysis stage",
+        "",
+        "What each specialist said it could not cover, in its own words.",
+        "",
+    ]
+    for title, gaps_md in gaps:
+        lines += [f"### {title}", "", gaps_md.strip(), ""]
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(lines), encoding="utf-8")
+        return path
+    except OSError as exc:
+        _logger.warning("could not write run report for %s: %s", symbol, exc)
+        return None
+
+
+def _strip_inline_sources(text: str) -> str:
+    """Remove inline provenance notes from report prose.
+
+    The stage prompts forbid these, but compliance is not guaranteed and a
+    report already on disk was written under the old instructions. Stripping at
+    render time means re-rendering an existing report cleans it up, and a model
+    slip never reaches the reader. The closing 'Data Sources & Gaps' section is
+    left intact — that is where provenance is supposed to live.
+
+    Fenced code blocks and table rows are skipped: a pipe table's cells are
+    positional, so deleting text inside one would corrupt the row.
+    """
+    out: List[str] = []
+    in_fence = False
+    fence_marker = ""
+    in_sources_section = False
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        if in_fence:
+            if stripped.startswith(fence_marker):
+                in_fence = False
+            out.append(line)
+            continue
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = True
+            fence_marker = stripped[:3]
+            out.append(line)
+            continue
+        # Once inside the sources appendix, leave provenance alone — but still
+        # scrub raw tool names, which are never appropriate for a reader.
+        if stripped.startswith("#"):
+            in_sources_section = bool(
+                re.search(r"data\s+sources?|sources?\s*&\s*gaps", stripped, re.I)
+            )
+        if in_sources_section or _TABLE_ROW_RE.match(line):
+            keep = _SOURCE_LABEL_RE.sub("", line)
+            keep = _BACKTICKED_IDENT_RE.sub("internal data", keep)
+            keep = _TOOL_NAME_RE.sub("internal data", keep)
+            out.append(re.sub(r"[ \t]{2,}", " ", keep).rstrip())
+            continue
+
+        # A line that exists only to attribute a source, or to report that a
+        # value was missing, carries nothing for the reader — drop it whole
+        # rather than leaving a bare "Source:" label or a "not available" row.
+        if _SOURCE_LINE_RE.match(line) or _NOT_AVAILABLE_LINE_RE.match(line):
+            continue
+
+        cleaned = _SOURCE_LABEL_RE.sub("", line)
+        cleaned = _SOURCE_PAREN_RE.sub("", cleaned)
+        cleaned = _SOURCE_BRACKET_RE.sub("", cleaned)
+        cleaned = _BACKTICKED_IDENT_RE.sub("internal data", cleaned)
+        cleaned = _TOOL_NAME_RE.sub("internal data", cleaned)
+        # Pipeline narration ("in this run", "from the provided dataset") is
+        # operator detail; the client report must not expose it.
+        cleaned = _strip_run_commentary(cleaned)
+        # Tidy punctuation left stranded by the removal.
+        cleaned = re.sub(r"\s+([.,;:])", r"\1", cleaned)
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        # A line that was nothing but a citation should vanish, not leave a stub.
+        if stripped and not cleaned.strip(" -*\t"):
+            continue
+        out.append(cleaned.rstrip())
+    return "\n".join(out)
+
+
+def _normalize_md_blocks(text: str) -> str:
+    """Insert the blank line Python-Markdown needs before a list or table.
+
+    Agents habitually write a lead-in line with the list attached directly
+    underneath::
+
+        Key drivers:
+        - AWS margin expansion
+        - Advertising growth
+
+    Python-Markdown only starts a ``<ul>`` after a blank line, so without one
+    those items stay inside the preceding paragraph — and because ``nl2br`` is
+    enabled they render as ``<br/>``-joined text. The result is the wall of
+    prose the report is supposed to avoid (one AMZN report had 109 of them).
+    Rather than fight the model's formatting in every prompt, normalise here so
+    an attached list always becomes a real list.
+
+    Fenced code blocks are passed through untouched — indentation and blank
+    lines are significant inside them.
+    """
+    out: List[str] = []
+    in_fence = False
+    fence_marker = ""
+    prev = ""
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        if in_fence:
+            if stripped.startswith(fence_marker):
+                in_fence = False
+            out.append(line)
+            prev = line
+            continue
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = True
+            fence_marker = stripped[:3]
+            out.append(line)
+            prev = line
+            continue
+
+        starts_block = bool(_LIST_ITEM_RE.match(line)) or bool(
+            _TABLE_ROW_RE.match(line)
+        )
+        prev_stripped = prev.strip()
+        prev_is_same_block = bool(_LIST_ITEM_RE.match(prev)) or bool(
+            _TABLE_ROW_RE.match(prev)
+        )
+        # Only a *paragraph* line above needs separating. A heading, an existing
+        # list item, a table row, or a blank line is already a valid boundary.
+        if (
+            starts_block
+            and prev_stripped
+            and not prev_is_same_block
+            and not prev_stripped.startswith("#")
+            and not prev_stripped.startswith(">")
+        ):
+            out.append("")
+        out.append(line)
+        prev = line
+    return "\n".join(out)
+
+
+# A paragraph that opens with a short label on its own line, e.g.
+#   <p>Track record<br />Management has delivered…</p>
+# The agents write memo items this way constantly. Without emphasis the label
+# melts into the body and the whole item reads as one undifferentiated block —
+# which is what makes the appendices feel like walls of prose even though the
+# paragraphs themselves are short.
+_LEAD_IN_RE = re.compile(
+    # Markdown emits <li>Label<br> for a tight list and <li><p>Label<br> for a
+    # loose one, so both openers have to be recognised.
+    r"(<p>|<li>)"
+    r"(?!<)"  # not already opening with a tag (e.g. <strong>)
+    r"([^<>]{2,70}?)"  # the candidate label — short, no nested markup
+    r"(?<![.!?:;,])"  # a finished sentence is prose, not a label
+    r"(\s*<br\s*/?>\s*)"
+    r"(?=[^<]{40,})"  # and real body text follows, not another short line
+)
+
+
+def _emphasize_lead_in_labels(html: str) -> str:
+    """Bold the short label that opens a 'Label<br>body' paragraph.
+
+    Purely presentational: it changes no words, only makes the structure the
+    author intended actually visible. Applied at render time so reports already
+    on disk improve without a re-run.
+    """
+    return _LEAD_IN_RE.sub(r"\1<strong>\2</strong>\3", html)
+
+
 def _md_to_html(text: str) -> str:
     """Convert markdown to HTML."""
     try:
         import markdown
 
-        return markdown.markdown(
-            text,
-            extensions=[
-                "tables",
-                "fenced_code",
-                "nl2br",
-                "sane_lists",
-                "attr_list",
-                "pymdownx.superfences",
-            ],
+        return _emphasize_lead_in_labels(
+            markdown.markdown(
+                _normalize_md_blocks(_strip_inline_sources(text)),
+                extensions=[
+                    "tables",
+                    "fenced_code",
+                    "nl2br",
+                    "sane_lists",
+                    "attr_list",
+                    "pymdownx.superfences",
+                ],
+            )
         )
     except ImportError:
         pass
@@ -1192,7 +1569,9 @@ class ReportGeneratorTool(BaseTool):
             md_text = _strip_leading_title(md_text)
             md_text, gaps_md = _split_gaps(md_text)
             if gaps_md:
-                gaps_acc.append((title, Markup(_md_to_html(gaps_md))))
+                # Raw markdown, not HTML: these no longer render into the
+                # client report, they are written to the separate run report.
+                gaps_acc.append((title, gaps_md))
             result.append((slug, title, Markup(_md_to_html(md_text))))
         return result, gaps_acc
 
@@ -1506,6 +1885,9 @@ class ReportGeneratorTool(BaseTool):
         detail_sections, consolidated_gaps = self._load_detail_sections(
             symbol, asset_type
         )
+        # Provenance and gaps are operator concerns, not client-facing content:
+        # they go to a separate run report instead of an appendix in the report.
+        _write_run_report(symbol, consolidated_gaps)
 
         html = template.render(
             symbol=symbol.upper(),
@@ -1529,7 +1911,6 @@ class ReportGeneratorTool(BaseTool):
             narrative_html=narrative_html,
             narrative_sections=narrative_sections,
             standalone=unconsumed,
-            consolidated_gaps=consolidated_gaps,
             meta=meta,
             exec_sum=exec_sum,
             inv_rec=inv_rec,

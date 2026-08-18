@@ -45,6 +45,16 @@ function statusBadge(status) {
   return el("span", { class: "rec-badge " + cls }, STATUS_LABEL[status] || status);
 }
 
+/** Hover text naming every stage and artifact the run failed to produce. */
+function incompleteDetail(degradations, review) {
+  const lines = [];
+  for (const d of degradations || []) lines.push("• " + d);
+  for (const i of (review && review.issues) || []) {
+    if (i.severity === "error") lines.push("• " + i.detail);
+  }
+  return lines.length ? "Not produced by this run:\n" + lines.join("\n") : "";
+}
+
 function recClass(rec) {
   const r = (rec || "").toLowerCase();
   return r.includes("buy") ? "buy" : r.includes("sell") ? "sell" : r.includes("hold") ? "hold" : "";
@@ -53,6 +63,13 @@ function recClass(rec) {
 function card(it) {
   const completed = it.status === "completed" || it.status == null;
   const viewable = it.has_html;
+  // A run can report "completed" and still be partial: the flow degrades rather
+  // than aborting (so partial output beats none), and run_review.py separately
+  // checks the artifacts the tile needs. Either signal means the report on disk
+  // is not whole, and the tile must say so instead of looking like a clean run.
+  const degradations = it.degradations || [];
+  const reviewErrors = it.review && !it.review.ok ? (it.review.error_count || 0) : 0;
+  const incomplete = completed && (degradations.length > 0 || reviewErrors > 0);
   const upside = it.target_price && it.current_price
     ? ((it.target_price - it.current_price) / it.current_price) * 100 : null;
   // Negative by construction (price sits at or below the 52w high), so it reads
@@ -60,17 +77,25 @@ function card(it) {
   const offHigh = it.high_52w && it.current_price
     ? ((it.current_price - it.high_52w) / it.high_52w) * 100 : null;
 
-  const classes = ["report-card", viewable ? "viewable" : "not-viewable", completed ? recClass(it.recommendation) : ""];
+  const classes = ["report-card", viewable ? "viewable" : "not-viewable",
+    completed ? recClass(it.recommendation) : "", incomplete ? "is-incomplete" : ""];
   const node = el("div", { class: classes.filter(Boolean).join(" ") }, el("div", { class: "accent-rail" }));
   if (viewable) node.addEventListener("click", (e) => {
     if (!e.target.closest(".btn-refresh")) navigate(`#/report/${it.symbol}`);
   });
 
+  // Why "Incomplete output" replaces the rating badge rather than sitting next
+  // to it: a BUY badge on a run whose recommendation stage failed is actively
+  // misleading. The rating still shows in a row below when one exists.
+  const headBadge = !completed
+    ? statusBadge(it.status)
+    : incomplete
+      ? el("span", { class: "rec-badge badge-neutral badge-incomplete",
+          title: incompleteDetail(degradations, it.review) }, "Incomplete output")
+      : (it.recommendation ? el("span", { class: "rec-badge " + badgeClass(it.recommendation) }, it.recommendation.toUpperCase()) : null);
   node.append(el("div", { class: "rc-head" },
     el("span", { class: "rc-sym" }, it.symbol),
-    completed
-      ? (it.recommendation ? el("span", { class: "rec-badge " + badgeClass(it.recommendation) }, it.recommendation.toUpperCase()) : null)
-      : statusBadge(it.status)));
+    headBadge));
   node.append(el("div", { class: "rc-name" }, it.name || it.sector || (it.asset_type === "etf" ? "ETF" : "—")));
 
   if (completed && (it.spark || []).length >= 2) {
@@ -106,26 +131,40 @@ function card(it) {
       viewable ? "Showing the last completed report" : "No report was produced")));
   }
 
-  // A run can complete and still be missing data the tile needs (see
-  // run_review.py). Surface that here rather than leaving the user to notice a
-  // half-rendered card by eye.
-  if (completed && it.review && !it.review.ok) {
-    const detail = (it.review.issues || [])
-      .filter((i) => i.severity === "error")
-      .map((i) => i.detail)
-      .join("\n");
-    node.append(el("div", { class: "rc-row rc-review", title: detail },
-      el("span", { class: "lbl warn" }, "⚠ Incomplete data"),
-      el("span", { class: "num warn" },
-        it.review.error_count + (it.review.error_count === 1 ? " issue" : " issues"))));
+  // Keep the rating visible even on an incomplete run — it just no longer gets
+  // to masquerade as the headline verdict of a whole report.
+  if (incomplete && it.recommendation) {
+    node.append(row("Rating", it.recommendation.toUpperCase()));
   }
 
+  // Name what is actually missing, so "Incomplete output" is diagnosable
+  // without opening the report or reading the logs.
+  if (incomplete) {
+    const parts = [];
+    if (degradations.length) {
+      parts.push(degradations.length + (degradations.length === 1 ? " stage" : " stages"));
+    }
+    if (reviewErrors) {
+      parts.push(reviewErrors + (reviewErrors === 1 ? " artifact" : " artifacts"));
+    }
+    node.append(el("div", { class: "rc-row rc-review", title: incompleteDetail(degradations, it.review) },
+      el("span", { class: "lbl warn" }, "⚠ Missing"),
+      el("span", { class: "num warn" }, parts.join(" · "))));
+  }
+
+  // A run that ended incomplete (or was cancelled / failed) resumes instead of
+  // restarting: the stages that already succeeded are reused and only the
+  // missing ones re-run, so a partial run costs its remainder, not full price.
+  const canResume = incomplete || it.status === "aborted" || it.status === "failed";
   node.append(el("div", { class: "rc-foot" },
     el("span", { class: "when" }, it.mtime ? it.mtime.replace("T", " ") : "—"),
-    el("button", { class: "btn btn-ghost btn-sm btn-refresh", title: "Re-run with fresh data",
-      onclick: () => refreshSymbol(it.symbol, it.asset_type) },
+    el("button", { class: "btn btn-ghost btn-sm btn-refresh",
+      title: canResume
+        ? "Resume — reuse the stages that finished, re-run only what is missing"
+        : "Re-run with fresh data",
+      onclick: () => refreshSymbol(it.symbol, it.asset_type, canResume) },
       el("span", { class: "ic" }, refreshIcon()),
-      "Refresh")));
+      canResume ? "Resume" : "Refresh")));
   return node;
 }
 

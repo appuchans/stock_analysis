@@ -129,3 +129,34 @@ def test_status_marker_overrides_for_symbol_with_html(_temp_reports):
     assert it["symbol"] == "AAPL"
     assert it["status"] == "aborted"
     assert it["has_html"] is True  # the prior report is still viewable
+
+
+def test_degraded_run_reports_completed_but_carries_its_degradations(_temp_reports):
+    """A degraded run still reports ``completed`` by design (partial output
+    beats none), so the gallery needs the degradation list to tell the user the
+    report is not whole — otherwise the tile renders as a clean run.
+
+    Guards the response_model too: HistoryItem must declare the field or
+    FastAPI silently drops it and the tile can never show the warning.
+    """
+    from src.stock_analysis.web.reports_index import write_run_status
+
+    _seed(_temp_reports, "AAPL")
+    write_run_status(
+        "AAPL",
+        "completed",
+        degradations=["recommendation: crew failed", "report: agent produced nothing"],
+    )
+    it = client.get("/api/history").json()["items"][0]
+    assert it["status"] == "completed"
+    assert len(it["degradations"]) == 2
+    assert "recommendation: crew failed" in it["degradations"]
+
+
+def test_clean_run_has_no_degradations(_temp_reports):
+    from src.stock_analysis.web.reports_index import write_run_status
+
+    _seed(_temp_reports, "AAPL")
+    write_run_status("AAPL", "completed", review={"ok": True, "error_count": 0})
+    it = client.get("/api/history").json()["items"][0]
+    assert it["degradations"] == []

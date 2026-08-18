@@ -59,6 +59,9 @@ class Job:
     depth: str
     asset_type: str
     use_cache: bool
+    # True = reuse specialist stage outputs already on disk instead of paying
+    # for them again. Set when refreshing a run that finished incomplete.
+    resume: bool = False
     origin: str = "manual"
     state: str = "queued"
     stage: Optional[str] = None
@@ -72,6 +75,10 @@ class Job:
     # Post-run display-contract verdict (see run_review.py); None until a run
     # completes, since only a completed run has artifacts worth checking.
     review: Optional[Dict[str, Any]] = None
+    # Stages the flow could not produce. A degraded run still reports
+    # "completed" by design (partial output beats none), so without carrying
+    # these the history tile would render it as a clean, whole report.
+    degradations: List[str] = field(default_factory=list)
     created_at: str = field(default_factory=_now)
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
@@ -130,6 +137,7 @@ class JobManager:
         asset_type: str,
         use_cache: bool,
         origin: str = "manual",
+        resume: bool = False,
     ) -> Job:
         """Enqueue an analysis. If an equal-or-deeper run for the same symbol is
         already queued/running, return that job instead (coalescing) so repeated
@@ -144,6 +152,7 @@ class JobManager:
                 depth=depth,
                 asset_type=asset_type,
                 use_cache=use_cache,
+                resume=resume,
                 origin=origin,
             )
             self._jobs[job.id] = job
@@ -328,11 +337,13 @@ class JobManager:
                 depth=job.depth,
                 asset_type=job.asset_type,
                 use_data_cache=job.use_cache,
+                resume=job.resume,
             )
             result = app.analyze_stock(job.symbol)
             job.result = result
             job.token_usage = result.get("token_usage") or {}
             job.llm_calls = int(result.get("llm_calls") or 0)
+            job.degradations = list(result.get("degradations") or [])
             if result.get("status") == "completed":
                 pending_state = "completed"
                 pending_stage = "Completed"
@@ -391,7 +402,12 @@ class JobManager:
             try:
                 from .reports_index import write_run_status
 
-                write_run_status(job.symbol, pending_state, review=job.review)
+                write_run_status(
+                    job.symbol,
+                    pending_state,
+                    review=job.review,
+                    degradations=job.degradations,
+                )
             except Exception:  # status persistence is best-effort
                 pass
 

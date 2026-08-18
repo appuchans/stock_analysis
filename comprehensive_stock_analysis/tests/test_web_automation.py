@@ -158,3 +158,84 @@ class TestRuleEndpoints:
     def test_delete_unknown_rule_404(self):
         resp = client.delete("/api/rules/nope")
         assert resp.status_code == 404
+
+
+class TestEarningsWithinDaysRule:
+    """This rule type was accepted by the API and shown as active while having
+    no evaluator at all — it could never fire, and nothing reported that."""
+
+    def _rule(self, threshold=7, last_fired=None):
+        return {
+            "id": 1,
+            "symbol": "AAPL",
+            "rule_type": "earnings_within_days",
+            "threshold": threshold,
+            "enabled": 1,
+            "cooldown_min": 0,
+            "last_fired_at": last_fired,
+        }
+
+    def _patch(self, monkeypatch, rule, earnings_date):
+        from src.stock_analysis.tools.providers import router as router_mod
+        from src.stock_analysis.web import rules as rules_mod
+
+        monkeypatch.setattr(rules_mod.db, "list_rules", lambda symbol=None: [rule])
+        monkeypatch.setattr(
+            router_mod.ROUTER,
+            "get_calendar",
+            lambda s: {"next_earnings": {"date": earnings_date}} if earnings_date else {},
+        )
+        fired = []
+        monkeypatch.setattr(
+            rules_mod, "_dispatch", lambda sym, r, reason: fired.append(reason)
+        )
+        return fired, rules_mod
+
+    def test_fires_when_earnings_are_inside_the_window(self, monkeypatch):
+        from datetime import date, timedelta
+
+        soon = (date.today() + timedelta(days=3)).isoformat()
+        fired, rules_mod = self._patch(monkeypatch, self._rule(threshold=7), soon)
+        rules_mod.evaluate_calendar_rules_for_symbol("AAPL")
+        assert len(fired) == 1
+        assert "3 day" in fired[0]
+
+    def test_does_not_fire_when_earnings_are_far_off(self, monkeypatch):
+        from datetime import date, timedelta
+
+        far = (date.today() + timedelta(days=40)).isoformat()
+        fired, rules_mod = self._patch(monkeypatch, self._rule(threshold=7), far)
+        rules_mod.evaluate_calendar_rules_for_symbol("AAPL")
+        assert fired == []
+
+    def test_does_not_fire_for_a_past_earnings_date(self, monkeypatch):
+        from datetime import date, timedelta
+
+        past = (date.today() - timedelta(days=2)).isoformat()
+        fired, rules_mod = self._patch(monkeypatch, self._rule(), past)
+        rules_mod.evaluate_calendar_rules_for_symbol("AAPL")
+        assert fired == []
+
+    def test_no_scheduled_earnings_is_silent(self, monkeypatch):
+        """Normal between cycles, and always true for an ETF — not an alert."""
+        fired, rules_mod = self._patch(monkeypatch, self._rule(), None)
+        rules_mod.evaluate_calendar_rules_for_symbol("AAPL")
+        assert fired == []
+
+    def test_daily_cooldown_floor_prevents_realerting_every_poll(self, monkeypatch):
+        """The window stays satisfied for days; a 0-minute cooldown would
+        otherwise re-alert on every 15-minute poll."""
+        from datetime import date, datetime, timedelta, timezone
+
+        soon = (date.today() + timedelta(days=3)).isoformat()
+        just_fired = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        fired, rules_mod = self._patch(
+            monkeypatch, self._rule(last_fired=just_fired), soon
+        )
+        rules_mod.evaluate_calendar_rules_for_symbol("AAPL")
+        assert fired == []
+
+    def test_rule_type_is_registered_so_the_poll_picks_it_up(self):
+        from src.stock_analysis.web import rules as rules_mod
+
+        assert "earnings_within_days" in rules_mod.CALENDAR_RULE_TYPES

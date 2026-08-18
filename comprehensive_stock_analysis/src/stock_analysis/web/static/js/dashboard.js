@@ -49,22 +49,37 @@ export async function renderReport(symbol) {
     rec = (hist.items || []).find((it) => it.symbol === symbol);
   } catch (_) { /* recommendation banner is best-effort */ }
 
-  let diff = null;
-  try {
-    diff = await fetchJSON(`/api/reports/${symbol}/diff`);
-  } catch (_) { /* diff panel is best-effort — older reports may lack a prev snapshot */ }
-
-  last = { symbol, chart, rec, diff };
+  // The "what changed since the last run" panel is deliberately not shown on
+  // the Overview. Diffing LLM-written risk and opportunity prose by string
+  // equality reports a rewording as a new-plus-resolved pair, so a re-run
+  // produced a screen-filling block of duplicates above the actual summary.
+  // The /diff endpoint remains for callers that want it.
+  last = { symbol, chart, rec };
   buildDashboard();
+
+  // Reports written before the advisor produced a summary have none. Derive it
+  // from the recommendation already on disk (one LLM call) rather than making
+  // the user re-run the whole analysis, then swap it in.
+  if (rec && rec.recommendation && !rec.summary) {
+    try {
+      const res = await fetch(`/api/reports/${symbol}/summary`, { method: "POST" });
+      if (res.ok && last.symbol === symbol) {
+        const { summary } = await res.json();
+        if (summary) { last.rec = { ...last.rec, summary }; buildDashboard(); }
+      }
+    } catch (_) { /* the generated sentences already cover this */ }
+  }
 }
 
 function buildDashboard() {
-  const { symbol, chart, rec, diff } = last;
+  const { symbol, chart, rec } = last;
   const isEtf = chart.asset_type === "etf" || !!chart.etf_profile;
   const company = chart.company || {};
   $("#report-name").textContent = company.name || "";
   const refresh = $("#report-refresh");
   if (refresh) { refresh.dataset.symbol = symbol; refresh.dataset.asset = chart.asset_type || "auto"; }
+  const pdf = $("#report-pdf");
+  if (pdf) pdf.dataset.symbol = symbol;
 
   const host = $("#dashboard");
   host.innerHTML = "";
@@ -73,7 +88,6 @@ function buildDashboard() {
 
   if (chart.data_fetched_at) host.append(freshnessChip(chart.data_fetched_at));
   if (rec && rec.recommendation) host.append(recBanner(rec));
-  if (diff && diff.has_diff) host.append(diffPanel(diff));
   // What the company is and where the stock stands, before any chart. Reading
   // six numeric tiles and a price line should not be the only way to find out
   // what you are looking at.
@@ -93,6 +107,17 @@ function buildDashboard() {
   if ((chart.valuation_scenarios || []).length) grid.append(panel("Valuation scenarios (DCF)", valuationChart, chart.valuation_scenarios));
   const sectors = chart.sector_weightings_pct || {};
   if (Object.keys(sectors).length) grid.append(panel("Sector weightings", sectorChart, sectors));
+  // Where the revenue actually comes from. Shown as stacked history rather than
+  // a single-year pie: the mix matters less than which segment is compounding,
+  // which a snapshot cannot show.
+  const seg = chart.revenue_by_segment;
+  if (seg && Object.keys(seg.segments || {}).length) {
+    grid.append(panel(`Revenue by segment (FY${seg.fiscal_year})`, segmentChart, seg));
+  }
+  const geo = chart.revenue_by_geography;
+  if (geo && Object.keys(geo.segments || {}).length) {
+    grid.append(panel(`Revenue by geography (FY${geo.fiscal_year})`, segmentChart, geo));
+  }
 
   const sent = chart.sentiment_snapshot || {};
   if (Object.values(sent).some((v) => v !== null && v !== undefined)) host.append(sentimentTiles(sent));
@@ -125,40 +150,6 @@ function freshnessChip(iso) {
   const ago = timeAgo(iso);
   return el("div", { class: "freshness-row" },
     el("span", { class: "chip" }, `Data as of ${ago || (iso || "").replace("T", " ")}`));
-}
-
-// "What changed since the last run" — built from GET /api/reports/{symbol}/diff.
-function diffPanel(diff) {
-  const rows = [];
-  if (diff.recommendation_changed) {
-    rows.push(diffRow("Recommendation",
-      `${diff.previous?.recommendation || "—"} → ${diff.current?.recommendation || "—"}`, "changed"));
-  }
-  if (diff.target_price_delta != null && Math.abs(diff.target_price_delta) > 0.005) {
-    rows.push(diffRow("Target price",
-      (diff.target_price_delta >= 0 ? "+" : "") + fmtMoney(diff.target_price_delta),
-      deltaCls(diff.target_price_delta)));
-  }
-  if (diff.confidence_delta != null && Math.abs(diff.confidence_delta) > 0.005) {
-    rows.push(diffRow("Confidence",
-      (diff.confidence_delta >= 0 ? "+" : "") + fmtNum(diff.confidence_delta * 100, 0) + "%",
-      deltaCls(diff.confidence_delta)));
-  }
-  (diff.new_risks || []).forEach((r) => rows.push(diffRow("New risk", r, "neg")));
-  (diff.removed_risks || []).forEach((r) => rows.push(diffRow("Resolved risk", r, "pos")));
-  (diff.new_opportunities || []).forEach((o) => rows.push(diffRow("New opportunity", o, "pos")));
-  (diff.removed_opportunities || []).forEach((o) => rows.push(diffRow("Dropped opportunity", o, "")));
-
-  if (!rows.length) return null;
-  return el("div", { class: "panel diff-panel" },
-    el("div", { class: "panel-head" }, el("h3", {}, "What changed since the last run")),
-    el("div", { class: "diff-rows" }, rows));
-}
-
-function diffRow(label, value, cls) {
-  return el("div", { class: "diff-row" },
-    el("span", { class: "diff-label" }, label),
-    el("span", { class: "diff-value " + (cls || "") }, value));
 }
 
 function recBanner(rec) {
@@ -546,6 +537,59 @@ function sectorChart(canvas, sectors) {
   });
 }
 
+/**
+ * Stacked revenue by business unit across the reported years.
+ *
+ * Segments are ordered by latest-year size so the largest sits at the bottom of
+ * the stack and the reading order matches the legend. Values arrive in absolute
+ * currency; they are scaled to billions because segment revenue for any company
+ * large enough to report segments runs to ten or more digits.
+ */
+function segmentChart(canvas, seg) {
+  const t = theme();
+  const history = (seg.history || []).slice().reverse(); // oldest → newest
+  const years = history.map((h) => "FY" + h.fiscal_year);
+  // Rank by the most recent year, not by total, so a fast-growing new segment
+  // is not buried under a shrinking legacy one.
+  const names = Object.keys(seg.segments || {});
+  const toB = (v) => (typeof v === "number" ? v / 1e9 : null);
+  return new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: years,
+      datasets: names.map((name, i) => ({
+        label: name,
+        data: history.map((h) => toB((h.segments || {})[name])),
+        backgroundColor: t.sectors[i % t.sectors.length],
+        borderWidth: 0,
+      })),
+    },
+    options: {
+      ...baseOpts({
+        x: { stacked: true, grid: { display: false } },
+        y: {
+          stacked: true,
+          ticks: { callback: (v) => "$" + fmtNum(v, 0) + "B" },
+        },
+      }),
+      plugins: {
+        legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10.5 } } },
+        tooltip: {
+          callbacks: {
+            label: (c) => {
+              const pct = (seg.pct_of_total || {})[c.dataset.label];
+              const share = c.datasetIndex != null && pct != null && c.dataIndex === years.length - 1
+                ? ` · ${fmtNum(pct, 1)}% of total`
+                : "";
+              return `${c.dataset.label}: $${fmtNum(c.parsed.y, 1)}B${share}`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
 function baseOpts(scales = {}) {
   const t = theme();
   return {
@@ -566,3 +610,44 @@ function sumCounts(c) {
 window.addEventListener("themechange", () => {
   if (last && $("#view-report")?.classList.contains("is-active")) buildDashboard();
 });
+
+/**
+ * Open the full report — appendices included — and hand it to the browser's
+ * print dialog, where "Save as PDF" produces the file.
+ *
+ * Why not print the embedded iframe: it is sandboxed without `allow-scripts`
+ * (the report is generated from LLM output, so keeping scripts off in the app
+ * shell is deliberate), which means neither the report's own beforeprint
+ * handler nor a `contentWindow.print()` call can run inside it. Loosening the
+ * sandbox to enable printing would trade a standing security property for a
+ * convenience. Opening the standalone document instead costs one extra window
+ * and keeps the sandbox intact.
+ *
+ * The report's print stylesheet forces every <details> appendix visible, so the
+ * PDF is complete even though nothing in it had to execute.
+ */
+export function downloadReportPdf(symbol) {
+  const w = window.open(`/api/reports/${encodeURIComponent(symbol)}/html`, "_blank");
+  if (!w) {
+    alert(
+      "Allow pop-ups for this site to save the report as a PDF, " +
+      "then choose \"Save as PDF\" as the destination."
+    );
+    return;
+  }
+  // Print once the document is laid out. `load` may already have fired for a
+  // cached report, so check readyState rather than relying on the event alone.
+  const print = () => {
+    try {
+      w.focus();
+      w.print();
+    } catch (_) {
+      /* The user can still print from the opened tab. */
+    }
+  };
+  if (w.document && w.document.readyState === "complete") {
+    setTimeout(print, 300);
+  } else {
+    w.addEventListener("load", () => setTimeout(print, 300), { once: true });
+  }
+}

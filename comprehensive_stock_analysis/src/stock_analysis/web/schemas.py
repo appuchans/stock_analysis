@@ -18,6 +18,13 @@ class AnalyzeRequest(BaseModel):
     depth: Literal["quick", "standard", "deep"] = "standard"
     asset_type: Literal["auto", "stock", "etf"] = "auto"
     use_cache: bool = True
+    # Reuse specialist stage outputs already on disk and re-run only what is
+    # missing. Set when refreshing a run that finished incomplete, so the user
+    # does not pay again for the stages that already succeeded.
+    resume: bool = False
+    # Override the re-run window. The UI sets this only after telling the user
+    # how recent the existing analysis is and having them confirm.
+    force: bool = False
 
     @field_validator("symbol")
     @classmethod
@@ -99,6 +106,9 @@ class HistoryItem(BaseModel):
     # gallery payload must be declared here — response_model filtering silently
     # drops undeclared keys, so an omission looks like missing data, not a bug.
     review: Optional[Dict[str, Any]] = None
+    # Stages the flow could not produce. A degraded run still reports
+    # "completed", so the tile needs these to say so honestly.
+    degradations: List[str] = Field(default_factory=list)
     has_html: bool = False
     has_chart: bool = False
     spark: List[float] = Field(default_factory=list)

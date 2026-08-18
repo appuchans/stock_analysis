@@ -23,6 +23,16 @@ POST_RUN_RULE_TYPES = {
     "recommendation_changed",
     "confidence_dropped",
 }
+# Calendar rules fire on a date approaching rather than on a price or a run
+# outcome, so they are evaluated by the same periodic poll as price rules
+# (time passes whether or not anyone runs an analysis) but need their own
+# lookup — a quote carries no earnings date.
+CALENDAR_RULE_TYPES = {"earnings_within_days"}
+
+# Once earnings are N days out they stay within the window every day until they
+# happen, so a plain cooldown would re-alert daily. A day is the shortest
+# interval at which "earnings are approaching" is new information.
+_CALENDAR_MIN_COOLDOWN_MIN = 24 * 60
 
 
 def _now_iso() -> str:
@@ -127,6 +137,80 @@ def evaluate_price_rules_for_symbol(
             )
         if fired_reason:
             _dispatch(symbol, rule, fired_reason)
+
+
+def evaluate_calendar_rules_for_symbol(symbol: str) -> None:
+    """Fire when this symbol's next earnings date falls inside the threshold.
+
+    ``earnings_within_days`` was previously accepted by the API and listed in
+    the UI as an active rule while having no evaluator at all — it could never
+    fire, and nothing reported that. Zero LLM calls, so this is safe to run
+    alongside an analysis.
+    """
+    rules = [
+        r
+        for r in db.list_rules(symbol)
+        if r["enabled"] and r["rule_type"] in CALENDAR_RULE_TYPES
+    ]
+    if not rules:
+        return
+
+    from ..tools.providers import ROUTER
+
+    calendar = ROUTER.get_calendar(symbol) or {}
+    next_earnings = calendar.get("next_earnings") or {}
+    date_str = next_earnings.get("date")
+    if not date_str:
+        # No scheduled date is a normal state (between cycles, or an ETF) —
+        # not a failure, and not something to alert on.
+        return
+    try:
+        earnings_date = datetime.fromisoformat(str(date_str)[:10]).date()
+    except ValueError:
+        _logger.debug("unparseable earnings date %r for %s", date_str, symbol)
+        return
+
+    days_away = (earnings_date - datetime.now(timezone.utc).date()).days
+    if days_away < 0:
+        return  # already reported
+
+    for rule in rules:
+        threshold = rule.get("threshold")
+        if threshold is None:
+            continue
+        # Enforce a floor on the cooldown so an approaching date does not
+        # re-alert on every poll cycle for days on end.
+        effective = dict(rule)
+        effective["cooldown_min"] = max(
+            rule.get("cooldown_min") or 0, _CALENDAR_MIN_COOLDOWN_MIN
+        )
+        if not _off_cooldown(effective):
+            continue
+        if days_away <= threshold:
+            when = "today" if days_away == 0 else f"in {days_away} day(s)"
+            _dispatch(
+                symbol,
+                rule,
+                f"earnings {when} on {earnings_date.isoformat()} "
+                f"(within the {int(threshold)}-day threshold)",
+            )
+
+
+def evaluate_all_calendar_rules() -> int:
+    """Batch entry point for the periodic poll. Returns symbols evaluated."""
+    symbols = sorted(
+        {
+            r["symbol"]
+            for r in db.list_rules()
+            if r["enabled"] and r["rule_type"] in CALENDAR_RULE_TYPES
+        }
+    )
+    for symbol in symbols:
+        try:
+            evaluate_calendar_rules_for_symbol(symbol)
+        except Exception as exc:  # one bad symbol must not stop the rest
+            _logger.warning("calendar rule evaluation failed for %s: %s", symbol, exc)
+    return len(symbols)
 
 
 def evaluate_all_price_rules() -> int:

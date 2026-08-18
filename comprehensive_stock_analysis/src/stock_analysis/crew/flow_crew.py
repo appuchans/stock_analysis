@@ -95,6 +95,9 @@ class StockAnalysisState(BaseModel):
     # still reported "completed". `errors` fails the run; `degradations` does
     # not — it makes the compromise visible to the caller and the UI.
     degradations: List[str] = Field(default_factory=list)
+    # Stages whose previous output was reused instead of re-run (resume mode).
+    # Reported so a resumed run is never mistaken for a fully fresh one.
+    resumed_stages: List[str] = Field(default_factory=list)
 
 
 def _step_callback(step_output: Any) -> None:
@@ -205,6 +208,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         model: Optional[str] = None,
         asset_type: str = "auto",
         use_data_cache: bool = True,
+        resume: bool = False,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -212,6 +216,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         self._model = model
         self._raw_asset_type = asset_type
         self._use_data_cache = use_data_cache  # False = force a fresh data pull
+        # True = reuse specialist stage outputs already on disk (see
+        # _skip_completed_stages); synthesis and the report always re-run.
+        self._resume = resume
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -262,6 +269,21 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # as every other side-channel above.
         base["statements_10y_data"] = _blob("statements_10y")
         base["transcript_data"] = _blob("transcript", 6000)
+        # Revenue by product line and geography — FMP-only, so "Not available"
+        # whenever no key is configured (see _enrich_with_premium_providers).
+        base["segments_data"] = _blob("segments", 4000)
+        # Business / Risk Factors / MD&A straight from the latest 10-K
+        # (sec-api.io). Larger cap than the other side-channels because this is
+        # filing prose rather than a compact numeric summary.
+        base["filing_sections_data"] = _blob("filing_sections", 12000)
+        # Actual vs estimated EPS by quarter (Finnhub) — the execution track
+        # record, previously only whatever the collector LLM transcribed.
+        base["earnings_surprises_data"] = _blob("earnings_surprises", 2500)
+        # Named peers with market cap (FMP) or tickers (Finnhub) — the
+        # competitor stage previously had to compare qualitatively.
+        base["peers_data"] = _blob("peer_set", 2500)
+        # Dividend/buyback yields for the capital-allocation verdict.
+        base["shareholder_returns_data"] = _blob("shareholder_returns", 2000)
 
         return base
 
@@ -349,7 +371,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         cd = self._prompts["collect_data"]
         t = Task(
             name="Data Collection",
-            description=cd["description"],
+            description=self._desc_for("collect_data"),
             expected_output=cd["expected_output"],
             agent=agent,
         )
@@ -593,6 +615,39 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             if etf_p.get("sector_weightings_pct"):
                 chart["sector_weightings_pct"] = etf_p["sector_weightings_pct"]
 
+            # Revenue mix by business unit — charted on the Overview so the
+            # split is visible without reading the narrative.
+            seg = structured.get("segments") or {}
+            for axis, key in (("by_product", "revenue_by_segment"), ("by_geography", "revenue_by_geography")):
+                periods = seg.get(axis) or []
+                if not periods:
+                    continue
+                latest = periods[0]
+                chart[key] = {
+                    "fiscal_year": latest.get("fiscal_year"),
+                    "total": latest.get("total"),
+                    "segments": {
+                        name: vals.get("revenue")
+                        for name, vals in (latest.get("segments") or {}).items()
+                    },
+                    "pct_of_total": {
+                        name: vals.get("pct_of_total")
+                        for name, vals in (latest.get("segments") or {}).items()
+                    },
+                    # Prior years let the UI show growth per segment, which is
+                    # the point — a static mix hides which unit is compounding.
+                    "history": [
+                        {
+                            "fiscal_year": p.get("fiscal_year"),
+                            "segments": {
+                                n: v.get("revenue")
+                                for n, v in (p.get("segments") or {}).items()
+                            },
+                        }
+                        for p in periods
+                    ],
+                }
+
             def _f(v: Any) -> Optional[float]:
                 try:
                     x = float(v)
@@ -674,47 +729,187 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         Never raises: provider methods already degrade to ``{}``/``{"error"}``
         internally, so a bad key or an outage just means this contributes
         nothing beyond what the keyless yfinance summarizers already added.
-        """
-        if self.state.analysis_depth != "deep":
-            return
-        from ..config.settings import settings
 
-        if not settings.fmp_api_key:
-            return
+        Revenue segmentation is the exception to the deep-only gate: it is one
+        small dict, it is the single most-asked-for fundamental fact ("how much
+        of Amazon is AWS?"), and no keyless source provides it — so it runs at
+        every depth while the bulky extras stay gated.
+        """
+        from ..config.settings import settings
         from ..tools.providers import ROUTER
         from ..tools.providers.base import is_capable
+        from .. import run_diagnostics as diag
 
-        try:
-            statements = ROUTER.get_statements(symbol, years=10)
-            if is_capable(statements):
-                structured["statements_10y"] = statements
+        def _attempt(item: str, source: str, key: Any, fn, apply) -> None:
+            """Run one optional enrichment and record why it produced nothing.
 
-            estimates = ROUTER.get_estimates(symbol)
-            if is_capable(estimates) and estimates.get("estimate_revisions"):
-                structured.setdefault("analyst", {})["estimate_revisions"] = estimates[
-                    "estimate_revisions"
-                ]
+            The stages can only say a value was absent; only here can we tell a
+            missing key from a tier limit from a failed request — which is the
+            difference between a config fix, a billing decision and a retry.
+            """
+            if not key:
+                diag.record(item, diag.NOT_CONFIGURED, source)
+                return
+            try:
+                result = fn()
+            except Exception as exc:
+                diag.record(item, diag.FAILED, source, str(exc)[:160])
+                _logger.warning("%s enrichment failed for %s: %s", item, symbol, exc)
+                return
+            if isinstance(result, dict) and result.get("error"):
+                diag.record(item, diag.FAILED, source, str(result["error"])[:160])
+                return
+            if not is_capable(result):
+                # {} from a provider that *is* configured means either a tier
+                # limit or genuinely no data; the provider logs which.
+                diag.record(item, diag.NOT_IN_PLAN, source)
+                return
+            if not apply(result):
+                diag.record(item, diag.NO_DATA, source)
 
-            transcript = ROUTER.get_transcript(symbol)
-            if is_capable(transcript):
-                structured["transcript"] = transcript
+        sec_key = settings.sec_api_key
+        fin_key = settings.finnhub_api_key
+        news_key = settings.alpha_vantage_api_key or settings.marketaux_api_key
 
-            insider = ROUTER.get_insider_trades(symbol)
-            if is_capable(insider) and insider.get("insider_trades"):
-                structured.setdefault("ownership", {})["insider_trades_detail"] = (
-                    insider["insider_trades"]
+        # Filing-derived enrichment (sec-api.io) is independent of FMP: Form 4
+        # detail and 10-K sections come from the filings themselves, and are
+        # worth having at every depth since they anchor the ownership and risk
+        # stages to what the company actually disclosed.
+        if self._is_etf:
+            for item in ("insider transactions", "10-K sections", "earnings surprises"):
+                diag.record(item, diag.NOT_APPLICABLE, "", "funds file no 10-K")
+        else:
+            def _apply_insider(r):
+                own = structured.setdefault("ownership", {})
+                if not r.get("insider_trades"):
+                    return False
+                own["insider_trades_detail"] = r["insider_trades"]
+                if r.get("open_market_summary"):
+                    own["insider_open_market_summary"] = r["open_market_summary"]
+                return True
+
+            _attempt(
+                "insider transactions", "sec-api.io", sec_key,
+                lambda: ROUTER.get_insider_trades(symbol), _apply_insider,
+            )
+            _attempt(
+                "10-K sections (business/risk/MD&A)", "sec-api.io", sec_key,
+                lambda: ROUTER.get_filing_sections(symbol),
+                lambda r: bool(structured.__setitem__("filing_sections", r) or True),
+            )
+            _attempt(
+                "earnings surprises", "finnhub", fin_key,
+                lambda: ROUTER.get_earnings_surprises(symbol),
+                lambda r: bool(r.get("quarters"))
+                and bool(structured.__setitem__("earnings_surprises", r) or True),
+            )
+            _attempt(
+                "insider sentiment trend", "finnhub", fin_key,
+                lambda: ROUTER.get_insider_sentiment(symbol),
+                lambda r: bool(r.get("months"))
+                and bool(
+                    structured.setdefault("ownership", {}).__setitem__(
+                        "insider_sentiment", r
+                    )
+                    or True
+                ),
+            )
+
+        _attempt(
+            "analyst recommendation trend", "finnhub", fin_key,
+            lambda: ROUTER.get_recommendation_trends(symbol),
+            lambda r: bool(r.get("recommendation_trend"))
+            and bool(
+                structured.setdefault("analyst", {}).__setitem__(
+                    "recommendation_trend", r["recommendation_trend"]
                 )
+                or True
+            ),
+        )
 
-            if self._is_etf:
-                etf_holdings = ROUTER.get_etf_holdings(symbol)
-                if is_capable(etf_holdings):
-                    structured["etf_portfolio"] = {
-                        **(structured.get("etf_portfolio") or {}),
-                        **etf_holdings,
-                    }
-        except Exception as exc:  # defense in depth — must never abort the fetch
-            _logger.warning(
-                "Premium provider enrichment failed for %s: %s", symbol, exc
+        def _apply_news(r):
+            if not r.get("sentiment"):
+                return False
+            sent = structured.setdefault("sentiment", {})
+            sent["news_sentiment"] = r["sentiment"]
+            sent["scored_headlines"] = [
+                {
+                    "headline": a.get("headline"),
+                    "sentiment": a.get("sentiment_label"),
+                    "score": a.get("sentiment_score"),
+                    "published_at": a.get("published_at"),
+                }
+                for a in (r.get("articles") or [])[:12]
+            ]
+            return True
+
+        _attempt(
+            "news sentiment scores", "alpha vantage / marketaux", news_key,
+            lambda: ROUTER.get_news_sentiment(symbol), _apply_news,
+        )
+
+        _attempt(
+            "peer comparables", "fmp / finnhub",
+            settings.fmp_api_key or fin_key,
+            lambda: ROUTER.get_peers(symbol),
+            lambda r: bool(r.get("peers"))
+            and bool(structured.__setitem__("peer_set", r) or True),
+        )
+
+        _attempt(
+            "shareholder yield & dividends", "fmp", settings.fmp_api_key,
+            lambda: ROUTER.get_shareholder_returns(symbol),
+            lambda r: bool(structured.__setitem__("shareholder_returns", r) or True),
+        )
+
+        _attempt(
+            "revenue segmentation", "fmp", settings.fmp_api_key,
+            lambda: ROUTER.get_revenue_segments(symbol),
+            lambda r: bool(structured.__setitem__("segments", r) or True),
+        )
+
+        # Bulky extras stay gated to deep runs: the transcript excerpt alone
+        # roughly doubles prompt volume for the fundamental stage.
+        if self.state.analysis_depth != "deep":
+            for item in ("10-year statements", "earnings-call transcript"):
+                diag.record(
+                    item, diag.NOT_APPLICABLE, "", "deep-depth runs only"
+                )
+            return
+
+        fmp_key = settings.fmp_api_key
+        _attempt(
+            "10-year statements", "fmp", fmp_key,
+            lambda: ROUTER.get_statements(symbol, years=10),
+            lambda r: bool(structured.__setitem__("statements_10y", r) or True),
+        )
+        _attempt(
+            "analyst estimate revisions", "fmp", fmp_key,
+            lambda: ROUTER.get_estimates(symbol),
+            lambda r: bool(r.get("estimate_revisions"))
+            and bool(
+                structured.setdefault("analyst", {}).__setitem__(
+                    "estimate_revisions", r["estimate_revisions"]
+                )
+                or True
+            ),
+        )
+        _attempt(
+            "earnings-call transcript", "fmp", fmp_key,
+            lambda: ROUTER.get_transcript(symbol),
+            lambda r: bool(structured.__setitem__("transcript", r) or True),
+        )
+        if self._is_etf:
+            _attempt(
+                "ETF holdings & sector weights", "fmp", fmp_key,
+                lambda: ROUTER.get_etf_holdings(symbol),
+                lambda r: bool(
+                    structured.__setitem__(
+                        "etf_portfolio",
+                        {**(structured.get("etf_portfolio") or {}), **r},
+                    )
+                    or True
+                ),
             )
 
     def _update_sentiment_history(
@@ -766,6 +961,11 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         sym = self.state.symbol
 
         stage_expected = self._prompts["shared"]["stage_expected_output"]
+
+        if self._resume:
+            stages = self._skip_completed_stages(stages)
+            if not stages:
+                return
 
         def _one(spec: Tuple[type, str, str]) -> Tuple[str, str]:
             cls, key, desc = spec
@@ -819,6 +1019,42 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         if isinstance(spec, dict) and ("stock" in spec or "etf" in spec):
             return spec["etf" if self._is_etf else "stock"]
         return spec["description"] if isinstance(spec, dict) else str(spec)
+
+    # Below this, a stage file is treated as a stub rather than real analysis —
+    # an empty or one-line file means the stage did not actually produce work.
+    _MIN_RESUMABLE_CHARS = 200
+
+    def _skip_completed_stages(
+        self, stages: List[Tuple[type, str, str]]
+    ) -> List[Tuple[type, str, str]]:
+        """Drop stages whose output already exists, loading it into state.
+
+        Resume exists so a run that died partway (rate limit, exhausted credits,
+        cancelled) can be finished without paying again for the stages that
+        already succeeded. Only the specialist stages are reusable: the
+        recommendation and report are always regenerated, because they
+        synthesize *all* stages and would otherwise reflect a partial set.
+        """
+        todo: List[Tuple[type, str, str]] = []
+        for spec in stages:
+            key = spec[1]
+            path = (
+                Path(settings.report_output_dir)
+                / self.state.symbol.upper()
+                / self._stage_filename(key)
+            )
+            try:
+                text = path.read_text(encoding="utf-8").strip()
+            except OSError:
+                text = ""
+            if len(text) >= self._MIN_RESUMABLE_CHARS:
+                setattr(self.state, key, {"result": text})
+                self.state.resumed_stages.append(key)
+                _logger.info("[resume] reusing existing %s analysis for %s", key, self.state.symbol)
+                print(f"  ↻ {key.replace('_', ' ').title()} analysis (reused)", flush=True)
+            else:
+                todo.append(spec)
+        return todo
 
     def _stages_for(self, depth: str) -> List[Tuple[type, str, str]]:
         stages: List[Tuple[type, str, str]] = []
@@ -895,7 +1131,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         rec = self._prompts["recommendation"]
         t = Task(
             name="Investment Recommendation",
-            description=rec["description"],
+            description=self._desc_for("recommendation"),
             expected_output=rec["expected_output"],
             agent=agent,
             output_pydantic=InvestmentRecommendation,
@@ -964,7 +1200,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         rep = self._prompts["report"]
         t = Task(
             name="Report Generation",
-            description=rep["description"],
+            description=self._desc_for("report"),
             expected_output=rep["expected_output"],
             agent=agent,
             # Native output validation: CrewAI re-prompts the agent with the
@@ -1035,6 +1271,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             # flow instance never bleed results from a prior symbol into the next.
             self.state.errors = []
             self.state.degradations = []
+            self.state.resumed_stages = []
+            from .. import run_diagnostics as _diag
+
+            _diag.reset()
             self.state.report = ""
             self.state.recommendation = {}
             self.state.technical = {}
@@ -1058,6 +1298,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 }
             )
             token_meter.check_alert()
+            # One consolidated console line per unavailable dataset, with the
+            # actual cause — the operator's answer to "why is this thin?".
+            _diag.log_summary(symbol)
             errors = list(self.state.errors)
             degradations = list(self.state.degradations)
             if degradations:
@@ -1081,6 +1324,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 # worth showing. It travels with the result so the caller can
                 # surface it instead of it living only in the log.
                 "degradations": degradations,
+                # Stages carried over from a previous run rather than re-run.
+                "resumed_stages": list(self.state.resumed_stages),
+                # Why each optional dataset is absent (run report + console).
+                "data_gaps": _diag.snapshot(),
                 "token_usage": token_meter.snapshot(),
                 "tool_usage": tool_telemetry.snapshot(),
                 "llm_calls": _llm_calls_used(),

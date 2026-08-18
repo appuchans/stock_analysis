@@ -339,3 +339,134 @@ def test_cancel_queued_job_removes_it_without_touching_active_run():
     _FakeApp.gate.set()
     done = _poll(first.json()["job_id"])
     assert done["state"] == "completed"
+
+
+def test_refresh_while_running_queues_and_never_aborts_the_active_run():
+    """A Refresh click (POST /api/analyze with use_cache=false) on a *different*
+    symbol must queue behind the run in flight — never cancel it.
+
+    The UI used to look like it cancelled the first run, because the progress
+    card switched to the new job and stopped polling the old one. Guard the
+    server contract the UI depends on: the in-flight job stays active and
+    completes, and the refresh runs afterwards.
+    """
+    _FakeApp.gate = threading.Event()
+    running = client.post("/api/analyze", json={"symbol": "NVDA"}).json()["job_id"]
+
+    # Refresh a different symbol while NVDA is mid-run.
+    refresh = client.post(
+        "/api/analyze",
+        json={"symbol": "AMD", "depth": "standard", "use_cache": False},
+    )
+    assert refresh.status_code == 202
+    refresh_id = refresh.json()["job_id"]
+    assert refresh_id != running
+
+    # The active run is untouched: still active, not aborting, and it owns the
+    # worker while the refresh waits its turn.
+    active = client.get(f"/api/jobs/{running}").json()
+    assert active["state"] in ("queued", "running")
+    assert client.get("/api/jobs").json()["active_id"] == running
+    queued = client.get(f"/api/jobs/{refresh_id}").json()
+    assert queued["state"] == "queued"
+    assert queued["queue_position"] >= 1
+
+    _FakeApp.gate.set()
+    assert _poll(running)["state"] == "completed"
+    assert _poll(refresh_id)["state"] == "completed"
+
+
+def test_resume_flag_reaches_the_analysis_app():
+    """POST /api/analyze {resume:true} must reach StockAnalysisApp(resume=True).
+
+    The Resume button on an incomplete history tile is the only thing that
+    prevents re-paying for stages that already succeeded, so the flag has to
+    survive every layer between the request and the flow.
+    """
+    seen = {}
+
+    class _CapturingApp(_FakeApp):
+        def __init__(self, *a, **k):
+            seen.update(k)
+
+    import src.stock_analysis.main as main_mod
+
+    original = main_mod.StockAnalysisApp
+    main_mod.StockAnalysisApp = _CapturingApp
+    try:
+        job_id = client.post(
+            "/api/analyze",
+            json={"symbol": "TSLA", "use_cache": False, "resume": True},
+        ).json()["job_id"]
+        _poll(job_id)
+    finally:
+        main_mod.StockAnalysisApp = original
+
+    assert seen.get("resume") is True
+    assert seen.get("use_data_cache") is False
+
+
+def test_resume_defaults_false_for_a_plain_analysis():
+    seen = {}
+
+    class _CapturingApp(_FakeApp):
+        def __init__(self, *a, **k):
+            seen.update(k)
+
+    import src.stock_analysis.main as main_mod
+
+    original = main_mod.StockAnalysisApp
+    main_mod.StockAnalysisApp = _CapturingApp
+    try:
+        job_id = client.post("/api/analyze", json={"symbol": "META"}).json()["job_id"]
+        _poll(job_id)
+    finally:
+        main_mod.StockAnalysisApp = original
+
+    assert seen.get("resume") is False
+
+
+class TestRecentRunGuard:
+    """A full analysis costs a full set of LLM calls and the data barely moves
+    within a day, so an accidental Refresh minutes after a run is almost always
+    a mistake. Only manual submissions hit this route — scheduled and watchlist
+    runs call manager.submit directly, so they are exempt for free."""
+
+    def _seed_completed(self, tmp_path, hours_ago, status="completed"):
+        import json as _json
+        from datetime import datetime, timedelta
+
+        d = tmp_path / "AAPL"
+        d.mkdir(parents=True, exist_ok=True)
+        stamp = (datetime.now() - timedelta(hours=hours_ago)).isoformat(
+            timespec="seconds"
+        )
+        (d / "AAPL_run_status.json").write_text(
+            _json.dumps({"status": status, "finished_at": stamp}), encoding="utf-8"
+        )
+
+    def test_manual_rerun_within_the_window_is_refused(self, tmp_path):
+        self._seed_completed(tmp_path, hours_ago=0.5)
+        r = client.post("/api/analyze", json={"symbol": "AAPL"})
+        assert r.status_code == 409
+        assert "analyzed" in r.json()["detail"]
+
+    def test_force_overrides_the_window(self, tmp_path):
+        self._seed_completed(tmp_path, hours_ago=0.5)
+        r = client.post("/api/analyze", json={"symbol": "AAPL", "force": True})
+        assert r.status_code == 202
+        _poll(r.json()["job_id"])
+
+    def test_failed_run_can_be_retried_immediately(self, tmp_path):
+        """Retrying a failure is exactly what a user should be able to do."""
+        self._seed_completed(tmp_path, hours_ago=0.1, status="failed")
+        r = client.post("/api/analyze", json={"symbol": "AAPL"})
+        assert r.status_code == 202
+        _poll(r.json()["job_id"])
+
+    def test_scheduled_runs_bypass_the_route_entirely(self, tmp_path):
+        from src.stock_analysis.web.jobs import manager
+
+        self._seed_completed(tmp_path, hours_ago=0.1)
+        job = manager.submit("AAPL", "standard", "auto", True, origin="scheduled")
+        _poll(job.id)

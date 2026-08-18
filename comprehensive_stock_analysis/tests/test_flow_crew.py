@@ -239,9 +239,34 @@ class TestChartDataFreshnessTimestamp:
 
 
 class TestPremiumProviderEnrichment:
-    """_enrich_with_premium_providers deepens structured data with FMP when
-    configured, but must be a strict no-op otherwise: no FMP key, no
-    non-deep depth, and no provider exception may ever break the fetch."""
+    """_enrich_with_premium_providers deepens structured data when keys are
+    configured, but must be a strict no-op otherwise: no keys, no provider
+    exception, and no incapable result may ever break the fetch.
+
+    Gating is deliberately uneven and worth stating:
+      * FMP + deep      → 10y statements, estimates, transcript, insider detail
+      * FMP + any depth → revenue segments (one small dict, most-asked-for fact)
+      * SEC + any depth → Form 4 detail and 10-K sections, independent of FMP
+    """
+
+    # Every provider key enrichment consults. Listed exhaustively (rather than
+    # only the ones a given test cares about) so adding a provider can never
+    # silently turn these tests into live API calls against the developer's
+    # real .env credentials.
+    _PROVIDER_KEYS = (
+        "fmp_api_key",
+        "sec_api_key",
+        "finnhub_api_key",
+        "alpha_vantage_api_key",
+        "marketaux_api_key",
+    )
+
+    @pytest.fixture(autouse=True)
+    def _no_network(self, monkeypatch):
+        from src.stock_analysis.config.settings import settings
+
+        for key in self._PROVIDER_KEYS:
+            monkeypatch.setattr(settings, key, None)
 
     def _make_flow(
         self, *, depth: str = "deep", is_etf: bool = False
@@ -265,14 +290,81 @@ class TestPremiumProviderEnrichment:
         flow._enrich_with_premium_providers("AAPL", structured)
         assert structured == {}
 
-    def test_noop_for_non_deep_depth_even_with_key(self, monkeypatch):
+    def test_non_deep_depth_gets_segments_but_not_the_bulky_extras(
+        self, monkeypatch
+    ):
+        """Segments are one small dict and the most-asked-for fundamental fact,
+        so they run at every depth; the transcript alone roughly doubles prompt
+        volume, so it stays gated to deep."""
         from src.stock_analysis.config.settings import settings
+        from src.stock_analysis.tools.providers.router import ROUTER
 
         monkeypatch.setattr(settings, "fmp_api_key", "test-key")
+        monkeypatch.setattr(
+            ROUTER,
+            "get_revenue_segments",
+            lambda symbol: {"by_product": [{"fiscal_year": 2025}], "source": "fmp"},
+        )
+        called = []
+        for method in ("get_statements", "get_estimates", "get_transcript"):
+            monkeypatch.setattr(
+                ROUTER, method, lambda *a, _m=method, **k: called.append(_m) or {}
+            )
+
         flow = self._make_flow(depth="standard")
         structured: dict = {}
         flow._enrich_with_premium_providers("AAPL", structured)
-        assert structured == {}
+
+        assert structured["segments"]["by_product"][0]["fiscal_year"] == 2025
+        assert called == [], "deep-only capabilities must not run at standard depth"
+
+    def test_sec_api_enrichment_is_independent_of_fmp(self, monkeypatch):
+        """Filing data comes from the filings, not FMP — a user with only a SEC
+        key must still get Form 4 detail and 10-K sections."""
+        from src.stock_analysis.config.settings import settings
+        from src.stock_analysis.tools.providers.router import ROUTER
+
+        monkeypatch.setattr(settings, "sec_api_key", "sec-key")
+        monkeypatch.setattr(settings, "fmp_api_key", None)
+        monkeypatch.setattr(
+            ROUTER,
+            "get_insider_trades",
+            lambda symbol: {
+                "insider_trades": [{"reporting_name": "Jane Doe"}],
+                "open_market_summary": {"net_value": -500.0},
+                "source": "sec_api",
+            },
+        )
+        monkeypatch.setattr(
+            ROUTER,
+            "get_filing_sections",
+            lambda symbol: {"sections": {"risk_factors": "x" * 300}, "source": "sec_api"},
+        )
+
+        flow = self._make_flow(depth="standard")
+        structured: dict = {}
+        flow._enrich_with_premium_providers("AAPL", structured)
+
+        own = structured["ownership"]
+        assert own["insider_trades_detail"][0]["reporting_name"] == "Jane Doe"
+        assert own["insider_open_market_summary"]["net_value"] == -500.0
+        assert "risk_factors" in structured["filing_sections"]["sections"]
+
+    def test_sec_api_filing_data_is_skipped_for_etfs(self, monkeypatch):
+        """Funds file no 10-K and have no insiders."""
+        from src.stock_analysis.config.settings import settings
+        from src.stock_analysis.tools.providers.router import ROUTER
+
+        monkeypatch.setattr(settings, "sec_api_key", "sec-key")
+        called = []
+        for method in ("get_insider_trades", "get_filing_sections"):
+            monkeypatch.setattr(
+                ROUTER, method, lambda *a, _m=method, **k: called.append(_m) or {}
+            )
+
+        flow = self._make_flow(depth="standard", is_etf=True)
+        flow._enrich_with_premium_providers("SPY", {})
+        assert called == []
 
     def test_deep_with_key_adds_statements_estimates_transcript_insider(
         self, monkeypatch
@@ -281,13 +373,11 @@ class TestPremiumProviderEnrichment:
         from src.stock_analysis.tools.providers.router import ROUTER
 
         monkeypatch.setattr(settings, "fmp_api_key", "test-key")
+        monkeypatch.setattr(settings, "sec_api_key", "sec-key")
         monkeypatch.setattr(
             ROUTER,
             "get_statements",
-            lambda symbol, years=10: {
-                "years_available": 10,
-                "source": "fmp",
-            },
+            lambda symbol, years=10: {"years_available": 10, "source": "fmp"},
         )
         monkeypatch.setattr(
             ROUTER,
@@ -300,19 +390,25 @@ class TestPremiumProviderEnrichment:
         monkeypatch.setattr(
             ROUTER,
             "get_transcript",
-            lambda symbol: {
-                "content_excerpt": "...",
-                "source": "fmp",
-            },
+            lambda symbol: {"content_excerpt": "...", "source": "fmp"},
         )
         monkeypatch.setattr(
             ROUTER,
             "get_insider_trades",
             lambda symbol: {
                 "insider_trades": [{"reporting_name": "Jane Doe"}],
-                "source": "fmp",
+                "source": "sec_api",
             },
         )
+        for method in (
+            "get_revenue_segments",
+            "get_filing_sections",
+            "get_recommendation_trends",
+            "get_earnings_surprises",
+            "get_insider_sentiment",
+            "get_news_sentiment",
+        ):
+            monkeypatch.setattr(ROUTER, method, lambda *a, **k: {})
 
         flow = self._make_flow()
         structured: dict = {
@@ -341,6 +437,7 @@ class TestPremiumProviderEnrichment:
             "get_estimates",
             "get_transcript",
             "get_insider_trades",
+            "get_revenue_segments",
         ):
             monkeypatch.setattr(ROUTER, method, lambda *a, **k: {})
         called = []
@@ -373,6 +470,11 @@ class TestPremiumProviderEnrichment:
             "get_statements",
             lambda symbol, years=10: (_ for _ in ()).throw(RuntimeError("boom")),
         )
+        monkeypatch.setattr(
+            ROUTER,
+            "get_revenue_segments",
+            lambda symbol: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
         flow = self._make_flow()
         structured: dict = {}
         flow._enrich_with_premium_providers("AAPL", structured)  # must not raise
@@ -391,6 +493,7 @@ class TestPremiumProviderEnrichment:
         monkeypatch.setattr(ROUTER, "get_estimates", lambda symbol: {})
         monkeypatch.setattr(ROUTER, "get_transcript", lambda symbol: {})
         monkeypatch.setattr(ROUTER, "get_insider_trades", lambda symbol: {})
+        monkeypatch.setattr(ROUTER, "get_revenue_segments", lambda symbol: {})
 
         flow = self._make_flow()
         structured: dict = {}
@@ -419,3 +522,64 @@ class TestInputsSurfacesPremiumDataBlobs:
         inputs = flow._inputs()
         assert "10" in inputs["statements_10y_data"]
         assert "management commentary" in inputs["transcript_data"]
+
+
+class TestResumeSkipsCompletedStages:
+    """Resume reuses specialist stages already on disk.
+
+    A run that dies partway (rate limit, exhausted credits, cancellation) leaves
+    completed stage files behind. Re-running from scratch pays for them again,
+    so resume loads them into state and re-runs only what is missing. Synthesis
+    and the report are never reused — they combine *all* stages and would
+    otherwise reflect the partial set.
+    """
+
+    def _flow(self, tmp_path, monkeypatch, resume):
+        from src.stock_analysis.crew import flow_crew as fc
+
+        monkeypatch.setattr(fc.settings, "report_output_dir", str(tmp_path))
+        flow = fc.StockAnalysisFlow(resume=resume)
+        flow.state.symbol = "TEST"
+        flow.state.asset_type = "stock"
+        return flow, fc
+
+    def _write_stage(self, tmp_path, name, text):
+        d = tmp_path / "TEST"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / name).write_text(text, encoding="utf-8")
+
+    def test_existing_stage_is_reused_and_dropped_from_the_todo_list(
+        self, tmp_path, monkeypatch
+    ):
+        flow, fc = self._flow(tmp_path, monkeypatch, resume=True)
+        self._write_stage(tmp_path, "TEST_risk_analysis.md", "R" * 500)
+
+        stages = [
+            (fc.RiskAnalystAgent, "risk", "desc"),
+            (fc.SentimentAnalystAgent, "sentiment", "desc"),
+        ]
+        todo = flow._skip_completed_stages(stages)
+
+        assert [k for _, k, _ in todo] == ["sentiment"]
+        assert flow.state.risk["result"].startswith("R")
+        assert flow.state.resumed_stages == ["risk"]
+
+    def test_stub_file_is_not_treated_as_a_finished_stage(self, tmp_path, monkeypatch):
+        """An empty or one-line file means the stage never really produced work."""
+        flow, fc = self._flow(tmp_path, monkeypatch, resume=True)
+        self._write_stage(tmp_path, "TEST_risk_analysis.md", "n/a")
+
+        todo = flow._skip_completed_stages([(fc.RiskAnalystAgent, "risk", "desc")])
+        assert [k for _, k, _ in todo] == ["risk"]
+        assert flow.state.resumed_stages == []
+
+    def test_missing_file_is_re_run(self, tmp_path, monkeypatch):
+        flow, fc = self._flow(tmp_path, monkeypatch, resume=True)
+        todo = flow._skip_completed_stages([(fc.RiskAnalystAgent, "risk", "desc")])
+        assert [k for _, k, _ in todo] == ["risk"]
+
+    def test_resume_defaults_off_so_refresh_still_rebuilds_everything(self):
+        from src.stock_analysis.crew.flow_crew import StockAnalysisFlow
+
+        assert StockAnalysisFlow()._resume is False
+        assert StockAnalysisFlow(resume=True)._resume is True

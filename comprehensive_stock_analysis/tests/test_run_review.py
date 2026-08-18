@@ -244,3 +244,87 @@ class TestFlowRecordsDegradations:
         state = StockAnalysisState()
         state.degradations.append("recommendation: boom")
         assert state.errors == [], "a degradation must not become a run error"
+
+
+class TestPromptLeakDetection:
+    """Instruction text must never reach the reader.
+
+    A real MSFT report contained "The core reason is plain English: Microsoft
+    owns…" — the model restating its brief ("the core reason in plain English")
+    as prose. Every artifact existed and validated; the sentence was simply not
+    English, which no structural check catches. This is the pass that does.
+    """
+
+    def _seed(self, tmp_path, monkeypatch, filename, text):
+        from src.stock_analysis.config import settings as settings_mod
+
+        monkeypatch.setattr(settings_mod.settings, "report_output_dir", str(tmp_path))
+        d = tmp_path / "TEST"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / filename).write_text(text, encoding="utf-8")
+
+    def _leaks(self, symbol="TEST"):
+        from src.stock_analysis.web import run_review
+
+        issues = []
+        run_review._check_prompt_leaks(symbol, issues)
+        return issues
+
+    def test_catches_the_real_world_instruction_echo(self, tmp_path, monkeypatch):
+        self._seed(
+            tmp_path, monkeypatch,
+            "TEST_investment_recommendation.json",
+            '{"reasoning": "The core reason is plain English: it owns the stack."}',
+        )
+        issues = self._leaks()
+        assert issues and issues[0]["code"] == "instruction_echoed"
+
+    def test_catches_uninterpolated_placeholder(self, tmp_path, monkeypatch):
+        """A literal {financials_data} in output means interpolation failed."""
+        self._seed(
+            tmp_path, monkeypatch,
+            "TEST_fundamental_analysis.md",
+            "Revenue trends are covered in {financials_data} for the period.",
+        )
+        issues = self._leaks()
+        assert issues and issues[0]["code"] == "placeholder_uninterpolated"
+
+    def test_catches_prompt_scaffolding(self, tmp_path, monkeypatch):
+        self._seed(
+            tmp_path, monkeypatch,
+            "TEST_risk_analysis.md",
+            "RIGOR REQUIREMENTS:\n- Cite every claim.",
+        )
+        issues = self._leaks()
+        assert issues and issues[0]["code"] == "prompt_scaffold_leaked"
+
+    def test_clean_report_produces_no_findings(self, tmp_path, monkeypatch):
+        self._seed(
+            tmp_path, monkeypatch,
+            "TEST_fundamental_analysis.md",
+            "Revenue was $130,497M in FY2025, up 11% year over year. "
+            "In plain English, the business is compounding.",
+        )
+        assert self._leaks() == []
+
+    def test_run_report_is_not_scanned(self, tmp_path, monkeypatch):
+        """Operator output may quote prompt text freely."""
+        self._seed(
+            tmp_path, monkeypatch,
+            "TEST_run_report.md",
+            "RIGOR REQUIREMENTS were not met by the sentiment stage.",
+        )
+        assert self._leaks() == []
+
+    def test_leak_is_a_warning_not_an_error(self, tmp_path, monkeypatch):
+        """The report is still displayable — this must not fail the run."""
+        from src.stock_analysis.web import run_review
+
+        self._seed(
+            tmp_path, monkeypatch,
+            "TEST_investment_recommendation.json",
+            '{"reasoning": "The core reason is plain English: x"}',
+        )
+        issues = []
+        run_review._check_prompt_leaks("TEST", issues)
+        assert all(i["severity"] == "warning" for i in issues)

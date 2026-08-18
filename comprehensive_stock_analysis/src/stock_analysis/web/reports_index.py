@@ -113,13 +113,21 @@ def _analyzed_at(sym: str, status_data: Dict[str, Any]) -> Optional[str]:
 
 
 def write_run_status(
-    symbol: str, status: str, review: Optional[Dict[str, Any]] = None
+    symbol: str,
+    status: str,
+    review: Optional[Dict[str, Any]] = None,
+    degradations: Optional[List[str]] = None,
 ) -> None:
     """Persist the latest run outcome for a symbol (best-effort).
 
     ``review`` is the post-run display-contract verdict (see run_review.py). It
     lives in the marker so the gallery can flag an incomplete run without
     re-deriving it, and so the verdict survives a restart.
+
+    ``degradations`` are the stages the flow could not produce. A degraded run
+    deliberately still reports ``completed`` (partial output beats none), so
+    without recording them here the gallery cannot tell a whole report from one
+    that quietly lost its recommendation or half its specialist analyses.
     """
     path = _paths.status_path(symbol)
     if path is None:
@@ -130,6 +138,8 @@ def write_run_status(
     }
     if review is not None:
         payload["review"] = review
+    if degradations:
+        payload["degradations"] = list(degradations)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload), encoding="utf-8")
@@ -243,6 +253,10 @@ def list_reports() -> List[Dict[str, Any]]:
                 # is missing pieces the tile needs can be flagged rather than
                 # quietly rendering half a card.
                 "review": status_data.get("review"),
+                # Stages the flow could not produce. Paired with `review` these
+                # are what separate a whole report from a partial one that still
+                # reports "completed".
+                "degradations": status_data.get("degradations") or [],
                 "asset_type": chart.get("asset_type"),
                 "recommendation": rec.get("recommendation"),
                 # The advisor's plain-English opening for the Overview.

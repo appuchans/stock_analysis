@@ -9,22 +9,57 @@ shared:
   # Appended to every analysis stage description (after the collected-data block)
   rigor_footer: |
     RIGOR REQUIREMENTS:
-    - Cite every quantitative claim with its value, period/date, and source label,
-      e.g. 'Revenue $130,497M (FY ending 2025-01, Yahoo Finance statements)'.
-    - Never invent a number. If a value is unavailable, write 'not available' —
-      do not refuse the whole task because one input is missing.
+    - NO INLINE SOURCE REFERENCES. Never attach a provenance note to a figure in
+      the body — no '(source: ...)', '(Source: ...)', '(same source)',
+      '(per the ... tool)', '(as-of ...)', and no backticked field or tool names.
+      Provenance belongs in the closing 'Data Sources & Gaps' section, once,
+      and nowhere else. Write 'Revenue was $130,497M in FY2025, up 11% year over
+      year.' — never 'Revenue $130,497M (source: Yahoo Finance statements, as of
+      2026-08-14)'. Repeating a citation after every number is the single fastest
+      way to make a report unreadable.
+    - A figure's fiscal period is part of the sentence, not a citation: write
+      'in FY2025' or 'in the June 2026 quarter' inline, as prose.
+    - NEVER print the internal tool or function name that produced the data.
+      Strings like 'free_economic_data_collector', 'free_web_search_tool', or
+      'per the risk_calculator_tool' must never appear anywhere in the report,
+      including the Data Sources & Gaps section — name the real-world source
+      instead ('Yahoo Finance', 'SEC EDGAR', 'FRED', 'CNN Fear & Greed',
+      'Stocktwits').
+    - Write numbers in prose, not as raw data fields. Convert machine keys into
+      the words a reader uses: 'dollar_index.latest=99.67, change_1m_pct=-1.3'
+      becomes 'the US dollar index stood at 99.67, down 1.3% over the past
+      month'. Never paste key=value pairs, JSON fragments, snake_case field
+      names, or variable paths into the report body.
+    - Include a figure only if it bears on THIS company's investment case, and
+      say why in the same sentence. A macro series with no stated link to the
+      business is noise — drop it rather than listing it for completeness.
+    - Never invent a number. If a value is unavailable, simply leave it out and
+      make the point qualitatively — do not refuse the whole task because one
+      input is missing.
+    - NEVER narrate the pipeline. The reader is a client, not an operator: they
+      must never learn which source answered, which one did not, what was
+      retried, or what a run did or did not fetch. Phrases like 'in this run',
+      'in the provided dataset', 'from the provided inputs', 'not quantified in
+      the data supplied', 'the tool returned', 'we fell back to', 'since FRED
+      was unavailable', and '(see Data Sources & Gaps)' must never appear in
+      the body. Write 'Peer margin comparisons are not covered here.' or better,
+      omit the point entirely — never 'peer margins were unavailable in this
+      run'. Provenance and gaps belong ONLY in the closing 'Data Sources &
+      Gaps' section.
     - State the methodology behind any derived metric (e.g. 'VaR: 95% confidence,
       1-day horizon, 1-year daily returns'; 'beta vs ^GSPC, 1-year daily window';
       DCF assumptions must be disclosed).
     - NEVER reproduce raw error messages, HTTP status codes (403, 404, 429),
       stack traces, or words like 'failed'/'error' in the report body. This is a
-      client-facing document. Describe unavailable data in neutral language
-      ('Reddit activity data was unavailable at the time of writing').
+      client-facing document.
     - When a quantitative source is unavailable, FILL THE GAP qualitatively: use
-      your web search tool (if available) or well-established general knowledge,
-      and qualify such statements explicitly (e.g. 'based on recent press coverage'
-      or 'based on general industry knowledge, not platform data'). A missing API
-      must result in a qualified qualitative paragraph, never an empty section.
+      your web search tool (if available) or well-established general knowledge.
+      Attribute the *kind* of evidence when it matters to the reader's trust
+      ('based on recent press coverage'), but never contrast it against what the
+      pipeline failed to supply — 'based on general industry knowledge' is fine,
+      'based on general industry knowledge, not platform data' is not. A missing
+      source must result in a qualitative paragraph, never an empty section and
+      never an explanation of the absence.
     - End the report with a '## Data Sources & Gaps' section listing each source
       used (with as-of date) and each data item that was unavailable or
       qualitatively substituted.
@@ -43,7 +78,7 @@ shared:
     of {symbol}, ending with a Data Sources & Gaps section.
 
 collect_data:
-  description: |
+  stock: |
     Collect comprehensive data for {symbol}. You MUST include ALL of the following:
     1. Business description: what the company makes/sells, its core segments,
        key customers, and why someone would choose its product over an alternative.
@@ -57,6 +92,26 @@ collect_data:
     6. Current market data: price, market cap, key valuation multiples, margins.
     7. Macro context: relevant economic indicators (rates, GDP, sector conditions).
     Pull from SEC EDGAR filings (focus on MD&A), recent earnings commentary, and news.
+  etf: |
+    Collect comprehensive data for the ETF {symbol}. You MUST include ALL of:
+    1. Mandate: which index or theme the fund tracks, and its methodology
+       (cap-weighted vs equal-weighted, full replication vs sampling).
+    2. Fund facts: expense ratio, AUM, inception date, issuer, and domicile.
+    3. Holdings: top holdings with weights, plus sector and geographic mix.
+    4. Performance: 1Y/3Y/5Y total returns, distribution yield, and tracking
+       difference against the stated benchmark where available.
+    5. Liquidity: average volume and typical bid-ask spread.
+    6. Current market data: price/NAV, any premium or discount, 52-week range.
+    7. Macro context: the conditions that drive the sector or theme it tracks.
+
+    Funds have no management team, earnings calls, guidance or insiders — do
+    not look for those, and do not report their absence. Pull from the fund's
+    own factsheet and prospectus rather than corporate filings.
+  expected_output: >-
+    A structured data package covering: fund mandate and methodology, fund
+    facts and costs, holdings and concentration, performance and distributions,
+    liquidity, current market data, and the macro backdrop for the theme.
+
   expected_output: >-
     A structured data package covering: business description, product/service
     strategy, management guidance and promises, execution track record,
@@ -85,12 +140,25 @@ fundamental:
     Write a business-first fundamental analysis of {symbol}:
     1. Business Overview — what the company sells, its main segments, why customers choose it.
     2. Strategy & Management Promises — what is management building toward?
-    3. Execution Track Record — use the earnings beat/miss history in {collected_data}.
+    3. Execution Track Record — judge whether management delivers. Where
+       {earnings_surprises_data} is available it gives actual vs estimated EPS
+       per quarter: state the beat/miss record plainly, note the size and
+       direction of recent surprises, and say whether the pattern is improving
+       or deteriorating. Fall back to the history in {collected_data} otherwise.
     4. Financial Performance — use the 3-year statements in {financials_data}:
        revenue trajectory and YoY growth, margins, free cash flow, buybacks,
        balance-sheet strength. Where a longer history is available in
        {statements_10y_data}, use it to judge whether the recent trend is a
        durable multi-year pattern or a short-term blip.
+    4b. Where the revenue comes from — if {segments_data} is available, break
+       revenue down by business unit and by geography: name each segment, its
+       revenue, its share of the total, and how fast it is growing relative to
+       the company as a whole. Say plainly which segments are actually driving
+       the business and which are stagnating, and whether profit is
+       concentrated somewhere different from revenue. This is what a reader
+       most wants from a diversified company — do not reduce it to a single
+       total-revenue line. Omit this part entirely if no segment data is given
+       (many companies report one segment); never speculate a split.
     5. Valuation — current multiples vs the growth outlook; compare your view with
        the street consensus in {analyst_data} (price targets, EPS estimates, revisions).
     6. Management Commentary — if a recent earnings-call excerpt is available in
@@ -114,26 +182,63 @@ ownership:
        the pattern looks like routine diversification or conviction.
     3. Capital allocation — from {financials_data}: buybacks, dividends paid,
        capex vs free cash flow. Is management returning capital, reinvesting,
-       or diluting? Quantify the shareholder yield where possible.
+       or diluting? Where {shareholder_returns_data} is available it gives the
+       dividend yield, payout ratio, free-cash-flow yield and the recent
+       dividend record: state what shareholders actually receive, whether the
+       payout is covered, and how that compares with reinvestment in the
+       business.
     4. Verdict — does ownership behaviour support or contradict the
        investment case?
     This is for a long-term investor: focus on multi-quarter patterns, not
     day-to-day moves.
 
 risk:
-  description: >-
+  stock: |
     Write a risk assessment for {symbol}. Focus on BUSINESS risks first:
     (1) key risks the company itself flags, (2) competitive threats,
     (3) execution risk, (4) macro/regulatory risks specific to this business.
+
+    For (1), the company's own Risk Factors (Item 1A) and MD&A may be supplied
+    verbatim in {filing_sections_data}. When they are, ground this section in
+    what management actually disclosed — pick the handful that plausibly move
+    the investment case and explain why, rather than paraphrasing the whole
+    list. Boilerplate that every filer includes is not worth reporting.
+
     Then quantify: use {financials_data} for leverage and liquidity (debt vs
-    cash, FCF coverage), {ownership_data} for insider-selling pressure, and the
+    cash, FCF coverage), {ownership_data} for insider activity, and the
     options positioning inside {sentiment_data} (put/call ratio, implied
     volatility) for market-implied risk. For beta, VaR, Sharpe, and max drawdown
     call the 'Risk Calculator Tool' with symbol='{symbol}' — it fetches the
     price history itself. Quantitative metrics close the report as context.
 
+    On insider activity: judge it from OPEN-MARKET buys and sells only. Grants,
+    option exercises, gifts and tax withholding are compensation mechanics, not
+    conviction — where a summary distinguishes them, say so plainly rather than
+    reporting gross disposals as "insider selling pressure".
+  etf: |
+    Write a risk assessment for the ETF {symbol}. An ETF's risks are those of
+    what it holds and how it is built — NOT of a single operating company.
+    Cover, in order:
+    (1) Concentration — how much sits in the top 10 holdings and in the single
+        largest sector or country; what breaks if that concentration turns.
+    (2) Mandate and market risk — the cyclicality of the sector or theme it
+        tracks, and the macro conditions that would hurt it most.
+    (3) Structural risk — tracking difference, sampling vs full replication,
+        liquidity and spread, and any currency exposure.
+
+    Then quantify with {financials_data} where fund-level figures exist, and use
+    the options positioning inside {sentiment_data} for market-implied risk. For
+    beta, VaR, Sharpe, and max drawdown call the 'Risk Calculator Tool' with
+    symbol='{symbol}'.
+
+    Do NOT discuss insider transactions, insider-selling pressure, or
+    company-level leverage and FCF coverage: funds have no insiders and no
+    operating balance sheet, so those sections are meaningless here. Their
+    absence is normal and must NOT be reported as missing data, a gap, or a
+    limitation — simply leave them out.
+
 sentiment:
-  description: |
+  stock: |
     Write a sentiment and positioning analysis for {symbol}, written for a
     long-term INVESTOR. Weight professional signals above retail chatter.
     Your inputs:
@@ -166,10 +271,44 @@ sentiment:
     Tool' or general knowledge, explicitly qualified as such, and list the
     substitution in Data Sources & Gaps.
 
+  etf: |
+    Write a sentiment and positioning analysis for the ETF {symbol}, for a
+    long-term INVESTOR. Weight professional and flow signals above chatter.
+
+    Your inputs:
+    - {sentiment_data} contains options positioning (put/call ratios — below
+      0.7 is bullish, above 1.0 bearish), short interest, the market-wide CNN
+      Fear & Greed index under social.market_mood, aggregate Stocktwits
+      counts, and recent headlines.
+
+    Structure, in order of weight:
+    (1) Positioning — short interest and options put/call on the fund itself.
+        This is the headline: it reveals how professionals are hedged on this
+        exposure.
+    (2) Theme sentiment — how the market currently regards the sector or theme
+        the fund tracks, drawn from the headlines and the broad market mood.
+    (3) Retail gauge — aggregate ratios and volume ONLY, one short paragraph.
+        NEVER quote or paraphrase individual social-media posts.
+    (4) Synthesis — do positioning and mood agree, and what does that mean for
+        someone holding this fund for years rather than weeks?
+
+    A fund has no analyst price targets, no EPS revisions and no ratings
+    coverage. Do NOT open with a 'professional view' built on those, and do NOT
+    remark that they are missing — for an ETF that is normal, not a gap.
+
 market:
-  description: >-
+  stock: >-
     Comprehensive market analysis for {symbol}: index trend, sector rotation,
     volatility regime, and how they affect {symbol}.
+  etf: |
+    Market analysis for the ETF {symbol}: index trend, sector rotation and the
+    volatility regime, read through what this fund actually holds.
+
+    Because a fund IS its exposure, the question is narrower than for a single
+    company: is money currently rotating into or out of the sector or theme
+    this fund tracks, and does the volatility regime favour or punish that
+    exposure? Say plainly whether the current regime is a tailwind or a
+    headwind for this specific mandate, and what would flip it.
 
 industry:
   stock: >-
@@ -181,26 +320,67 @@ industry:
     alignment. Use the 'ETF Portfolio Composition' tool for sector weightings.
 
 competitor:
-  stock: >-
-    Comprehensive competitor analysis for {symbol}: named peers with comparable
-    metrics.
+  stock: |
+    Comprehensive competitor analysis for {symbol}, built on named peers.
+
+    {peers_data} lists the actual comparable companies, with market cap and
+    price where available. Use that peer set rather than inventing one, and
+    build a real comparison: for each meaningful peer, how does {symbol} differ
+    in scale, growth, margin and valuation, and where is it winning or losing
+    share? Where a peer's figures are not to hand, compare on business model
+    and position rather than skipping the peer.
+
+    Close with the competitive verdict: is {symbol} structurally advantaged,
+    at parity, or disadvantaged against this group, and what would change it?
   etf: >-
     Compare ETF {symbol} vs 2-3 direct alternatives: expense ratio, 3Y return,
     AUM, tracking approach; recommend when each alternative is preferable.
 
 economic:
-  description: >-
-    Comprehensive macroeconomic analysis relevant to {symbol}: rates, inflation,
-    GDP, and sector exposure to the cycle.
+  stock: |
+    Explain how the macro environment affects {symbol} specifically — this is a
+    section of an investment report, not a macro data dump.
+
+    Choose only the few indicators that plausibly move THIS business (rates,
+    inflation, GDP, consumer demand, energy costs, FX, or the sector's own
+    cycle) and for each one state, in the same breath, the transmission
+    mechanism: which line of the P&L it touches and in which direction. For
+    example, 'higher 10-year yields raise the discount rate applied to Amazon's
+    long-duration cash flows and lift its cost of capital' — not a bare list of
+    levels.
+
+    An indicator you cannot connect to the business does not belong in the
+    section. It is better to cover three indicators that matter than ten that
+    do not. Do not include a table of every macro series available to you, and
+    never paste raw data fields (see the rigor requirements below).
+
+    Close with one short paragraph: on balance, is the current macro backdrop a
+    tailwind, a headwind, or roughly neutral for this company, and what would
+    have to change for that verdict to flip?
+  etf: |
+    Explain how the macro environment affects the ETF {symbol} specifically —
+    this is a section of an investment report, not a macro data dump.
+
+    A fund has no P&L, so the transmission runs through its holdings: choose
+    only the few indicators that plausibly move the sector or theme it tracks
+    (rates, inflation, growth, energy costs, FX, or the sector's own cycle) and
+    for each, state the mechanism — which part of the underlying business mix
+    it touches and in which direction. An indicator you cannot connect to what
+    the fund holds does not belong in the section. Three that matter beat ten
+    that do not, and never paste raw data fields.
+
+    Close with one short paragraph: is the current backdrop a tailwind, a
+    headwind, or roughly neutral for this exposure, and what would flip it?
 
 recommendation:
-  description: |
+  stock: |
     Write a clear investment recommendation memo for {symbol}. Your memo must
     follow this structure:
     1. What the business does (2-3 sentences — assume the reader has never heard of it).
     2. What management is building toward — their stated strategy and key promises.
     3. Track record — have they delivered on past guidance? Be specific.
-    4. Your view — Buy / Hold / Sell, and the core reason in plain English.
+    4. Your view — Buy / Hold / Sell, and why. Give the single most important
+       reason, written the way you would explain it out loud.
     5. What would change your mind (upside and downside scenarios).
     6. Key risks (max 3, stated as business risks not beta values).
     7. Suggested target price and time horizon, with brief rationale.
@@ -231,13 +411,60 @@ recommendation:
     {historical_context}
     State whether your recommendation is consistent with, or a departure from,
     the prior calls recorded above, and explain why.
+  etf: |
+    Write a clear investment recommendation memo for {symbol}, an ETF. Your
+    memo must follow this structure:
+    1. What the fund holds and tracks (2-3 sentences — index/sector/theme,
+       and methodology if it matters, e.g. equal-weight vs cap-weight).
+    2. Fund structure and cost — expense ratio, AUM, and liquidity, and
+       whether that makes it an efficient way to get this exposure versus
+       just owning the category in general.
+    3. Track record — 1Y/3Y/5Y returns and distribution yield versus what a
+       holder of this exposure should reasonably expect; note tracking
+       quality if it stands out.
+    4. Your view — Buy / Hold / Sell, and why. Give the single most important
+       reason, written the way you would explain it out loud.
+    5. What would change your mind (upside and downside scenarios tied to
+       the underlying sector/theme, not the fund mechanics).
+    6. Key risks (max 3: concentration, sector/theme-specific, and macro —
+       stated as business/market risks, not beta values).
+    7. Valuation context and time horizon. ETFs do not carry individual
+       analyst price targets or street consensus — that is normal and
+       expected for a fund, NOT a data gap. Do NOT say the price or
+       consensus is "unavailable," apologize for missing analyst coverage,
+       or explain why you cannot give a target. Simply omit that framing
+       entirely: judge attractiveness from where the price sits in its
+       52-week range, valuation of the underlying holdings (if covered
+       above), and the fund's cost/tracking profile instead. Only set a
+       specific price level if you can tie it to one of those reasons (e.g.
+       a level near the 52-week low/high); otherwise leave target price and
+       stop-loss null rather than inventing an analyst-style number.
+
+    Write in plain, direct prose. Do not lead with ratios or indicator values.
+    A smart reader who knows nothing about this fund should finish your memo
+    understanding what it holds and your investment thesis.
+
+    Also fill the `summary` field: two sentences, plain spoken English, of the
+    kind you would say to a friend who asked how this fund is doing and
+    whether to buy it. Lead with how it has actually performed and what drove
+    it, then what kind of holding it is and the main reservation. No jargon,
+    no ratios, no DCF or positioning talk. This is read first, above the
+    charts, so it must stand on its own.
+
+    Analyses to draw from:
+    {analyses_summary}
+
+    Historical Context:
+    {historical_context}
+    State whether your recommendation is consistent with, or a departure from,
+    the prior calls recorded above, and explain why.
   expected_output: >-
     Investment recommendation: type, target price, stop-loss, time horizon,
     confidence, summary (two plain-English sentences), reasoning, risks,
     opportunities.
 
 report:
-  description: |
+  stock: |
     Write the final research narrative for {symbol} — ONE coherent argument,
     not a collection of section summaries. This is the main body of a
     client-facing research report for a long-term investor.
@@ -287,6 +514,90 @@ report:
 
     Source material:
     {analyses_summary}
+  etf: |
+    Write the final research narrative for {symbol}, an ETF — ONE coherent
+    argument, not a collection of section summaries. This is the main body of a
+    client-facing research report for a long-term investor.
+
+    Open with '## Investment Thesis': state the rating, then the 2-3 pillars of
+    the argument in plain English, and one sentence on what would change your
+    mind. Everything that follows must SERVE this thesis.
+
+    Then these sections, in order (heading lines contain ONLY the section name):
+    1. '## What This Fund Holds' — the index or theme it tracks, its
+       methodology (cap-weight vs equal-weight, full replication vs sampling),
+       and what owning it actually gives you exposure to.
+    2. '## Cost & Structure' — expense ratio, AUM, liquidity and tracking
+       quality; whether this is an efficient vehicle for this exposure.
+    3. '## Performance & Distributions' — 1Y/3Y/5Y returns and distribution
+       yield, judged against what a holder of this exposure should expect.
+    4. '## Holdings & Concentration' — top holdings, sector and geographic mix,
+       and how much of the fund's outcome rides on a handful of names.
+    5. '## Risks' — what could break the thesis, in order of severity:
+       concentration, the sector or theme's own cycle, and structural risks.
+    6. '## Sentiment & Positioning' — flows, short interest and options
+       positioning where available, in one short section.
+    7. '## Valuation & Recommendation' — close the argument: tie the underlying
+       holdings' valuation and the fund's cost back to the thesis pillars and
+       restate the rating with the key trade-off.
+
+    An ETF has no management team, no earnings calls, no insiders and no
+    corporate strategy. Do NOT write sections about management track record,
+    capital allocation, guidance or insider activity, and do NOT note their
+    absence — those concepts simply do not apply to a fund, and mentioning them
+    reads as though the analysis was written for the wrong instrument.
+
+    Connective-tissue rules (this is what makes it ONE document, not sections):
+    - Use ONLY the section headings listed above and NO OTHERS. No '###'
+      sub-headings anywhere; for sub-points use a bold lead-in phrase
+      ('**Concentration.** The top ten holdings are…'), never a heading.
+    - Do NOT create a section per specialist and do NOT add an
+      Appendix/Supporting Data/Charts section — the report assembles those
+      automatically.
+    - Each section must explicitly reference the thesis or evidence from
+      another section at least once.
+    - State each fact ONCE, in the section where it belongs.
+    - Vary section lengths by importance to the thesis; do not pad.
+
+    Other rules: cite numbers (value, period) as in the source material. Do NOT
+    include a 'Data Sources & Gaps' section. Never mention errors,
+    unavailability mechanics, or tools.
+
+    Your final answer must be ONLY the narrative document itself, starting
+    directly with '## Investment Thesis'. No preamble, no completion summary.
+
+    Source material:
+    {analyses_summary}
   expected_output: >-
     The markdown research narrative document itself, starting with
     '## Investment Thesis' — never a summary of actions taken.
+
+# Standalone: turns an *existing* recommendation file into the two-sentence
+# Overview summary with one LLM call, so reports produced before the summary
+# field existed do not need a full re-analysis (11 calls) to gain one.
+recommendation_summary:
+  description: |
+    Provide a short summary on how {symbol} as a company is doing, its stock
+    performance, and investment potential. Use plain English and do not exceed
+    50 words.
+
+    Base every statement on the material below and never invent an event or a
+    number. The price figures are authoritative — describe the move as they
+    show it. An earlier attempt claimed the stock was "near its recent high"
+    while it sat 28% below that high, so state direction and magnitude only as
+    the data supports. Do not mention the rating or target price (shown
+    alongside), and never comment on the data itself.
+
+    Share price performance and recent news:
+    {performance}
+
+    Recommendation: {recommendation}
+    Reasoning: {reasoning}
+    Key factors: {key_factors}
+    Risks: {risks}
+    Opportunities: {opportunities}
+
+    Reply with the summary only. No preamble, no quotes, no bullet points.
+  expected_output: >-
+    A plain-English summary of at most 50 words covering the company, its stock
+    performance, and its investment potential.
