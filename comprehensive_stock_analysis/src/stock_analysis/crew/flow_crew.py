@@ -978,6 +978,34 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             "price_basis": basis,
             "price_source": "Yahoo Finance" if px is not None else None,
         }
+        # One price in the file, not two. key_stats.current_price carried the
+        # live bar while the snapshot carried the settled close, so a single
+        # report could show $232.67 in the header and compute upside off
+        # $236.68 in the scenario table — the identity failure a reviewer
+        # caught as "$237, $237.45 and chart $238 on the same as-of".
+        if isinstance(px, (int, float)):
+            settled_px = round(px, 2)
+            chart_now = bundle.get("chart") or {}
+            if chart_now.get("key_stats"):
+                chart_now["key_stats"]["current_price"] = settled_px
+            # The analyst payload carries its own live "current" and an upside
+            # derived from it. Left alone that is a third price in the same
+            # file and a percentage disagreeing with the header. Both the
+            # prompt copy and the chart copy are normalised, and the upside
+            # recomputed so every derived figure follows the settled close.
+            for block in (
+                (structured.get("analyst") or {}).get("price_targets"),
+                (chart_now.get("analyst") or {}).get("price_targets"),
+            ):
+                if not isinstance(block, dict):
+                    continue
+                block["current_price"] = settled_px
+                mean = block.get("mean")
+                block["implied_upside_pct"] = (
+                    round((mean - settled_px) / settled_px * 100, 1)
+                    if isinstance(mean, (int, float)) and settled_px
+                    else None
+                )
         return bundle
 
     def _enrich_with_premium_providers(

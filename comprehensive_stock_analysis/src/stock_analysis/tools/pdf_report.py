@@ -96,6 +96,12 @@ def _table(rows: Sequence[Sequence[str]], header: bool = True) -> str:
             body = _inline(cell)
             cells.append(f"[*{body}*]" if header and i == 0 else f"[{body}]")
     aligns = ", ".join("right" if n else "left" for n in numeric)
+    # The header row repeats when a table breaks across pages. Without it the
+    # comparables table spilled onto the next page as bare numbers with no
+    # column labels, which is worse than not showing them.
+    if header and len(cells) > cols:
+        head = ", ".join(cells[:cols])
+        cells = [f"table.header({head})"] + cells[cols:]
     return (
         "#table(\n"
         f"  columns: {cols},\n"
@@ -292,7 +298,7 @@ def _cover(model: ReportModel, charts: Dict[str, str]) -> str:
         )
     if model.price:
         parts.append(
-            f"#text(8pt, fill: muted)[Prices as of {_esc(model.as_of)}. "
+            f"#text(8pt, fill: muted)[{_esc(model.price_label)}. "
             f'{_esc(str(model.snapshot.get("price_source") or "Market data"))}.]\n'
             "#v(8pt)\n"
         )
@@ -313,6 +319,50 @@ def _cover(model: ReportModel, charts: Dict[str, str]) -> str:
             + _table([["Event", "Date"]] + [[lb, d] for lb, d in cats])
         )
     return "".join(parts)
+
+
+def _peer_table(model: ReportModel) -> str:
+    """Comparable multiples side by side, rendered from data.
+
+    The note printed a one-column table of the subject's own multiples and
+    then described peers in prose — "cheaper than Cisco and SAP" — with no
+    figures behind the claim. The numbers exist for every peer; they only had
+    to be laid out. Built here rather than asked of the model so no figure is
+    transcribed twice.
+    """
+    rows = model.peers()
+    if len(rows) < 2:
+        return ""
+    header = [
+        "Company",
+        "Mkt cap ($B)",
+        "P/E",
+        "Fwd P/E",
+        "EV/EBITDA",
+        "FCF yield",
+        "Op margin",
+        "Rev growth",
+    ]
+    body = []
+    for r in rows:
+
+        def _f(key: str, suffix: str = "", digits: int = 1) -> str:
+            v = r.get(key)
+            return f"{v:,.{digits}f}{suffix}" if isinstance(v, (int, float)) else "—"
+
+        body.append(
+            [
+                f"{r.get('symbol', '')}{' (subject)' if r.get('is_subject') else ''}",
+                _f("market_cap_b"),
+                _f("pe_ttm", "x"),
+                _f("fwd_pe", "x"),
+                _f("ev_to_ebitda", "x"),
+                _f("fcf_yield_pct", "%"),
+                _f("operating_margin_pct", "%"),
+                _f("revenue_growth_pct", "%"),
+            ]
+        )
+    return "\n== Comparable companies\n\n" + _table([header] + body)
 
 
 def _appendix(model: ReportModel) -> str:
@@ -428,7 +478,7 @@ def build_typst_source(model: ReportModel, charts: Dict[str, str]) -> str:
     header_left = _esc(f"{model.symbol} — {model.name}")
     header_right = _esc(settings.report_firm_name)
     footer_left = _esc(
-        f"{settings.report_firm_name} · {model.as_of} · not investment advice"
+        f"{settings.report_firm_name} · {model.price_label} · not investment advice"
     )
     src = [
         _PREAMBLE.replace("#HEADER_LEFT", header_left)
@@ -450,6 +500,8 @@ def build_typst_source(model: ReportModel, charts: Dict[str, str]) -> str:
                 src.append(
                     f'\n#figure(image("{charts[exhibit]}", width: 100%){tail})\n'
                 )
+                if exhibit == "football":
+                    src.append(_peer_table(model))
                 break
 
     # Anything the narrative gave no home to still belongs in the document.

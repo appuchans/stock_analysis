@@ -116,6 +116,22 @@ class ReportModel:
         return raw[:16].replace("T", " ")
 
     @property
+    def price_label(self) -> str:
+        """How the price must be described, in words the reader can trust.
+
+        The fetch timestamp is not the price date. Labelling a settled close
+        "as of 2026-08-19 15:42" states the figure is an hour old when it is a
+        prior-session close, and mid-session the two genuinely disagree.
+        """
+        date = str(self.snapshot.get("price_date") or "")[:10]
+        basis = str(self.snapshot.get("price_basis") or "").strip()
+        if date and basis:
+            return f"{basis.capitalize()} {date}"
+        if date:
+            return f"Close {date}"
+        return f"As of {self.as_of}" if self.as_of else ""
+
+    @property
     def target(self) -> Optional[float]:
         return _num(self.rec.get("target_price"))
 

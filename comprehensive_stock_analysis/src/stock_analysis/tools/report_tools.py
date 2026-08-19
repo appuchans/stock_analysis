@@ -1947,7 +1947,8 @@ class ReportGeneratorTool(BaseTool):
             # reads as machine output and, worse, implies the figures are
             # live when they are a settled close.
             price_as_of=(
-                f"{snap['price_date']} close"
+                f"{(snap.get('price_basis') or 'close').capitalize()} "
+                f"{str(snap['price_date'])[:10]}"
                 if (snap := (chart_data.get("snapshot") or {})).get("price_date")
                 else None
             ),

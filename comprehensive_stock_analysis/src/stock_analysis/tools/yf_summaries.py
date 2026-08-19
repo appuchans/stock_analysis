@@ -792,6 +792,29 @@ def fetch_peer_symbols(
     return [c for c in candidates if c in validated][:limit]
 
 
+# Enterprise value should sit within hailing distance of market cap for an
+# ordinary operating company. yfinance reported SAP's EV as $3,420bn against a
+# $249bn market cap — a currency scaling error — which produced an EV/EBITDA of
+# 290.8x. Printed in a comparables table beside IBM at 16.8x, one figure like
+# that discredits every other number on the page.
+_EV_TO_MCAP_MAX = 5.0
+_EV_EBITDA_MAX = 100.0
+
+
+def _sane_ev_ebitda(info: Dict[str, Any]) -> Optional[float]:
+    """EV/EBITDA, or None when the inputs fail a basic identity check."""
+    ratio = _num(info.get("enterpriseToEbitda"), 1)
+    if ratio is None or not 0 < ratio < _EV_EBITDA_MAX:
+        return None
+    ev, mcap = _num(info.get("enterpriseValue")), _num(info.get("marketCap"))
+    if ev and mcap and mcap > 0 and ev / mcap > _EV_TO_MCAP_MAX:
+        _logger.debug(
+            "implausible EV %.0f vs market cap %.0f; dropping EV/EBITDA", ev, mcap
+        )
+        return None
+    return ratio
+
+
 def _key_metrics(
     sym: str, info: Optional[Dict[str, Any]] = None, yf_module: Any = None
 ) -> Optional[Dict[str, Any]]:
@@ -838,7 +861,7 @@ def _key_metrics(
             # subject's line of business before it reaches a comparables table.
             "sector": info.get("sector") or None,
             "industry": info.get("industry") or None,
-            "ev_to_ebitda": _num(info.get("enterpriseToEbitda"), 1),
+            "ev_to_ebitda": _sane_ev_ebitda(info),
             "peg": _num(info.get("trailingPegRatio"), 2),
             "fcf_yield_pct": (
                 round(fcf / info["marketCap"] * 100, 1)
