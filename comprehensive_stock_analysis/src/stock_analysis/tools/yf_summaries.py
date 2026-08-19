@@ -786,6 +786,10 @@ def _key_metrics(
             # nothing computed, so the models asserted them from their own
             # knowledge instead — right for IBM as it happens (16.8x), but
             # unsourced and unverifiable. All three are already in `info`.
+            # Carried so a candidate peer can be sanity-checked against the
+            # subject's line of business before it reaches a comparables table.
+            "sector": info.get("sector") or None,
+            "industry": info.get("industry") or None,
             "ev_to_ebitda": _num(info.get("enterpriseToEbitda"), 1),
             "peg": _num(info.get("trailingPegRatio"), 2),
             "fcf_yield_pct": (
@@ -797,6 +801,57 @@ def _key_metrics(
     except Exception as exc:
         _logger.debug("key metrics failed for %s: %s", sym, exc)
         return None
+
+
+def select_comparables(
+    rows: List[Dict[str, Any]], limit: int = 4
+) -> List[Dict[str, Any]]:
+    """Keep the rows that are actually comparable to the subject.
+
+    A provider's "peers" list is not a comparables set. FMP returns Micron for
+    IBM — memory semiconductors against enterprise IT services — and ranks by
+    market capitalisation, so simply taking the largest names puts the least
+    similar business at the top of the table. It also reported Micron at
+    $1,055B, roughly five to ten times its actual size, so the ranking key was
+    wrong as well as the concept.
+
+    Two filters, in order: same sector as the subject, then closest in size.
+    Size proximity is measured on a log scale because comparability is a matter
+    of order of magnitude — a $220B company is far better compared with a $440B
+    one than with a $5B one, and the raw difference would not say so.
+    """
+    subject = next((r for r in rows if r.get("is_subject")), None)
+    if not subject:
+        return list(rows)[:limit]
+
+    others = [r for r in rows if not r.get("is_subject")]
+    # Industry first, sector second. Sector alone is too coarse to be useful:
+    # IBM and Micron are both "Technology", which is how a memory-chip maker
+    # reached an enterprise-IT-services comparables table. Their industries —
+    # "Information Technology Services" against "Semiconductors" — separate
+    # them immediately. Each filter applies only if it leaves a usable table,
+    # so a subject with few true peers still gets a comparison.
+    for key in ("industry", "sector"):
+        want = subject.get(key)
+        if not want:
+            continue
+        matched = [r for r in others if r.get(key) == want]
+        if len(matched) >= 2:
+            others = matched
+            break
+
+    import math
+
+    base = subject.get("market_cap_b")
+    if base and base > 0:
+        others.sort(
+            key=lambda r: (
+                abs(math.log((r.get("market_cap_b") or base) / base))
+                if (r.get("market_cap_b") or 0) > 0
+                else math.inf
+            )
+        )
+    return [subject] + others[:limit]
 
 
 def summarize_peers(

@@ -159,6 +159,28 @@ def markdown_to_typst(md: str) -> str:
     return "\n".join(out)
 
 
+_CAPTIONS = {
+    "football": (
+        "Valuation ranges against the traded price and the published target. "
+        "A target outside every band, or a price above all of them, is a "
+        "contradiction the note must explain."
+    ),
+    "relative": "Total return versus benchmark, indexed to 100 at the start.",
+    "fcf": (
+        "Cash generated against cash reinvested. The gap between operating "
+        "cash flow and capital expenditure is what funds returns to holders."
+    ),
+    "peers": (
+        "Comparable companies on growth against forward multiple; bubble area "
+        "is market capitalisation and the subject is filled. Comparables are "
+        "screened to the subject's industry, then ranked by similarity of "
+        "size - a provider's raw peer list ranks by size alone and mixes in "
+        "businesses that are not comparable."
+    ),
+    "segments": "Revenue by reporting segment, with share of the total.",
+}
+
+
 # Which exhibit belongs under which narrative heading. First keyword match
 # wins, mirroring how the HTML renderer places its visuals.
 _EXHIBIT_FOR = (
@@ -398,7 +420,11 @@ def build_typst_source(model: ReportModel, charts: Dict[str, str]) -> str:
         for keyword, exhibit in _EXHIBIT_FOR:
             if keyword in low and exhibit in charts and exhibit not in used:
                 used.add(exhibit)
-                src.append(f'\n#figure(image("{charts[exhibit]}", width: 100%))\n')
+                cap = _CAPTIONS.get(exhibit, "")
+                tail = f", caption: [{_inline(cap)}]" if cap else ""
+                src.append(
+                    f'\n#figure(image("{charts[exhibit]}", width: 100%){tail})\n'
+                )
                 break
 
     # Anything the narrative gave no home to still belongs in the document.
@@ -407,9 +433,15 @@ def build_typst_source(model: ReportModel, charts: Dict[str, str]) -> str:
         # Flowed, not broken onto its own page: forcing a break here stranded
         # the previous section's last two lines on a page of their own and then
         # left the exhibits page two-thirds empty.
-        src.append("\n= Exhibits\n\n")
+        src.append(
+            "\n= Exhibits\n\nSupporting charts referenced by the analysis above.\n\n"
+        )
         for name in leftovers:
-            src.append(f'#figure(image("{charts[name]}", width: 100%))\n#v(6pt)\n')
+            cap = _CAPTIONS.get(name, "")
+            tail = f", caption: [{_inline(cap)}]" if cap else ""
+            src.append(
+                f'#figure(image("{charts[name]}", width: 100%){tail})\n#v(6pt)\n'
+            )
 
     src.append(_appendix(model))
     return "".join(src)

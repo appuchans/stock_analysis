@@ -701,19 +701,20 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 p.get("symbol")
                 for p in ((structured.get("peer_set") or {}).get("peers") or [])
                 if p.get("symbol")
-            ][:4]
+            ][:8]
             if tickers:
                 try:
                     priced = ys.summarize_peers(sym, peer_symbols=tickers)
                 except Exception as exc:
                     _logger.debug("provider-peer metrics failed for %s: %s", sym, exc)
                     priced = {}
-                if priced.get("rows"):
-                    structured["peers"] = priced
+                rows = ys.select_comparables(priced.get("rows") or [])
+                if len(rows) >= 2:
+                    structured["peers"] = {"rows": rows, "basis": "provider peer list"}
                     _logger.info(
-                        "[collect_data] peer multiples built from provider peers "
-                        "for %s: %s",
+                        "[collect_data] comparables for %s: %s (from %s)",
                         sym,
+                        ", ".join(r["symbol"] for r in rows if not r.get("is_subject")),
                         ", ".join(tickers),
                     )
 

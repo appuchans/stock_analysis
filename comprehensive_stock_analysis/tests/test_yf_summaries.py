@@ -606,3 +606,93 @@ class TestValuationMultiples:
         assert m["ev_to_ebitda"] is None
         assert m["peg"] is None
         assert m["fcf_yield_pct"] is None
+
+
+class TestSelectComparables:
+    """A provider's peer list is not a comparables set.
+
+    FMP returns Micron for IBM — memory semiconductors against enterprise IT
+    services — ranked by market capitalisation, so taking the largest names put
+    the least similar business at the top of the table. It also reported Micron
+    at $1,055B, several times its real size, so the ranking key was wrong too.
+    """
+
+    SUBJECT = {
+        "symbol": "IBM",
+        "is_subject": True,
+        "sector": "Technology",
+        "industry": "Information Technology Services",
+        "market_cap_b": 223.8,
+    }
+
+    def _rows(self):
+        return [
+            self.SUBJECT,
+            {
+                "symbol": "MU",
+                "sector": "Technology",
+                "industry": "Semiconductors",
+                "market_cap_b": 1055.3,
+            },
+            {
+                "symbol": "CSCO",
+                "sector": "Technology",
+                "industry": "Communication Equipment",
+                "market_cap_b": 441.0,
+            },
+            {
+                "symbol": "ACN",
+                "sector": "Technology",
+                "industry": "Information Technology Services",
+                "market_cap_b": 112.9,
+            },
+            {
+                "symbol": "INFY",
+                "sector": "Technology",
+                "industry": "Information Technology Services",
+                "market_cap_b": 49.4,
+            },
+            {
+                "symbol": "JPM",
+                "sector": "Financial Services",
+                "industry": "Banks",
+                "market_cap_b": 700.0,
+            },
+        ]
+
+    def test_industry_match_wins_over_size(self):
+        from src.stock_analysis.tools.yf_summaries import select_comparables
+
+        picked = [r["symbol"] for r in select_comparables(self._rows())]
+        assert picked[0] == "IBM"
+        assert set(picked[1:]) == {"ACN", "INFY"}
+        assert "MU" not in picked  # bigger, and not the same business
+
+    def test_falls_back_to_sector_when_industry_is_too_thin(self):
+        from src.stock_analysis.tools.yf_summaries import select_comparables
+
+        rows = [r for r in self._rows() if r["symbol"] not in ("ACN", "INFY")]
+        picked = [r["symbol"] for r in select_comparables(rows)]
+        assert "JPM" not in picked  # wrong sector even so
+        assert set(picked[1:]) == {"CSCO", "MU"}
+
+    def test_ranks_by_size_similarity_not_size(self):
+        """CSCO at 441bn is a better comparable for a 224bn company than MU."""
+        from src.stock_analysis.tools.yf_summaries import select_comparables
+
+        rows = [r for r in self._rows() if r["symbol"] not in ("ACN", "INFY", "JPM")]
+        picked = [r["symbol"] for r in select_comparables(rows)]
+        assert picked[1] == "CSCO"
+
+    def test_subject_always_leads_and_limit_is_respected(self):
+        from src.stock_analysis.tools.yf_summaries import select_comparables
+
+        picked = select_comparables(self._rows(), limit=1)
+        assert picked[0]["is_subject"] is True
+        assert len(picked) == 2
+
+    def test_no_subject_row_degrades_rather_than_raising(self):
+        from src.stock_analysis.tools.yf_summaries import select_comparables
+
+        rows = [{"symbol": "A"}, {"symbol": "B"}]
+        assert len(select_comparables(rows)) == 2
