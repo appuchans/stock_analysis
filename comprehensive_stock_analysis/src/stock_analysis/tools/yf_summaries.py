@@ -920,7 +920,20 @@ def select_comparables(
             dist += _DIFFERENT_SECTOR_PENALTY
         return dist
 
-    others = sorted((r for r in rows if not r.get("is_subject")), key=score)
+    # A second share class of the same issuer is not a comparable. FMP returned
+    # GOOGL as a peer for GOOG, which puts Alphabet in its own comparables table
+    # at an identical multiple and makes the set look tighter than it is.
+    # Matched on company name, since the tickers share no prefix.
+    subject_name = str(subject.get("name") or "").lower().strip()
+    candidates = [
+        r
+        for r in rows
+        if not r.get("is_subject")
+        and (
+            not subject_name or str(r.get("name") or "").lower().strip() != subject_name
+        )
+    ]
+    others = sorted(candidates, key=score)
     return [subject] + others[:limit]
 
 
@@ -1002,6 +1015,15 @@ def summarize_catalysts(ticker: Any) -> Dict[str, Any]:
 # Gordon residual dominates the valuation and the answer stops being a forecast.
 _MIN_WACC_TERMINAL_SPREAD_PCT = 5.0
 
+# Growth band a discounted-cash-flow model can defend over ten years, and
+# the bear/bull spread around the base rate, both in percentage points.
+_MIN_DCF_GROWTH_PCT = 0.0
+_MAX_DCF_GROWTH_PCT = 20.0
+_SCENARIO_SPREAD_PCT = 4.0
+# Outside this, the consensus figure is not a growth rate a ten-year model
+# can use, and the scenarios are withheld rather than fabricated.
+_USABLE_DCF_GROWTH_PCT = (-5.0, 30.0)
+
 
 def wacc_pct(
     beta: Optional[float],
@@ -1054,8 +1076,24 @@ def fcf_dcf_scenarios(
     """
     if not fcf_m or fcf_m <= 0 or not shares_m or shares_m <= 0:
         return []
+    # A single year's consensus EPS growth is not a multi-year cash-flow growth
+    # rate. Alphabet's +1y figure was -28.3% — a one-off comparison — which as a
+    # decade-long FCF decline valued a $341 share at $46. Clamped to a band a
+    # DCF can defend; the disclosed growth_pct shows what was actually used.
     g0 = 8.0 if growth_pct is None else float(growth_pct)
-    g0 = max(-10.0, min(g0, 25.0))  # consensus growth is not a forever rate
+    # Refuse rather than clamp when the input is nowhere near a multi-year
+    # rate. Alphabet's +1y consensus was -28.3%, a one-off comparison; clamping
+    # it to 0% still valued a $341 share at $88, and a published range that far
+    # from the tape discredits the rating beside it. No model is better than a
+    # model nobody can defend — the caller reports that it was not run.
+    if not _USABLE_DCF_GROWTH_PCT[0] <= g0 <= _USABLE_DCF_GROWTH_PCT[1]:
+        _logger.info(
+            "growth input %.1f%% outside %s; no DCF produced",
+            g0,
+            _USABLE_DCF_GROWTH_PCT,
+        )
+        return []
+    g0 = max(_MIN_DCF_GROWTH_PCT, min(g0, _MAX_DCF_GROWTH_PCT))
     wacc = float(base_wacc_pct) if base_wacc_pct else 9.0
 
     # A Gordon terminal value is 1/(WACC - g), so a narrow spread explodes it:
@@ -1066,10 +1104,14 @@ def fcf_dcf_scenarios(
     # residual guess rather than forecast cash.
     min_disc = terminal_pct + _MIN_WACC_TERMINAL_SPREAD_PCT
 
+    # Spread in percentage *points*, not as a multiple. Scaling by 0.4x/1.4x
+    # inverts the moment growth is negative — bear becomes the least-negative
+    # rate and therefore the highest valuation — which is how a scenario table
+    # printed Bear $55.78 above Bull $39.61.
     variants = [
-        ("Bear", g0 * 0.4, wacc + 1.0),
+        ("Bear", g0 - _SCENARIO_SPREAD_PCT, wacc + 1.0),
         ("Base", g0, wacc),
-        ("Bull", min(g0 * 1.4, 30.0), wacc - 0.5),
+        ("Bull", g0 + _SCENARIO_SPREAD_PCT, wacc - 0.5),
     ]
     out: List[Dict[str, Any]] = []
     for name, g_pct, disc_pct in variants:

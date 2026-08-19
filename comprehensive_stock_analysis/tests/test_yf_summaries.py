@@ -763,3 +763,84 @@ class TestLastSettledClose:
         from src.stock_analysis.tools import yf_summaries as ys
 
         assert ys.last_settled_close(_RaisingTicker()) == {}
+
+
+class TestDcfRefusesIndefensibleInputs:
+    """A model nobody can defend is worse than no model.
+
+    Alphabet's +1y consensus EPS growth was -28.3%, a one-off comparison. Used
+    as a ten-year cash-flow rate it valued a $341 share at $46, and the scenario
+    multipliers inverted on the negative sign so Bear ($55.78) printed above
+    Bull ($39.61).
+    """
+
+    KW = dict(fcf_m=73_266, shares_m=12_230, net_debt_m=-67_552, base_wacc_pct=8.9)
+
+    def test_no_scenarios_when_growth_is_not_a_growth_rate(self):
+        from src.stock_analysis.tools.yf_summaries import fcf_dcf_scenarios
+
+        assert fcf_dcf_scenarios(growth_pct=-28.3, **self.KW) == []
+        assert fcf_dcf_scenarios(growth_pct=45.0, **self.KW) == []
+
+    def test_scenarios_stay_ordered_for_low_but_usable_growth(self):
+        """The spread is in percentage points, so the sign cannot invert it."""
+        from src.stock_analysis.tools.yf_summaries import fcf_dcf_scenarios
+
+        rows = fcf_dcf_scenarios(growth_pct=-2.0, **self.KW)
+        vals = [r["intrinsic_per_share"] for r in rows]
+        assert vals == sorted(vals), f"bear/base/bull out of order: {vals}"
+        assert [r["scenario"] for r in rows] == ["Bear", "Base", "Bull"]
+
+    def test_ordinary_growth_still_produces_a_model(self):
+        from src.stock_analysis.tools.yf_summaries import fcf_dcf_scenarios
+
+        rows = fcf_dcf_scenarios(
+            fcf_m=11_455,
+            shares_m=930,
+            net_debt_m=47_000,
+            base_wacc_pct=7.8,
+            growth_pct=6.9,
+        )
+        vals = [r["intrinsic_per_share"] for r in rows]
+        assert len(rows) == 3 and vals == sorted(vals)
+
+
+class TestShareClassIsNotAPeer:
+    def test_second_share_class_of_the_subject_is_excluded(self):
+        """FMP returned GOOGL as a peer for GOOG — the same company."""
+        from src.stock_analysis.tools.yf_summaries import select_comparables
+
+        rows = [
+            {
+                "symbol": "GOOG",
+                "name": "Alphabet Inc.",
+                "is_subject": True,
+                "sector": "Communication Services",
+                "industry": "Internet Content",
+                "market_cap_b": 4179.0,
+            },
+            {
+                "symbol": "GOOGL",
+                "name": "Alphabet Inc.",
+                "sector": "Communication Services",
+                "industry": "Internet Content",
+                "market_cap_b": 4180.0,
+            },
+            {
+                "symbol": "META",
+                "name": "Meta Platforms, Inc.",
+                "sector": "Communication Services",
+                "industry": "Internet Content",
+                "market_cap_b": 1600.0,
+            },
+            {
+                "symbol": "MSFT",
+                "name": "Microsoft Corporation",
+                "sector": "Technology",
+                "industry": "Software - Infrastructure",
+                "market_cap_b": 3600.0,
+            },
+        ]
+        picked = [r["symbol"] for r in select_comparables(rows)]
+        assert "GOOGL" not in picked
+        assert "META" in picked
