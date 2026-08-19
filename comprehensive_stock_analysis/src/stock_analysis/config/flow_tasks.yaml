@@ -380,8 +380,9 @@ competitor:
     and position rather than skipping the peer.
 
     {peer_metrics_data} carries the comparable multiples themselves — trailing
-    and forward P/E, operating margin, revenue growth and market cap for each
-    peer alongside {symbol}. Ground the valuation comparison in those numbers:
+    and forward P/E, EV/EBITDA, PEG, free-cash-flow yield, operating margin,
+    revenue growth and market cap for each peer alongside {symbol}. Those are
+    the only multiples to quote; never supply one from memory. Ground the valuation comparison in those numbers:
     state where {symbol} trades relative to the peer set and whether its growth
     and margin profile justifies the gap. Present it as a table.
 
@@ -439,6 +440,9 @@ recommendation:
     5. What would change your mind (upside and downside scenarios).
     6. Key risks (max 3, stated as business risks not beta values).
     7. Suggested target price and time horizon, with brief rationale.
+       {valuation_multiples_data} gives the multiples this company actually
+       trades at. Quote those figures and no others — never supply a P/E,
+       EV/EBITDA, PEG or cash-flow yield from memory.
        Anchor the target to your OWN valuation work first: {valuation_model_data}
        gives this run's discounted-cash-flow range. State where your target sits
        within that range. If it falls outside the range, you must name the

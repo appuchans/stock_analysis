@@ -141,15 +141,18 @@ def football_field(
         ax.plot([lo, hi], [i, i], color=ACCENT, lw=1.3, solid_capstyle="round")
         for x in (lo, hi):
             ax.plot([x, x], [i - 0.16, i + 0.16], color=ACCENT, lw=1.3)
+        # Inside the band, not left of it: the leftmost band's low label sat
+        # on top of the row label ("Street targets$174") however much padding
+        # the axis was given, because the two compete for the same space.
         ax.annotate(
             f"{currency}{lo:,.0f}",
             (lo, i),
             textcoords="offset points",
-            xytext=(-4, 0),
-            ha="right",
-            va="center",
+            xytext=(5, 3),
+            ha="left",
+            va="bottom",
             fontsize=7.5,
-            color=FAINT,
+            color=TEXT,
         )
         ax.annotate(
             f"{currency}{hi:,.0f}",

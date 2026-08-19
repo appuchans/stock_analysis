@@ -314,6 +314,26 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # only the bare peer tickers above, and reported that no valuation
         # multiples were available.
         base["peer_metrics_data"] = _blob("peers", 3000)
+        # The subject's own multiples as a sentence. Stated explicitly because
+        # a model asked to discuss valuation will otherwise supply EV/EBITDA
+        # and PEG from memory — one report quoted "16.8 times enterprise value
+        # to EBITDA", which happened to be right and was still unsourced.
+        rows = (structured.get("peers") or {}).get("rows") or []
+        me = next((r for r in rows if r.get("is_subject")), {})
+        pairs = [
+            ("trailing P/E", me.get("pe_ttm"), "x"),
+            ("forward P/E", me.get("fwd_pe"), "x"),
+            ("EV/EBITDA", me.get("ev_to_ebitda"), "x"),
+            ("PEG", me.get("peg"), ""),
+            ("free-cash-flow yield", me.get("fcf_yield_pct"), "%"),
+            ("operating margin", me.get("operating_margin_pct"), "%"),
+        ]
+        stated = [f"{lb} {v}{sfx}" for lb, v, sfx in pairs if v is not None]
+        base["valuation_multiples_data"] = (
+            f"{self.state.symbol} trades at " + ", ".join(stated) + "."
+            if stated
+            else "No valuation multiples available — do not quote any."
+        )
         # The run's own valuation model, rendered as prose so the advisor reads
         # it as a conclusion rather than a payload to restate.
         scen = self.state.valuation_scenarios or []
@@ -446,7 +466,6 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
     def collect_data(self) -> None:
         """Collect raw stock data from all free sources."""
         agent = self._make_agent(DataCollectorAgent)
-        cd = self._prompts["collect_data"]
         t = Task(
             name="Data Collection",
             description=self._desc_for("collect_data"),
@@ -786,6 +805,22 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 "low_52w": _f(md.get("low_52w")),
                 "beta": _f(md.get("beta")),
             }
+            # The subject's own multiples, taken from the same peer-metrics
+            # helper that prices the comparables, so the subject row and the
+            # peer table cannot disagree about how IBM trades.
+            subject = (structured.get("peers") or {}).get("rows") or []
+            me = next((r for r in subject if r.get("is_subject")), {})
+            for key in ("ev_to_ebitda", "peg", "fcf_yield_pct", "fwd_pe"):
+                if me.get(key) is not None:
+                    chart["key_stats"][key] = _f(me[key])
+
+            # Cash-flow history, for the free-cash-flow-versus-capex exhibit.
+            # summarize_financial_statements has always produced this; nothing
+            # carried it into chart_data, so the one chart a reviewer wanted at
+            # the centre of the note had no data to draw.
+            fin = structured.get("financials") or {}
+            if fin.get("cash_flow"):
+                chart["financials"] = {"cash_flow": fin["cash_flow"]}
             an = structured.get("analyst") or {}
             chart["analyst"] = {
                 "price_targets": an.get("price_targets") or {},

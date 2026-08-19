@@ -782,6 +782,17 @@ def _key_metrics(
                 if (v := _num(info.get("operatingMargins"))) is not None
                 else None
             ),
+            # The three multiples a reviewer specifically asked for and which
+            # nothing computed, so the models asserted them from their own
+            # knowledge instead — right for IBM as it happens (16.8x), but
+            # unsourced and unverifiable. All three are already in `info`.
+            "ev_to_ebitda": _num(info.get("enterpriseToEbitda"), 1),
+            "peg": _num(info.get("trailingPegRatio"), 2),
+            "fcf_yield_pct": (
+                round(fcf / info["marketCap"] * 100, 1)
+                if (fcf := _num(info.get("freeCashflow"))) and info.get("marketCap")
+                else None
+            ),
         }
     except Exception as exc:
         _logger.debug("key metrics failed for %s: %s", sym, exc)

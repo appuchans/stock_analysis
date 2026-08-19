@@ -555,3 +555,54 @@ class TestPeerSymbolOverride:
         monkeypatch.setattr(ys, "fetch_peer_symbols", lambda *a, **k: ["ACN"])
         out = ys.summarize_peers("IBM", yf_module=self._YF)
         assert [r["symbol"] for r in out["rows"]] == ["IBM", "ACN"]
+
+
+class TestValuationMultiples:
+    """EV/EBITDA, PEG and FCF yield — the multiples a reviewer asked for.
+
+    Nothing computed these, so a report asserted "16.8 times enterprise value
+    to EBITDA" from the model's own knowledge. It happened to be right, which
+    is worse than being wrong: unsourced and unverifiable either way. All three
+    are present in ticker.info and were simply never read.
+    """
+
+    class _YF:
+        class Ticker:
+            def __init__(self, sym):
+                self._sym = sym
+
+            @property
+            def info(self):
+                return {
+                    "marketCap": 2.0e11,
+                    "shortName": "Test Co",
+                    "enterpriseToEbitda": 16.781,
+                    "trailingPegRatio": 2.329,
+                    "freeCashflow": 1.08e10,
+                }
+
+    def test_multiples_are_read_and_fcf_yield_derived(self):
+        from src.stock_analysis.tools.yf_summaries import _key_metrics
+
+        m = _key_metrics("IBM", yf_module=self._YF)
+        assert m["ev_to_ebitda"] == 16.8
+        assert m["peg"] == 2.33
+        # 10.8bn / 200bn = 5.4%
+        assert m["fcf_yield_pct"] == 5.4
+
+    def test_absent_inputs_yield_none_not_a_guess(self):
+        from src.stock_analysis.tools.yf_summaries import _key_metrics
+
+        class _Bare:
+            class Ticker:
+                def __init__(self, sym):
+                    pass
+
+                @property
+                def info(self):
+                    return {"marketCap": 1e11, "shortName": "X"}
+
+        m = _key_metrics("X", yf_module=_Bare)
+        assert m["ev_to_ebitda"] is None
+        assert m["peg"] is None
+        assert m["fcf_yield_pct"] is None
