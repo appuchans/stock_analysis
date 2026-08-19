@@ -694,3 +694,45 @@ class TestAbortedRunDoesNotPublish:
 
         assert len(called) == 1
         assert flow.state.report == "x"
+
+
+class TestSnapshotReachesChartData:
+    """The snapshot must survive into chart_data, not just onto state.
+
+    CrewAI's Flow.state returns a fresh copy on every access, so reading back a
+    value written earlier in the same method silently yielded {} — the first
+    IBM run after the snapshot landed shipped a chart_data whose snapshot was
+    an empty dict while state held the right values.
+    """
+
+    def test_written_chart_carries_the_snapshot(self, tmp_path, monkeypatch):
+        import json
+
+        from src.stock_analysis.crew import flow_crew as fc
+
+        monkeypatch.setattr(fc.settings, "report_output_dir", str(tmp_path))
+        flow = fc.StockAnalysisFlow()
+        flow.state.symbol = "TST"
+        snap = {
+            "as_of": "2026-08-19T09:31:23",
+            "price": 231.02,
+            "price_source": "close",
+        }
+        flow._apply_structured_bundle(
+            {
+                "structured": {"a": 1},
+                "chart": {
+                    "key_stats": {"current_price": 231.0},
+                    "valuation_scenarios": [
+                        {"scenario": "Base", "intrinsic_per_share": 269.3}
+                    ],
+                },
+                "data_fetched_at": snap["as_of"],
+                "snapshot": snap,
+            }
+        )
+        written = json.loads(
+            (tmp_path / "TST" / "TST_chart_data.json").read_text(encoding="utf-8")
+        )
+        assert written["snapshot"] == snap
+        assert flow.state.valuation_scenarios[0]["intrinsic_per_share"] == 269.3

@@ -510,17 +510,21 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             "[collect_data] structured blocks for %s: %s", sym, list(structured.keys())
         )
 
-        # Restored before the chart write so a cache hit carries the same
-        # snapshot the cached prose was written against.
-        self.state.snapshot = dict(bundle.get("snapshot") or {})
+        # Held in a local and used from there. CrewAI's Flow.state returns a
+        # fresh copy on each access (`self.state is self.state` is False), so a
+        # value written to state is not reliably readable back within the same
+        # method — reading it here silently yielded {} and shipped a chart_data
+        # with an empty snapshot. Assign to state for later stages, but never
+        # round-trip through it.
+        snapshot = dict(bundle.get("snapshot") or {})
+        self.state.snapshot = snapshot
 
         chart = bundle.get("chart")
         if chart:
             chart = dict(chart)
-            chart["snapshot"] = self.state.snapshot
-            self.state.valuation_scenarios = list(
-                chart.get("valuation_scenarios") or []
-            )
+            chart["snapshot"] = snapshot
+            scenarios = list(chart.get("valuation_scenarios") or [])
+            self.state.valuation_scenarios = scenarios
             # Recomputed at apply time so the trend stays fresh and is appended
             # at most once per day even when the rest of the bundle was cached.
             chart["sentiment_history"] = self._update_sentiment_history(
