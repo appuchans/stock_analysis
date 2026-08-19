@@ -404,7 +404,10 @@ def build_typst_source(model: ReportModel, charts: Dict[str, str]) -> str:
     # Anything the narrative gave no home to still belongs in the document.
     leftovers = [n for n in charts if n not in used and n != "relative"]
     if leftovers:
-        src.append("\n#pagebreak(weak: true)\n= Exhibits\n\n")
+        # Flowed, not broken onto its own page: forcing a break here stranded
+        # the previous section's last two lines on a page of their own and then
+        # left the exhibits page two-thirds empty.
+        src.append("\n= Exhibits\n\n")
         for name in leftovers:
             src.append(f'#figure(image("{charts[name]}", width: 100%))\n#v(6pt)\n')
 
