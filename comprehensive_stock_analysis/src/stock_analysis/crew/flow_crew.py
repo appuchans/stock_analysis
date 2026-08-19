@@ -619,6 +619,34 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
 
         self._enrich_with_premium_providers(sym, structured)
 
+        # The multiples table is discovered by a keyless web search, which can
+        # come back empty for a perfectly ordinary ticker — IBM shipped a peer
+        # comparison whose every cell read "Not available" while the provider
+        # chain had already returned MU/CSCO/SAP/CRM/ACN/INFY. Enrichment runs
+        # after the parallel fetch, so this is the first point where both are
+        # known: if discovery found nothing but the providers did, price the
+        # provider's peers instead of publishing an empty table.
+        if not (structured.get("peers") or {}).get("rows"):
+            tickers = [
+                p.get("symbol")
+                for p in ((structured.get("peer_set") or {}).get("peers") or [])
+                if p.get("symbol")
+            ][:4]
+            if tickers:
+                try:
+                    priced = ys.summarize_peers(sym, peer_symbols=tickers)
+                except Exception as exc:
+                    _logger.debug("provider-peer metrics failed for %s: %s", sym, exc)
+                    priced = {}
+                if priced.get("rows"):
+                    structured["peers"] = priced
+                    _logger.info(
+                        "[collect_data] peer multiples built from provider peers "
+                        "for %s: %s",
+                        sym,
+                        ", ".join(tickers),
+                    )
+
         bundle: Dict[str, Any] = {
             "structured": structured,
             "technical_summary": technical_summary,

@@ -788,8 +788,17 @@ def _key_metrics(
         return None
 
 
-def summarize_peers(symbol: str, yf_module: Any = None) -> Dict[str, Any]:
-    """Side-by-side key metrics for the subject company and its true business peers."""
+def summarize_peers(
+    symbol: str, yf_module: Any = None, peer_symbols: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """Side-by-side key metrics for the subject company and its true business peers.
+
+    ``peer_symbols`` skips discovery when the caller already knows the peer set.
+    Discovery is a keyless web search that can legitimately come back empty —
+    when it did for IBM the whole metrics table was dropped, and the report
+    printed a peer comparison whose every cell read "Not available" while the
+    provider chain had supplied a perfectly good peer list.
+    """
     if yf_module is None:
         import yfinance as yf_module  # type: ignore[no-redef]
 
@@ -799,7 +808,7 @@ def summarize_peers(symbol: str, yf_module: Any = None) -> Dict[str, Any]:
         _logger.debug("subject info fetch failed for peers: %s", exc)
         subject_info = {}
 
-    peers = fetch_peer_symbols(
+    peers = peer_symbols or fetch_peer_symbols(
         symbol,
         company_name=subject_info.get("shortName") or subject_info.get("longName"),
         sector=subject_info.get("sector"),

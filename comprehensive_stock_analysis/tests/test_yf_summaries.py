@@ -508,3 +508,50 @@ class TestFcfDcf:
         assert wacc_pct(beta=1.0, market_cap_m=1_000, total_debt_m=1_000) < 9.0
         # Missing beta falls back to 1.0 rather than exploding.
         assert wacc_pct(beta=None, market_cap_m=1_000, total_debt_m=0) == 9.0
+
+
+class TestPeerSymbolOverride:
+    """Provider-supplied peers must be usable when web discovery finds none.
+
+    IBM shipped a peer table whose every cell read "Not available" because
+    fetch_peer_symbols (a keyless web search) returned nothing — while the
+    provider chain had already supplied MU/CSCO/SAP/CRM/ACN/INFY.
+    """
+
+    class _YF:
+        class Ticker:
+            def __init__(self, sym):
+                self._sym = sym
+
+            @property
+            def info(self):
+                return {
+                    "marketCap": 2e11,
+                    "shortName": f"{self._sym} Co",
+                    "trailingPE": 20.0,
+                    "forwardPE": 17.0,
+                    "revenueGrowth": 0.05,
+                    "operatingMargins": 0.16,
+                }
+
+    def test_explicit_peers_skip_web_discovery(self, monkeypatch):
+        from src.stock_analysis.tools import yf_summaries as ys
+
+        def _boom(*a, **k):
+            raise AssertionError("discovery must not run when peers are supplied")
+
+        monkeypatch.setattr(ys, "fetch_peer_symbols", _boom)
+        out = ys.summarize_peers(
+            "IBM", yf_module=self._YF, peer_symbols=["CSCO", "SAP"]
+        )
+        assert [r["symbol"] for r in out["rows"]] == ["IBM", "CSCO", "SAP"]
+        assert out["rows"][0]["is_subject"] is True
+        # The whole point: peers carry real multiples, not blanks.
+        assert all(r["pe_ttm"] == 20.0 for r in out["rows"])
+
+    def test_falls_back_to_discovery_when_no_peers_supplied(self, monkeypatch):
+        from src.stock_analysis.tools import yf_summaries as ys
+
+        monkeypatch.setattr(ys, "fetch_peer_symbols", lambda *a, **k: ["ACN"])
+        out = ys.summarize_peers("IBM", yf_module=self._YF)
+        assert [r["symbol"] for r in out["rows"]] == ["IBM", "ACN"]
