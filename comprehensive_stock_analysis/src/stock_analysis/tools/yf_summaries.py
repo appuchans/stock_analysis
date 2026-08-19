@@ -182,6 +182,54 @@ def _date_label(col: Any) -> str:
         return str(col)[:10]
 
 
+# US equity regular session, in exchange local time. Used only to decide
+# whether today's daily bar has settled.
+_MARKET_TZ = "America/New_York"
+_MARKET_CLOSE_HOUR = 16
+
+
+def last_settled_close(ticker: Any) -> Dict[str, Any]:
+    """The most recent *completed* daily close, with the session it belongs to.
+
+    yfinance's last daily bar is today's bar while the session is running, so
+    its close is a live quote that keeps moving. Reporting it as a close is
+    simply untrue mid-session — a note generated at 11:27 said IBM "closed at
+    $237.45 on August 19" while the market was open and the price was $236.53
+    an hour later.
+
+    Returns ``{price, date, basis}`` where ``basis`` names what the figure is,
+    so callers can label it honestly rather than guessing.
+    """
+    out: Dict[str, Any] = {}
+    try:
+        hist = ticker.history(period="10d", interval="1d")
+        if hist is None or hist.empty:
+            return out
+        from datetime import time as _time
+        from zoneinfo import ZoneInfo
+
+        now = datetime.now(ZoneInfo(_MARKET_TZ))
+        session_over = now.time() >= _time(_MARKET_CLOSE_HOUR, 0)
+
+        rows = [(idx, float(r["Close"])) for idx, r in hist.iterrows()]
+        # Drop today's bar unless the session has actually finished. On a
+        # weekend or holiday the newest bar is already an earlier day, so this
+        # is a no-op and needs no separate calendar.
+        if rows and rows[-1][0].date() == now.date() and not session_over:
+            rows = rows[:-1]
+        if not rows:
+            return out
+        idx, close = rows[-1]
+        out = {
+            "price": round(close, 2),
+            "date": _date_label(idx),
+            "basis": "last close",
+        }
+    except Exception as exc:
+        _logger.debug("last settled close failed: %s", exc)
+    return out
+
+
 # ── Analyst consensus, estimates, and rating changes ──────────────────────────
 
 
@@ -803,54 +851,53 @@ def _key_metrics(
         return None
 
 
+# How far a candidate may sit from the subject on each axis before it stops
+# being a comparable. Expressed as penalties on a log-size distance, so they
+# trade off against each other rather than acting as gates.
+_DIFFERENT_INDUSTRY_PENALTY = 1.0
+_DIFFERENT_SECTOR_PENALTY = 2.5
+
+
 def select_comparables(
     rows: List[Dict[str, Any]], limit: int = 4
 ) -> List[Dict[str, Any]]:
-    """Keep the rows that are actually comparable to the subject.
+    """Rank candidates by how comparable they actually are to the subject.
 
     A provider's "peers" list is not a comparables set. FMP returns Micron for
-    IBM — memory semiconductors against enterprise IT services — and ranks by
-    market capitalisation, so simply taking the largest names puts the least
-    similar business at the top of the table. It also reported Micron at
-    $1,055B, roughly five to ten times its actual size, so the ranking key was
-    wrong as well as the concept.
+    IBM — memory semiconductors against enterprise IT services — ranked by
+    market capitalisation, so taking the largest names puts the least similar
+    business at the top of the table.
 
-    Two filters, in order: same sector as the subject, then closest in size.
-    Size proximity is measured on a log scale because comparability is a matter
-    of order of magnitude — a $220B company is far better compared with a $440B
-    one than with a $5B one, and the raw difference would not say so.
+    Scoring rather than filtering, because both hard gates fail. Rank by size
+    alone and Micron leads. Gate on industry alone and IBM is compared with
+    EPAM at $5.5bn against its own $224bn, while SAP and Cisco — far closer in
+    size and plainly comparable businesses — are excluded over a yfinance
+    label. The score is distance in log market cap plus a penalty for a
+    different industry and a larger one for a different sector, so a same-
+    industry peer wins at comparable size but a forty-fold size gap does not
+    survive being in the right industry.
     """
     subject = next((r for r in rows if r.get("is_subject")), None)
     if not subject:
         return list(rows)[:limit]
 
-    others = [r for r in rows if not r.get("is_subject")]
-    # Industry first, sector second. Sector alone is too coarse to be useful:
-    # IBM and Micron are both "Technology", which is how a memory-chip maker
-    # reached an enterprise-IT-services comparables table. Their industries —
-    # "Information Technology Services" against "Semiconductors" — separate
-    # them immediately. Each filter applies only if it leaves a usable table,
-    # so a subject with few true peers still gets a comparison.
-    for key in ("industry", "sector"):
-        want = subject.get(key)
-        if not want:
-            continue
-        matched = [r for r in others if r.get(key) == want]
-        if len(matched) >= 2:
-            others = matched
-            break
-
     import math
 
-    base = subject.get("market_cap_b")
-    if base and base > 0:
-        others.sort(
-            key=lambda r: (
-                abs(math.log((r.get("market_cap_b") or base) / base))
-                if (r.get("market_cap_b") or 0) > 0
-                else math.inf
-            )
-        )
+    base = subject.get("market_cap_b") or 0
+    sector, industry = subject.get("sector"), subject.get("industry")
+
+    def score(r: Dict[str, Any]) -> float:
+        mcap = r.get("market_cap_b") or 0
+        # Log scale: comparability is a matter of order of magnitude, and a raw
+        # difference would call $440bn and $5bn equally distant from $224bn.
+        dist = abs(math.log(mcap / base)) if base > 0 and mcap > 0 else 3.0
+        if industry and r.get("industry") != industry:
+            dist += _DIFFERENT_INDUSTRY_PENALTY
+        if sector and r.get("sector") != sector:
+            dist += _DIFFERENT_SECTOR_PENALTY
+        return dist
+
+    others = sorted((r for r in rows if not r.get("is_subject")), key=score)
     return [subject] + others[:limit]
 
 

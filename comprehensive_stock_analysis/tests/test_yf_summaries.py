@@ -660,21 +660,25 @@ class TestSelectComparables:
             },
         ]
 
-    def test_industry_match_wins_over_size(self):
+    def test_same_industry_outranks_a_bigger_mismatch(self):
+        """Scored, not gated. A hard industry filter traded one failure for
+        another: it excluded SAP and Cisco — far closer in size and plainly
+        comparable — over a yfinance label, and admitted a $5bn firm against a
+        $224bn subject."""
         from src.stock_analysis.tools.yf_summaries import select_comparables
 
         picked = [r["symbol"] for r in select_comparables(self._rows())]
         assert picked[0] == "IBM"
-        assert set(picked[1:]) == {"ACN", "INFY"}
-        assert "MU" not in picked  # bigger, and not the same business
+        # Same industry and closest in size leads.
+        assert picked[1] == "ACN"
+        # A semiconductor maker does not outrank same-industry peers.
+        assert picked.index("MU") > picked.index("INFY")
 
-    def test_falls_back_to_sector_when_industry_is_too_thin(self):
+    def test_wrong_sector_is_pushed_to_the_back(self):
         from src.stock_analysis.tools.yf_summaries import select_comparables
 
-        rows = [r for r in self._rows() if r["symbol"] not in ("ACN", "INFY")]
-        picked = [r["symbol"] for r in select_comparables(rows)]
-        assert "JPM" not in picked  # wrong sector even so
-        assert set(picked[1:]) == {"CSCO", "MU"}
+        picked = [r["symbol"] for r in select_comparables(self._rows(), limit=3)]
+        assert "JPM" not in picked
 
     def test_ranks_by_size_similarity_not_size(self):
         """CSCO at 441bn is a better comparable for a 224bn company than MU."""
@@ -696,3 +700,66 @@ class TestSelectComparables:
 
         rows = [{"symbol": "A"}, {"symbol": "B"}]
         assert len(select_comparables(rows)) == 2
+
+
+class TestLastSettledClose:
+    """A price called a "close" must actually be one.
+
+    yfinance's newest daily bar is today's bar while the session runs, so its
+    close is a live quote. A note generated at 11:27 ET said IBM "closed at
+    $237.45 on August 19" with the market open and the price $236.53 an hour
+    later.
+    """
+
+    def _ticker(self, dates_closes):
+        import pandas as pd
+
+        idx = pd.DatetimeIndex([pd.Timestamp(d) for d, _ in dates_closes])
+        return _FakeTicker(
+            history=lambda **kw: pd.DataFrame(
+                {"Close": [c for _, c in dates_closes]}, index=idx
+            )
+        )
+
+    def test_todays_unsettled_bar_is_dropped_mid_session(self, monkeypatch):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from src.stock_analysis.tools import yf_summaries as ys
+
+        now = datetime(2026, 8, 19, 11, 27, tzinfo=ZoneInfo("America/New_York"))
+
+        class _DT(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now
+
+        monkeypatch.setattr(ys, "datetime", _DT)
+        out = ys.last_settled_close(
+            self._ticker([("2026-08-18", 232.67), ("2026-08-19", 237.45)])
+        )
+        assert out == {"price": 232.67, "date": "2026-08-18", "basis": "last close"}
+
+    def test_todays_bar_is_kept_once_the_session_has_closed(self, monkeypatch):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from src.stock_analysis.tools import yf_summaries as ys
+
+        now = datetime(2026, 8, 19, 17, 5, tzinfo=ZoneInfo("America/New_York"))
+
+        class _DT(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now
+
+        monkeypatch.setattr(ys, "datetime", _DT)
+        out = ys.last_settled_close(
+            self._ticker([("2026-08-18", 232.67), ("2026-08-19", 237.45)])
+        )
+        assert out["date"] == "2026-08-19"
+
+    def test_no_history_returns_empty_rather_than_guessing(self):
+        from src.stock_analysis.tools import yf_summaries as ys
+
+        assert ys.last_settled_close(_RaisingTicker()) == {}

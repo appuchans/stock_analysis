@@ -701,7 +701,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 p.get("symbol")
                 for p in ((structured.get("peer_set") or {}).get("peers") or [])
                 if p.get("symbol")
-            ][:8]
+                # The pool is the union of two providers and carries junk from
+                # both; screening needs enough candidates to choose between.
+            ][:14]
             if tickers:
                 try:
                     priced = ys.summarize_peers(sym, peer_symbols=tickers)
@@ -954,16 +956,27 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # trade at" — the last daily close and the analyst-target payload's
         # `current` — and they disagree (495.40 vs 495.4 vs a 3-day-old 502.54).
         # Pick one, name where it came from, and carry it with its timestamp.
-        px = ((bundle.get("chart") or {}).get("key_stats") or {}).get("current_price")
-        source = "daily close (Yahoo Finance)"
+        # The last *settled* close, not the latest tick. yfinance's newest daily
+        # bar is today's bar while the session is running, so quoting it as a
+        # close is untrue mid-session: a note generated at 11:27 ET said IBM
+        # "closed at $237.45 on August 19" with the market open and the price
+        # already $236.53 an hour later. A settled close is also stable, so two
+        # stages running minutes apart cannot disagree.
+        settled = ys.last_settled_close(ticker)
+        px = settled.get("price")
+        price_date = settled.get("date")
+        basis = settled.get("basis")
         if px is None:
-            pt = (structured.get("analyst") or {}).get("price_targets") or {}
-            px = pt.get("current_price")
-            source = "analyst price-target snapshot (Yahoo Finance)"
+            px = ((bundle.get("chart") or {}).get("key_stats") or {}).get(
+                "current_price"
+            )
+            basis = "latest available price" if px is not None else None
         bundle["snapshot"] = {
             "as_of": bundle["data_fetched_at"],
             "price": round(px, 2) if isinstance(px, (int, float)) else None,
-            "price_source": source if px is not None else None,
+            "price_date": price_date,
+            "price_basis": basis,
+            "price_source": "Yahoo Finance" if px is not None else None,
         }
         return bundle
 

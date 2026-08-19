@@ -210,12 +210,33 @@ class ProviderRouter:
         is what a comparables table needs; Finnhub's bare ticker list is the
         fallback and still beats the qualitative-only comparison the competitor
         stage fell back to before.
+
+        Both are queried and merged rather than taking the first that answers.
+        They disagree usefully: for IBM, FMP returns SAP, Salesforce and
+        Accenture but also Micron — a memory-chip maker ranked in on size
+        alone — while Finnhub returns Cognizant, DXC and Kyndryl, all services
+        peers but none of the software names. Either list alone gives a
+        lopsided comparables table; the union covers the businesses the company
+        actually competes in, and the caller screens it down.
         """
-        return self._try(
-            self._fundamentals_chain() + [_f for _f in [_finnhub()] if _f],
-            "get_peers",
-            symbol,
-        )
+        merged: List[Dict[str, Any]] = []
+        seen = {symbol.upper()}
+        sources: List[str] = []
+        for provider in self._fundamentals_chain() + [_f for _f in [_finnhub()] if _f]:
+            result = self._try([provider], "get_peers", symbol)
+            for peer in result.get("peers") or []:
+                sym = (
+                    peer.get("symbol") if isinstance(peer, dict) else str(peer)
+                ) or ""
+                if sym.upper() in seen:
+                    continue
+                seen.add(sym.upper())
+                merged.append(peer if isinstance(peer, dict) else {"symbol": sym})
+            if result.get("peers") and result.get("source"):
+                sources.append(str(result["source"]))
+        if not merged:
+            return {}
+        return {"symbol": symbol, "peers": merged, "source": "+".join(sources)}
 
     def get_shareholder_returns(self, symbol: str) -> Dict[str, Any]:
         return self._try(self._fundamentals_chain(), "get_shareholder_returns", symbol)

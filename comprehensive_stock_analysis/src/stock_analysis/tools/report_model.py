@@ -215,13 +215,26 @@ class ReportModel:
         return [p for p in (self.chart.get("peers") or []) if isinstance(p, dict)]
 
     def catalysts(self) -> List[Tuple[str, str]]:
+        """Dated events still ahead of the note's own as-of date.
+
+        A calendar is a forward-looking exhibit. yfinance returns the last
+        ex-dividend date as readily as the next one, so an IBM note dated
+        19 August listed an ex-dividend of 9 August — ten days past — under
+        "Calendar", which tells the reader nothing and undermines the rest.
+        """
         c = self.chart.get("catalysts") or {}
         labels = [
             ("next_earnings_date", "Next earnings"),
             ("ex_dividend_date", "Ex-dividend"),
             ("dividend_date", "Dividend paid"),
         ]
-        return [(lb, str(c[k])[:10]) for k, lb in labels if c.get(k)]
+        cutoff = (self.snapshot.get("price_date") or self.as_of or "")[:10]
+        out = []
+        for key, label in labels:
+            value = str(c.get(key) or "")[:10]
+            if value and (not cutoff or value >= cutoff):
+                out.append((label, value))
+        return out
 
     def is_renderable(self) -> bool:
         """Enough to produce a document at all."""

@@ -247,6 +247,25 @@ def _build_exhibits(model: ReportModel, out_dir: Path) -> Dict[str, str]:
     return charts
 
 
+# A label the reader cannot place on a scale is decoration. A note printed
+# "Risk High" and "Confidence 76%" with nothing anywhere saying what either
+# meant or what would move them.
+_RISK_KEY = [
+    ("Low", "Earnings and cash flow are predictable; drawdowns track the market."),
+    ("Medium", "Cyclical or competitive pressure can move earnings materially."),
+    (
+        "High",
+        "Realistic scenarios break the thesis, or volatility and drawdown run "
+        "well above the market.",
+    ),
+]
+
+_CONFIDENCE_KEY = [
+    ("Above 80%", "Thesis rests on demonstrated, recurring results."),
+    ("60-80%", "Direction is well supported; magnitude or timing is uncertain."),
+    ("Below 60%", "Thesis depends on an outcome not yet evidenced."),
+]
+
 _RATING_KEY = [
     ("Buy", "Total return expected to exceed the market over the stated horizon."),
     ("Hold", "Total return expected to track the market over the stated horizon."),
@@ -302,6 +321,12 @@ def _appendix(model: ReportModel) -> str:
     horizon = str(model.rec.get("time_horizon") or "").strip()
     if horizon:
         parts.append(f"\nRatings apply over a {_esc(horizon)} horizon.\n")
+
+    parts.append("\n== Risk and confidence scales\n\n")
+    parts.append(_table([["Risk level", "Meaning"]] + [list(r) for r in _RISK_KEY]))
+    parts.append(
+        _table([["Confidence", "Meaning"]] + [list(r) for r in _CONFIDENCE_KEY])
+    )
 
     parts.append("\n== Valuation method\n\n")
     scen = model.scenarios

@@ -238,7 +238,7 @@ _HTML_TEMPLATE = """\
   </div>
   <div class="title-block">
     <h1>{{ company_name or symbol }} <span style="color:var(--ink-faint); font-weight:400">({{ symbol }})</span></h1>
-    <div class="subtitle">{{ "ETF Research Report" if asset_type == "etf" else "Equity Research Report" }} &bull; Generated {{ generated_at }}</div>
+    <div class="subtitle">{{ "ETF Research Report" if asset_type == "etf" else "Equity Research Report" }}{% if price_as_of %} &bull; Prices as of {{ price_as_of }}{% endif %}</div>
   </div>
 </div>
 <div class="chips">
@@ -260,7 +260,7 @@ _HTML_TEMPLATE = """\
 {% if catalysts %}
 <div class="stat-grid" style="margin-top:4px">
   {% for label, value in catalysts %}
-  <div class="stat" style="border-left:3px solid var(--accent)"><div class="label">📅 {{ label }}</div><div class="value" style="font-size:0.98em">{{ value }}</div></div>
+  <div class="stat" style="border-left:3px solid var(--accent)"><div class="label">{{ label }}</div><div class="value" style="font-size:0.98em">{{ value }}</div></div>
   {% endfor %}
 </div>
 {% endif %}
@@ -590,6 +590,30 @@ _HTML_TEMPLATE = """\
 {{ scenarios_table }}
 {% endif %}
 
+<h3 style="margin-bottom:.3em">Risk and confidence scales</h3>
+<table>
+  <thead><tr><th>Risk level</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Low</td><td>Earnings and cash flow are predictable; drawdowns
+      track the market.</td></tr>
+    <tr><td>Medium</td><td>Cyclical or competitive pressure can move earnings
+      materially.</td></tr>
+    <tr><td>High</td><td>Realistic scenarios break the thesis, or volatility
+      and drawdown run well above the market.</td></tr>
+  </tbody>
+</table>
+<table>
+  <thead><tr><th>Confidence</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Above 80%</td><td>Thesis rests on demonstrated, recurring
+      results.</td></tr>
+    <tr><td>60&ndash;80%</td><td>Direction is well supported; magnitude or
+      timing is uncertain.</td></tr>
+    <tr><td>Below 60%</td><td>Thesis depends on an outcome not yet
+      evidenced.</td></tr>
+  </tbody>
+</table>
+
 <h3 style="margin-bottom:.3em">Basis and disclosures</h3>
 <p class="meta">{{ disclaimer }}</p>
 
@@ -602,7 +626,7 @@ _HTML_TEMPLATE = """\
 
 <hr>
 <p class="meta">
-  Generated {{ generated_at }} from free public data sources (Yahoo Finance, SEC EDGAR, FRED,
+  Prepared from public data sources (Yahoo Finance, SEC EDGAR, FRED,
   Stocktwits, Google News). This report is generated automatically and is for informational
   purposes only. It does not constitute financial advice.
 </p>
@@ -1918,6 +1942,15 @@ class ReportGeneratorTool(BaseTool):
         html = template.render(
             symbol=symbol.upper(),
             generated_at=datetime.now().strftime("%Y-%m-%d %H:%M UTC"),
+            # The note is dated by the session its prices belong to, not by
+            # when the file was produced. A "Generated 11:29 UTC" masthead
+            # reads as machine output and, worse, implies the figures are
+            # live when they are a settled close.
+            price_as_of=(
+                f"{snap['price_date']} close"
+                if (snap := (chart_data.get("snapshot") or {})).get("price_date")
+                else None
+            ),
             timeframe=timeframe,
             asset_type=asset_type,
             company_name=company.get("name"),
