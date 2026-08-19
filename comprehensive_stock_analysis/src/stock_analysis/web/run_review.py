@@ -151,6 +151,55 @@ def _check_chart_data(symbol: str, issues: List[Dict[str, str]]) -> None:
         )
 
 
+def _check_target_against_model(
+    symbol: str, rec: Dict[str, Any], issues: List[Dict[str, str]]
+) -> None:
+    """The published target must be reconcilable with the run's own DCF.
+
+    A reviewer rejected a report whose base case was $415 and bull case $539
+    beside a published $565 target and a $495 traded price — the valuation
+    exhibit contradicted the rating on the same page. Warning rather than
+    error: a target outside the modelled range is legitimate when the memo
+    names the assumption that bridges it (normalising capex, a re-rating), so
+    this flags for a human read instead of blocking display.
+    """
+    chart = _read_json(_paths.chart_path(symbol)) or {}
+    scenarios = chart.get("valuation_scenarios") or []
+    values = [
+        float(s["intrinsic_per_share"])
+        for s in scenarios
+        if isinstance(s, dict) and _is_number(s.get("intrinsic_per_share"))
+    ]
+    if not values:
+        return
+
+    lo, hi = min(values), max(values)
+    target = rec.get("target_price")
+    if _is_number(target) and not lo <= float(target) <= hi:
+        issues.append(
+            _issue(
+                "warning",
+                "target_outside_valuation_range",
+                f"target {float(target):.2f} sits outside the DCF range "
+                f"{lo:.2f}–{hi:.2f} — the memo must name the assumption that "
+                "bridges the gap, or the target should move inside it",
+            )
+        )
+
+    price = (chart.get("key_stats") or {}).get("current_price")
+    rating = str(rec.get("recommendation") or "").upper()
+    if _is_number(price) and hi < float(price) and "BUY" in rating:
+        issues.append(
+            _issue(
+                "warning",
+                "valuation_contradicts_rating",
+                f"every DCF scenario (max {hi:.2f}) is below the traded price "
+                f"{float(price):.2f} while the rating is {rating} — the "
+                "valuation exhibit argues against the call",
+            )
+        )
+
+
 def _check_recommendation(
     symbol: str, asset_type: Optional[str], issues: List[Dict[str, str]]
 ) -> None:
@@ -200,6 +249,8 @@ def _check_recommendation(
 
     if not rec.get("risk_level"):
         issues.append(_issue("warning", "risk_level_missing", "risk_level is empty"))
+
+    _check_target_against_model(symbol, rec, issues)
 
     # target_price may legitimately be absent (the advisor can decline to set
     # one), but a *present* value must be numeric or the tile's upside maths

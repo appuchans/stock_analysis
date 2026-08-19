@@ -439,9 +439,17 @@ recommendation:
     5. What would change your mind (upside and downside scenarios).
     6. Key risks (max 3, stated as business risks not beta values).
     7. Suggested target price and time horizon, with brief rationale.
-       Sanity-check your target against the street consensus in {analyst_data}
+       Anchor the target to your OWN valuation work first: {valuation_model_data}
+       gives this run's discounted-cash-flow range. State where your target sits
+       within that range. If it falls outside the range, you must name the
+       specific assumption that bridges the gap — normalising capital spending,
+       a re-rating to a stated multiple, a recovery in cash conversion — or move
+       the target inside it. Publishing a target above your own bull case with
+       no stated reason is not acceptable.
+       Then sanity-check against the street consensus in {analyst_data}
        (low/mean/high targets) and explicitly state whether you are above,
-       below, or in line with consensus and why.
+       below, or in line with consensus and why. Consensus is a cross-check,
+       not the anchor: do not simply restate the mean.
 
     Write in plain, direct prose. Do not lead with ratios or indicator values.
     A smart reader who knows nothing about this stock should finish your memo

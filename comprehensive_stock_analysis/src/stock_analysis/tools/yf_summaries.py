@@ -853,6 +853,118 @@ def summarize_catalysts(ticker: Any) -> Dict[str, Any]:
 # ── Valuation scenarios (two-stage DCF per share) ────────────────────────────
 
 
+# Minimum gap between the discount rate and terminal growth. Below this the
+# Gordon residual dominates the valuation and the answer stops being a forecast.
+_MIN_WACC_TERMINAL_SPREAD_PCT = 5.0
+
+
+def wacc_pct(
+    beta: Optional[float],
+    market_cap_m: Optional[float],
+    total_debt_m: Optional[float],
+    risk_free_pct: float = 4.0,
+    equity_risk_premium_pct: float = 5.0,
+    credit_spread_pct: float = 1.5,
+    tax_rate: float = 0.21,
+) -> float:
+    """Weighted average cost of capital from CAPM, with disclosed assumptions.
+
+    Derived rather than asserted, because the previous scenario grid simply
+    declared 12% / 10% / 9% and tied the *lowest* discount rate to the *highest*
+    growth rate. That double-counts optimism in the bull case and pessimism in
+    the bear case, which is how a grid could sit entirely below the traded price
+    for a profitable compounder.
+    """
+    b = beta if isinstance(beta, (int, float)) and beta > 0 else 1.0
+    cost_equity = risk_free_pct + b * equity_risk_premium_pct
+    e = market_cap_m if isinstance(market_cap_m, (int, float)) and market_cap_m else 0.0
+    d = total_debt_m if isinstance(total_debt_m, (int, float)) and total_debt_m else 0.0
+    if e + d <= 0:
+        return round(cost_equity, 2)
+    cost_debt_after_tax = (risk_free_pct + credit_spread_pct) * (1 - tax_rate)
+    return round((e * cost_equity + d * cost_debt_after_tax) / (e + d), 2)
+
+
+def fcf_dcf_scenarios(
+    fcf_m: Optional[float],
+    shares_m: Optional[float],
+    net_debt_m: float = 0.0,
+    base_wacc_pct: Optional[float] = None,
+    growth_pct: Optional[float] = None,
+    terminal_pct: float = 2.5,
+    high_growth_years: int = 5,
+    fade_years: int = 5,
+) -> List[Dict[str, Any]]:
+    """Bear/base/bull equity value per share from unlevered free cash flow.
+
+    Replaces an EPS-stream model that was labelled a DCF but discounted
+    earnings, ignored the balance sheet, and never divided by a share count.
+    Here: free cash flow grows for ``high_growth_years``, fades linearly to the
+    terminal rate over ``fade_years``, then a Gordon terminal value; the sum is
+    enterprise value, from which net debt is subtracted to reach equity value,
+    divided by shares outstanding.
+
+    Scenarios vary *growth* as the primary lever and move the discount rate only
+    slightly for risk, so the bear case is not penalised twice.
+    """
+    if not fcf_m or fcf_m <= 0 or not shares_m or shares_m <= 0:
+        return []
+    g0 = 8.0 if growth_pct is None else float(growth_pct)
+    g0 = max(-10.0, min(g0, 25.0))  # consensus growth is not a forever rate
+    wacc = float(base_wacc_pct) if base_wacc_pct else 9.0
+
+    # A Gordon terminal value is 1/(WACC - g), so a narrow spread explodes it:
+    # a low-beta name discounting at 6.9% against 2.5% terminal growth implies a
+    # ~23x exit multiple and a base case 38% above the traded price. Requiring at
+    # least MIN_SPREAD between the two caps the implied terminal multiple near
+    # 20x, which keeps the model honest about how much of the value is a
+    # residual guess rather than forecast cash.
+    min_disc = terminal_pct + _MIN_WACC_TERMINAL_SPREAD_PCT
+
+    variants = [
+        ("Bear", g0 * 0.4, wacc + 1.0),
+        ("Base", g0, wacc),
+        ("Bull", min(g0 * 1.4, 30.0), wacc - 0.5),
+    ]
+    out: List[Dict[str, Any]] = []
+    for name, g_pct, disc_pct in variants:
+        disc_pct = max(disc_pct, min_disc)
+        disc, term = disc_pct / 100.0, terminal_pct / 100.0
+        if disc <= term:
+            continue
+        g = g_pct / 100.0
+        flows, f = [], float(fcf_m)
+        for yr in range(1, high_growth_years + fade_years + 1):
+            if yr <= high_growth_years:
+                rate = g
+            else:
+                # Linear glide from the scenario rate to terminal.
+                step = (yr - high_growth_years) / float(fade_years)
+                rate = g + (term - g) * step
+            f *= 1 + rate
+            flows.append(f)
+        pv = sum(cf / (1 + disc) ** (i + 1) for i, cf in enumerate(flows))
+        tv = flows[-1] * (1 + term) / (disc - term)
+        ev = pv + tv / (1 + disc) ** len(flows)
+        equity = ev - (net_debt_m or 0.0)
+        out.append(
+            {
+                "scenario": name,
+                "growth_pct": round(g_pct, 1),
+                "discount_pct": round(disc_pct, 2),
+                "terminal_pct": terminal_pct,
+                "enterprise_value_m": round(ev, 1),
+                "net_debt_m": round(net_debt_m or 0.0, 1),
+                "intrinsic_per_share": round(max(equity, 0.0) / shares_m, 2),
+                "method": (
+                    f"unlevered FCF, {high_growth_years}y growth + "
+                    f"{fade_years}y fade to {terminal_pct}%, WACC {disc_pct:.2f}%"
+                ),
+            }
+        )
+    return out
+
+
 def dcf_scenarios(eps_base: float, growth_pct: float) -> List[Dict[str, Any]]:
     """Bear/base/bull intrinsic-value-per-share grid with disclosed assumptions.
 

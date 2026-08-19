@@ -26,6 +26,7 @@ _KNOWN_INPUTS = {
     "peers_data",  # any depth, when FMP or Finnhub is configured
     "peer_metrics_data",  # comparable multiples table from summarize_peers
     "snapshot_data",  # the run's single authoritative price + as-of date
+    "valuation_model_data",  # this run's own DCF, so the target can reconcile
     "shareholder_returns_data",  # any depth, when FMP_API_KEY is configured
     "analyses_summary",  # passed by synthesize_recommendation / generate_report
     "historical_context",  # passed by synthesize_recommendation from past rec_history

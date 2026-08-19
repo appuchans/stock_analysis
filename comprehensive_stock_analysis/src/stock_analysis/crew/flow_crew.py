@@ -107,6 +107,12 @@ class StockAnalysisState(BaseModel):
     # because the prose came from a three-day-old resumed stage while the charts
     # came from a fetch twenty minutes later.
     snapshot: Dict[str, Any] = Field(default_factory=dict)
+    # Bear/base/bull intrinsic value per share. Carried on state so the advisor
+    # can be shown its own model: previously this was computed, written to
+    # chart_data for the HTML table, and never placed in any prompt — so the
+    # target price was anchored to sell-side consensus while the valuation
+    # exhibit beside it said something entirely different.
+    valuation_scenarios: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 def _step_callback(step_output: Any) -> None:
@@ -308,6 +314,20 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # only the bare peer tickers above, and reported that no valuation
         # multiples were available.
         base["peer_metrics_data"] = _blob("peers", 3000)
+        # The run's own valuation model, rendered as prose so the advisor reads
+        # it as a conclusion rather than a payload to restate.
+        scen = self.state.valuation_scenarios or []
+        base["valuation_model_data"] = (
+            "Discounted-cash-flow model for this run — "
+            + "; ".join(
+                f"{s['scenario']} ${s['intrinsic_per_share']} "
+                f"(growth {s['growth_pct']}%, WACC {s['discount_pct']}%)"
+                for s in scen
+            )
+            + f". Method: {scen[0].get('method', 'unlevered FCF')}."
+            if scen
+            else "No discounted-cash-flow model was produced for this run."
+        )
         # Dividend/buyback yields for the capital-allocation verdict.
         base["shareholder_returns_data"] = _blob("shareholder_returns", 2000)
 
@@ -498,6 +518,9 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         if chart:
             chart = dict(chart)
             chart["snapshot"] = self.state.snapshot
+            self.state.valuation_scenarios = list(
+                chart.get("valuation_scenarios") or []
+            )
             # Recomputed at apply time so the trend stays fresh and is appended
             # at most once per day even when the rest of the bundle was cached.
             chart["sentiment_history"] = self._update_sentiment_history(
@@ -758,14 +781,40 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             peer_rows = (structured.get("peers") or {}).get("rows") or []
             if peer_rows:
                 chart["peers"] = peer_rows
-            # Valuation scenarios from street EPS estimates (assumptions disclosed)
+            # Valuation scenarios: unlevered FCF discounted at a CAPM-derived
+            # WACC, bridged through net debt to equity value per share. The
+            # previous grid discounted an EPS stream at hard-coded rates that
+            # were anti-correlated with growth, so for a profitable compounder
+            # every scenario could land below the traded price — which is
+            # exactly what a reviewer rejected.
             eps_est = an.get("eps_estimates") or {}
-            eps_base = (eps_est.get("0y") or {}).get("avg")
             growth = (eps_est.get("+1y") or {}).get("growth_pct")
-            if eps_base:
-                scen = ys.dcf_scenarios(eps_base, growth if growth is not None else 8.0)
-                if scen:
-                    chart["valuation_scenarios"] = scen
+            fin = structured.get("financials") or {}
+            cf_years = fin.get("cash_flow") or {}
+            bs_years = fin.get("balance_sheet") or {}
+            latest_cf = cf_years.get(max(cf_years)) if cf_years else {}
+            latest_bs = bs_years.get(max(bs_years)) if bs_years else {}
+            ks = chart.get("key_stats") or {}
+            mcap = ks.get("market_cap")
+            price = ks.get("current_price")
+            # yfinance exposes no clean diluted share count here, but market cap
+            # and price are both present and their ratio is exactly it.
+            shares_m = (mcap / price) / 1e6 if mcap and price and price > 0 else None
+            debt_m = latest_bs.get("total_debt_m")
+            cash_m = latest_bs.get("cash_and_sti_m")
+            scen = ys.fcf_dcf_scenarios(
+                fcf_m=latest_cf.get("free_cash_flow_m"),
+                shares_m=shares_m,
+                net_debt_m=(debt_m or 0.0) - (cash_m or 0.0),
+                base_wacc_pct=ys.wacc_pct(
+                    beta=ks.get("beta"),
+                    market_cap_m=(mcap / 1e6) if mcap else None,
+                    total_debt_m=debt_m,
+                ),
+                growth_pct=growth,
+            )
+            if scen:
+                chart["valuation_scenarios"] = scen
             # sentiment_history is appended at apply time (kept fresh on cache
             # hits), so it is intentionally not stored in the cached chart here.
             bundle["chart"] = chart
@@ -892,6 +941,18 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 lambda: ROUTER.get_earnings_surprises(symbol),
                 lambda r: bool(r.get("quarters"))
                 and bool(structured.__setitem__("earnings_surprises", r) or True),
+            )
+            # Dated, source-attributed company news. The keyless path scrapes
+            # Google/Bing/Yahoo RSS, which breaks silently when a layout
+            # changes; this capability existed in the router and the Finnhub
+            # client but had no caller at all.
+            _attempt(
+                "company news",
+                "finnhub",
+                fin_key,
+                lambda: ROUTER.get_company_news(symbol),
+                lambda r: bool(r.get("articles"))
+                and bool(structured.__setitem__("company_news", r) or True),
             )
             _attempt(
                 "insider sentiment trend",

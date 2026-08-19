@@ -438,3 +438,73 @@ class TestDividendCagr:
         )
         assert out["dividend_cagr_5y_pct"] > 0
         assert out["dividend_cagr_window"] == f"{first_year}-{this_year - 1}"
+
+
+class TestFcfDcf:
+    """The valuation model the reviewer called unusable, rebuilt on cash flow."""
+
+    def test_equity_bridge_and_ordering(self):
+        from src.stock_analysis.tools.yf_summaries import fcf_dcf_scenarios
+
+        rows = fcf_dcf_scenarios(
+            fcf_m=12_000,
+            shares_m=930,
+            net_debt_m=47_000,
+            base_wacc_pct=8.5,
+            growth_pct=6.0,
+        )
+        assert [r["scenario"] for r in rows] == ["Bear", "Base", "Bull"]
+        # More growth must be worth more; the old grid tied the cheapest
+        # discount rate to the highest growth and could invert this.
+        assert rows[0]["intrinsic_per_share"] < rows[1]["intrinsic_per_share"]
+        assert rows[1]["intrinsic_per_share"] < rows[2]["intrinsic_per_share"]
+        # Equity = EV - net debt, per share.
+        base = rows[1]
+        expected = (base["enterprise_value_m"] - 47_000) / 930
+        # abs=0.01 because intrinsic_per_share is reported to the cent.
+        assert base["intrinsic_per_share"] == pytest.approx(expected, abs=0.01)
+
+    def test_terminal_spread_is_floored(self):
+        """A tiny WACC-minus-g spread makes the residual swamp the forecast."""
+        from src.stock_analysis.tools.yf_summaries import fcf_dcf_scenarios
+
+        rows = fcf_dcf_scenarios(
+            fcf_m=1_000,
+            shares_m=100,
+            base_wacc_pct=3.0,  # below terminal+5
+            growth_pct=5.0,
+            terminal_pct=2.5,
+        )
+        assert all(r["discount_pct"] >= 7.5 for r in rows)
+
+    def test_net_cash_raises_value_above_enterprise_value(self):
+        from src.stock_analysis.tools.yf_summaries import fcf_dcf_scenarios
+
+        rows = fcf_dcf_scenarios(
+            fcf_m=5_000, shares_m=1_000, net_debt_m=-10_000, base_wacc_pct=9.0
+        )
+        base = rows[1]
+        assert base["intrinsic_per_share"] > base["enterprise_value_m"] / 1_000
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"fcf_m": 0, "shares_m": 100},
+            {"fcf_m": -500, "shares_m": 100},  # loss-making: model doesn't apply
+            {"fcf_m": 1_000, "shares_m": 0},
+        ],
+    )
+    def test_guards_return_empty(self, kwargs):
+        from src.stock_analysis.tools.yf_summaries import fcf_dcf_scenarios
+
+        assert fcf_dcf_scenarios(**kwargs) == []
+
+    def test_wacc_blends_equity_and_after_tax_debt(self):
+        from src.stock_analysis.tools.yf_summaries import wacc_pct
+
+        # All equity, beta 1.0 -> pure CAPM: 4 + 1*5 = 9.
+        assert wacc_pct(beta=1.0, market_cap_m=1_000, total_debt_m=0) == 9.0
+        # Adding debt must pull it down (after-tax debt is cheaper than equity).
+        assert wacc_pct(beta=1.0, market_cap_m=1_000, total_debt_m=1_000) < 9.0
+        # Missing beta falls back to 1.0 rather than exploding.
+        assert wacc_pct(beta=None, market_cap_m=1_000, total_debt_m=0) == 9.0
