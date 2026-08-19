@@ -545,6 +545,10 @@ report:
     6. '## Sentiment & Positioning' — professional view first (analyst consensus,
        revisions, short interest, options positioning), then aggregate retail gauges in
        one sentence. Never quote individual social-media posts.
+       Take every figure in this section from {positioning_data}, which states
+       the short interest, analyst mix and consensus targets as verified data.
+       Do not re-derive them from the stage summaries — that is how one report
+       published short interest as 2.1% of float when the data said 2.62%.
     7. '## Valuation & Recommendation' — close the argument: tie valuation back to the
        thesis pillars and restate the rating and target with the key trade-off.
     8. '## Market Timing Note' — ONLY if technical analysis appears in the source

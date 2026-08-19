@@ -28,6 +28,7 @@ _KNOWN_INPUTS = {
     "snapshot_data",  # the run's single authoritative price + as-of date
     "valuation_model_data",  # this run's own DCF, so the target can reconcile
     "valuation_multiples_data",  # the subject's own P/E, EV/EBITDA, PEG, FCF yield
+    "positioning_data",  # verified short interest / analyst mix / targets
     "shareholder_returns_data",  # any depth, when FMP_API_KEY is configured
     "analyses_summary",  # passed by synthesize_recommendation / generate_report
     "historical_context",  # passed by synthesize_recommendation from past rec_history

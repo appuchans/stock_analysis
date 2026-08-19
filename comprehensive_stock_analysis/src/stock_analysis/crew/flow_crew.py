@@ -329,6 +329,57 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             ("operating margin", me.get("operating_margin_pct"), "%"),
         ]
         stated = [f"{lb} {v}{sfx}" for lb, v, sfx in pairs if v is not None]
+        # The load-bearing figures of a positioning section, stated as data.
+        # The narrative stage otherwise sees only {analyses_summary} — nine
+        # stage reports truncated to 1500 chars each — and re-types every
+        # number out of that prose. It duly published IBM's short interest as
+        # 2.1% of float when every workpaper and the collected data said 2.62%.
+        sent = structured.get("sentiment") or {}
+        si = (sent.get("short_interest") or {}).get("short_pct_of_float")
+        opt = (sent.get("options_positioning") or {}).get("put_call_oi_ratio")
+        an = structured.get("analyst") or {}
+        trend = (an.get("recommendation_trend") or [{}])[0]
+        pts = an.get("price_targets") or {}
+        facts = []
+        if si is not None:
+            facts.append(f"short interest {si}% of float")
+        counts = [
+            (trend.get(k), lb)
+            for k, lb in (
+                ("strong_buy", "strong buy"),
+                ("buy", "buy"),
+                ("hold", "hold"),
+                ("sell", "sell"),
+                ("strong_sell", "strong sell"),
+            )
+            if trend.get(k)
+        ]
+        if counts:
+            total = sum(c for c, _ in counts)
+            facts.append(
+                "analyst mix "
+                + ", ".join(f"{c} {lb}" for c, lb in counts)
+                + f" across {total} analysts"
+            )
+        if pts.get("mean"):
+            facts.append(
+                f"consensus target {pts['mean']}"
+                + (f", median {pts['median']}" if pts.get("median") else "")
+                + (
+                    f", range {pts['low']}-{pts['high']}"
+                    if pts.get("low") and pts.get("high")
+                    else ""
+                )
+            )
+        if opt is not None:
+            facts.append(f"put/call open-interest ratio {opt}")
+        base["positioning_data"] = (
+            "Verified figures — quote these exactly, do not restate them from "
+            "the stage summaries: " + "; ".join(facts) + "."
+            if facts
+            else "No verified positioning figures — do not quote any."
+        )
+
         base["valuation_multiples_data"] = (
             f"{self.state.symbol} trades at " + ", ".join(stated) + "."
             if stated

@@ -736,3 +736,54 @@ class TestSnapshotReachesChartData:
         )
         assert written["snapshot"] == snap
         assert flow.state.valuation_scenarios[0]["intrinsic_per_share"] == 269.3
+
+
+class TestPositioningFiguresReachTheNarrative:
+    """The narrative must be handed figures, not asked to re-type them.
+
+    Its only inputs were {symbol} and {analyses_summary} — nine stage reports
+    truncated to 1500 chars each — so every number in the client document was
+    re-typed from prose. It published IBM's short interest as 2.1% of float
+    when every workpaper and the collected data said 2.62%.
+    """
+
+    def _flow(self):
+        from src.stock_analysis.crew import flow_crew as fc
+
+        flow = fc.StockAnalysisFlow()
+        flow.state.symbol = "IBM"
+        flow.state.data["structured"] = {
+            "sentiment": {
+                "short_interest": {"short_pct_of_float": 2.62},
+                "options_positioning": {"put_call_oi_ratio": 0.83},
+            },
+            "analyst": {
+                "recommendation_trend": [
+                    {"strong_buy": 8, "buy": 9, "hold": 12, "sell": 2, "strong_sell": 0}
+                ],
+                "price_targets": {"low": 174.0, "mean": 244.16, "high": 350.0},
+            },
+        }
+        return flow
+
+    def test_verified_figures_are_stated(self):
+        data = self._flow()._inputs()["positioning_data"]
+        assert "2.62% of float" in data
+        assert "31 analysts" in data
+        assert "244.16" in data
+        assert "0.83" in data
+
+    def test_absent_data_forbids_quoting_rather_than_inventing(self):
+        from src.stock_analysis.crew import flow_crew as fc
+
+        flow = fc.StockAnalysisFlow()
+        flow.state.symbol = "X"
+        assert "do not quote" in flow._inputs()["positioning_data"].lower()
+
+    def test_the_narrative_prompt_actually_references_it(self):
+        """A blob nothing interpolates is a blob the model never sees."""
+        from src.stock_analysis.config.loader import config_loader
+
+        report = config_loader.load_flow_tasks_config()["report"]
+        text = report if isinstance(report, str) else str(report)
+        assert "{positioning_data}" in text
