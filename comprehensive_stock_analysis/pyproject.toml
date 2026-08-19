@@ -47,6 +47,8 @@ dependencies = [
     "scipy>=1.11.0",
     # Report generation
     "jinja2>=3.1.0",
+    "matplotlib>=3.8.0",
+    "typst>=0.13.0",
     "markdown>=3.5.0",
     "pymdown-extensions>=10.0",
     # Search-interest sentiment (Google Trends, best-effort)

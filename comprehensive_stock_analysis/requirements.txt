@@ -25,6 +25,11 @@ scipy>=1.11.0
 
 # Report generation
 jinja2>=3.1.0
+# Research exhibits (tools/_charts.py); SVG with text-as-paths so the same
+# chart renders identically inlined in HTML and embedded in the PDF.
+matplotlib>=3.8.0
+# PDF typesetting (bundled compiler, prebuilt abi3 wheels — no system deps).
+typst>=0.13.0
 markdown>=3.5.0
 pymdown-extensions>=10.0
 
