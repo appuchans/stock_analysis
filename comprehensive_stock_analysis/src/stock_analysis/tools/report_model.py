@@ -131,9 +131,44 @@ class ReportModel:
             return f"Close {date}"
         return f"As of {self.as_of}" if self.as_of else ""
 
+    # A house target more than this far from the traded price is a unit, share
+    # class or sign error rather than a view: GOOG printed $55.78 against a
+    # $341 close and carried a Hold.
+    _TARGET_PRICE_BAND = (0.4, 3.0)
+
     @property
     def target(self) -> Optional[float]:
-        return _num(self.rec.get("target_price"))
+        """The house target, or None when it cannot be defended.
+
+        Suppressed rather than printed when it is implausible against the
+        traded price. A note with no house target and a stated margin-of-safety
+        view is publishable; a note asserting a price one-sixth of the tape is
+        not, and no amount of surrounding prose repairs it. Withholding is also
+        what a reviewer asked for: kill the number, do not swap it for the
+        Street's.
+        """
+        raw = _num(self.rec.get("target_price"))
+        price = _num(self.snapshot.get("price")) or _num(
+            (self.chart.get("key_stats") or {}).get("current_price")
+        )
+        if raw is None or not price or price <= 0:
+            return raw
+        lo, hi = self._TARGET_PRICE_BAND
+        if not lo <= raw / price <= hi:
+            _logger.warning(
+                "%s: target %.2f vs price %.2f is outside the defensible band; "
+                "publishing no house target",
+                self.symbol,
+                raw,
+                price,
+            )
+            return None
+        return raw
+
+    @property
+    def target_withheld(self) -> bool:
+        """Whether a target existed but was suppressed, so the note can say so."""
+        return _num(self.rec.get("target_price")) is not None and self.target is None
 
     @property
     def upside_pct(self) -> Optional[float]:
@@ -170,6 +205,40 @@ class ReportModel:
         rng, t = self.valuation_range, self.target
         return None if not rng or t is None else rng[0] <= t <= rng[1]
 
+    @property
+    def target_bridge_required(self) -> bool:
+        """Whether the target needs an explanation the note may not have given.
+
+        True when a published target sits outside the modelled range, or lands
+        on the consensus mean while the model says something different. Both
+        are publishable — with the bridging assumption stated. Neither is
+        publishable silently, which is what "the alignment with Street is a
+        cross-check rather than the basis" amounted to when the target was the
+        Street mean to within sixteen cents.
+        """
+        if self.target is None:
+            return False
+        rng = self.valuation_range
+        if rng and not rng[0] <= self.target <= rng[1]:
+            return True
+        mean = ((self.chart.get("analyst") or {}).get("price_targets") or {}).get(
+            "mean"
+        )
+        if isinstance(mean, (int, float)) and mean:
+            # Within 1% of consensus is an echo, not an independent view.
+            if abs(self.target - mean) / mean < 0.01 and rng:
+                base = next(
+                    (
+                        s["intrinsic_per_share"]
+                        for s in self.scenarios
+                        if str(s.get("scenario", "")).lower() == "base"
+                    ),
+                    None,
+                )
+                if base and abs(self.target - base) / base > 0.05:
+                    return True
+        return False
+
     def football_field_bands(self) -> List[Tuple[str, float, float]]:
         """Comparable value ranges, widest context first."""
         bands: List[Tuple[str, float, float]] = []
@@ -190,12 +259,36 @@ class ReportModel:
 
     @property
     def sections(self) -> List[Tuple[str, str]]:
-        return split_sections(self.narrative)
+        return split_sections(self._readable_narrative())
+
+    def _readable_narrative(self) -> str:
+        """The narrative with a withheld target removed from the prose.
+
+        Suppressing the target tile while the text still says "Target price:
+        $55.78" is worse than either alone — page one then contradicts itself
+        in consecutive paragraphs. The figure is known exactly, so the edit is
+        a literal replacement rather than an attempt to rewrite the sentence.
+        """
+        text = self.narrative
+        raw = _num(self.rec.get("target_price"))
+        if not self.target_withheld or raw is None:
+            return text
+        for pattern in (
+            rf"\$\s*{raw:,.2f}",
+            rf"\$\s*{raw:.2f}",
+            rf"\$\s*{raw:,.0f}\b",
+        ):
+            text = re.sub(pattern, "no published target", text)
+        return text
 
     @property
     def summary(self) -> str:
         """The advisor's plain-English summary, else the opening section."""
         s = str(self.rec.get("summary") or "").strip()
+        if self.target_withheld:
+            raw = _num(self.rec.get("target_price"))
+            if raw is not None:
+                s = re.sub(rf"\$\s*{raw:,.2f}|\$\s*{raw:.2f}", "no published target", s)
         if s:
             return s
         secs = self.sections

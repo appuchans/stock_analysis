@@ -63,7 +63,7 @@ class TestReviewPasses:
     def test_numeric_strings_are_accepted(self, report):
         """Older files stored Decimal prices as JSON strings and the gallery
         coerces them with float() — flagging those would be crying wolf."""
-        sym = report(chart=GOOD_CHART, rec={**GOOD_REC, "target_price": "58"})
+        sym = report(chart=GOOD_CHART, rec={**GOOD_REC, "target_price": "120"})
         assert run_review.review_run(sym)["ok"] is True
 
     def test_absent_target_price_is_allowed(self, report):

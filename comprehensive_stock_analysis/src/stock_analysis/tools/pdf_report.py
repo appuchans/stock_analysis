@@ -296,6 +296,32 @@ def _cover(model: ReportModel, charts: Dict[str, str]) -> str:
             "#grid(columns: (1fr,) * 4, gutter: 5pt,\n"
             f"  ..(({tile_src},)).map(t => tile(t.at(0), t.at(1)))\n)\n#v(8pt)\n"
         )
+    rating = model.rating.upper()
+    meaning = next((m for label, m in _RATING_KEY if label.upper() == rating), "")
+    if meaning:
+        horizon = str(model.rec.get("time_horizon") or "").strip()
+        parts.append(
+            f"#text(8pt, fill: muted)[*{_esc(rating)}*: {_esc(meaning)}"
+            + (f" Horizon {_esc(horizon)}." if horizon else "")
+            + "]\n#v(4pt)\n"
+        )
+    if model.target_withheld:
+        # Said plainly on page 1. Silently dropping the tile would leave the
+        # reader wondering whether a target existed; this states that one was
+        # computed and judged undefensible, which is the honest position and
+        # the one a reviewer asked for.
+        parts.append(
+            '#block(fill: rgb("#fff7ed"), inset: 8pt, radius: 3pt, width: 100%)'
+            "[#text(8.5pt)[*No house target.* The valuation model did not "
+            "produce a figure that can be defended against the traded price, so "
+            "none is published. The rating reflects margin of safety at the "
+            "current level, not a computed price objective.]]\n#v(6pt)\n"
+        )
+    # The firm already heads the page; repeating it as a byline printed
+    # "Equity Research" twice in four lines.
+    byline = settings.report_author.strip()
+    if byline:
+        parts.append(f"#text(8pt, fill: muted)[{_esc(byline)}]\n#v(4pt)\n")
     if model.price:
         parts.append(
             f"#text(8pt, fill: muted)[{_esc(model.price_label)}. "
@@ -487,11 +513,29 @@ def build_typst_source(model: ReportModel, charts: Dict[str, str]) -> str:
         _cover(model, charts),
     ]
 
-    used: set = set()
+    # Seeded with what the cover already showed. The cover renders the
+    # relative-performance chart, and _EXHIBIT_FOR also maps it to the thesis
+    # section, so it appeared twice — once on page 1 and again at the top of
+    # page 2.
+    used: set = {"relative"} if "relative" in charts else set()
     for title, body in model.sections:
         src.append(f"\n= {_inline(title)}\n\n")
         src.append(markdown_to_typst(body))
         low = title.lower()
+        if model.target_bridge_required and (
+            "valuation" in low or "recommendation" in low
+        ):
+            # Tied to the section, not to the chart. Nested under the football
+            # exhibit it disappeared whenever that chart could not be drawn —
+            # exactly the case where the target is least anchored.
+            src.append(
+                '\n#block(fill: rgb("#fff7ed"), inset: 8pt, radius: 3pt, '
+                "width: 100%)[#text(8.5pt)[*Target reconciliation.* The "
+                "published target does not follow from the "
+                "discounted-cash-flow work above. Treat it as a judgement "
+                "about multiple or execution rather than an output of the "
+                "model.]]\n"
+            )
         for keyword, exhibit in _EXHIBIT_FOR:
             if keyword in low and exhibit in charts and exhibit not in used:
                 used.add(exhibit)

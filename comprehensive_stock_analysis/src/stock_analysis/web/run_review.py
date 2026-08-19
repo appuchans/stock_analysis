@@ -175,6 +175,37 @@ def _check_target_against_model(
 
     lo, hi = min(values), max(values)
     target = rec.get("target_price")
+
+    # A target that lands on the consensus mean while the model disagrees is
+    # the failure a reviewer named twice: "$244 is not a view" when the Street
+    # mean was $244.16 and the base case $269.32.
+    mean = ((chart.get("analyst") or {}).get("price_targets") or {}).get("mean")
+    base = next(
+        (
+            float(s["intrinsic_per_share"])
+            for s in scenarios
+            if str(s.get("scenario", "")).lower() == "base"
+        ),
+        None,
+    )
+    if (
+        _is_number(target)
+        and _is_number(mean)
+        and base
+        and mean
+        and abs(float(target) - float(mean)) / float(mean) < 0.01
+        and abs(float(target) - base) / base > 0.05
+    ):
+        issues.append(
+            _issue(
+                "warning",
+                "target_echoes_consensus",
+                f"target {float(target):.2f} is within 1% of the consensus mean "
+                f"{float(mean):.2f} while the base case is {base:.2f} — the "
+                "note must state the assumption bridging the two, or the "
+                "target is consensus with a house label",
+            )
+        )
     if _is_number(target) and not lo <= float(target) <= hi:
         issues.append(
             _issue(
@@ -448,6 +479,78 @@ def _check_prompt_leaks(symbol: str, issues: List[Dict[str, str]]) -> None:
                 )
 
 
+def _check_reader_visible_defects(
+    symbol: str, rec: Dict[str, Any], issues: List[Dict[str, str]]
+) -> None:
+    """Faults a reader sees on the page, which field-level checks miss.
+
+    Every check here exists because a human caught it and the machine did not:
+    the same chart printed twice on consecutive pages, a scenario table whose
+    bull case sat below its bear case, and a $55.78 target under a $341 price
+    carrying a Hold. Each is obvious when read and invisible to a check that
+    only asks whether a field is present and numeric.
+    """
+    chart = _read_json(_paths.chart_path(symbol)) or {}
+    scenarios = chart.get("valuation_scenarios") or []
+
+    # 1. Bear < Base < Bull. A multiplicative scenario spread inverts on
+    #    negative growth, which published Bear $55.78 above Bull $39.61.
+    order = {str(s.get("scenario", "")).lower(): s for s in scenarios}
+    trio = [
+        order.get(k, {}).get("intrinsic_per_share") for k in ("bear", "base", "bull")
+    ]
+    if all(_is_number(v) for v in trio):
+        vals = [float(v) for v in trio]
+        if vals != sorted(vals):
+            issues.append(
+                _issue(
+                    "error",
+                    "valuation_scenarios_inverted",
+                    f"bear/base/bull are {vals[0]:.2f}/{vals[1]:.2f}/{vals[2]:.2f} — "
+                    "a bull case below its bear case is arithmetically impossible "
+                    "and discredits the table",
+                )
+            )
+
+    price = (chart.get("key_stats") or {}).get("current_price")
+    target = rec.get("target_price")
+    if not (_is_number(price) and _is_number(target) and float(price) > 0):
+        return
+    price_f, target_f = float(price), float(target)
+    implied = (target_f - price_f) / price_f * 100
+
+    # 2. A target orders of magnitude from the tape is a unit or sign error,
+    #    not a view. GOOG printed $55.78 against a $341 close.
+    if not 0.4 <= target_f / price_f <= 3.0:
+        issues.append(
+            _issue(
+                "error",
+                "target_implausible_versus_price",
+                f"target {target_f:.2f} against a {price_f:.2f} price implies "
+                f"{implied:+.0f}% — check share count, share class and units "
+                "before publishing this as a house view",
+            )
+        )
+
+    # 3. The rating has to agree with the return it implies.
+    rating = str(rec.get("recommendation") or "").upper().replace(" ", "_")
+    contradiction = (
+        ("BUY" in rating and implied < -10)
+        or ("SELL" in rating and implied > 10)
+        or (rating == "HOLD" and abs(implied) > 25)
+    )
+    if contradiction:
+        issues.append(
+            _issue(
+                "error",
+                "rating_contradicts_target",
+                f"{rating} with a target implying {implied:+.0f}% — if the model "
+                "is believed the rating is wrong, and if it is not the target "
+                "cannot be published",
+            )
+        )
+
+
 def review_run(symbol: str, degradations: Optional[List[str]] = None) -> Dict[str, Any]:
     """Check a completed run against what the UI needs to display it.
 
@@ -469,6 +572,9 @@ def review_run(symbol: str, degradations: Optional[List[str]] = None) -> Dict[st
         chart = _read_json(_paths.chart_path(symbol)) or {}
         _check_recommendation(symbol, chart.get("asset_type"), issues)
         _check_prompt_leaks(symbol, issues)
+        _check_reader_visible_defects(
+            symbol, _read_json(_paths.recommendation_path(symbol)) or {}, issues
+        )
         _check_narrative_consistency(symbol, issues)
         for detail in degradations or []:
             issues.append(_issue("warning", "stage_degraded", detail))

@@ -9,8 +9,11 @@ shared:
   # Appended to every analysis stage description (after the collected-data block)
   rigor_footer: |
     RIGOR REQUIREMENTS:
-    - NO INLINE SOURCE REFERENCES. Never attach a provenance note to a figure in
-      the body — no '(source: ...)', '(Source: ...)', '(same source)',
+    - NO INLINE SOURCE REFERENCES, and no bracketed citation markers of any
+      kind — no '[1]', '[2][3]', no footnote digits, no '(see above)'. A figure
+      trailed by a marker after every sentence is unreadable, and this document
+      carries its sources once, in the closing section. Never attach a
+      provenance note to a figure in the body — no '(source: ...)', '(Source: ...)', '(same source)',
       '(per the ... tool)', '(as-of ...)', and no backticked field or tool names.
       Provenance belongs in the closing 'Data Sources & Gaps' section, once,
       and nowhere else. Write 'Revenue was $130,497M in FY2025, up 11% year over
@@ -89,6 +92,9 @@ shared:
       status codes, stack traces, or the words 'failed'/'error'.
     - Write numbers in prose, not machine fields: no key=value pairs, no JSON
       fragments, no snake_case field names.
+    - No citation markers or bracketed references anywhere — no '[1]', no
+      footnote digits, no '(source: ...)'. Sources belong in one closing
+      section, never trailing individual sentences.
     - Never invent a number. Quote a price only from the stated as-of snapshot.
 
     MARKET SNAPSHOT: {snapshot_data}
@@ -555,9 +561,15 @@ report:
        activity, buybacks and dividends (only if ownership analysis is in the source
        material; otherwise omit this section).
     5. '## Risks' — what could break the thesis, in order of severity; quantified context last.
-    6. '## Sentiment & Positioning' — professional view first (analyst consensus,
-       revisions, short interest, options positioning), then aggregate retail gauges in
-       one sentence. Never quote individual social-media posts.
+    6. '## Sentiment & Positioning' — the professional tape only: the analyst
+       mix, the estimate-revision counts, short interest and options
+       positioning. Lead with revisions, since a count of upgrades against
+       downgrades is the one sentiment measure that moves on fundamentals.
+       Do NOT report retail gauges — no Stocktwits percentages, no CNN Fear &
+       Greed, no Google search interest. A bullish share of fourteen labelled
+       messages is not evidence about a company of this size, and printing it
+       beside a 31-analyst consensus tells the reader the note cannot tell the
+       difference. Never quote individual social-media posts.
        Take every figure in this section from {positioning_data}, which states
        the short interest, analyst mix and consensus targets as verified data.
        Do not re-derive them from the stage summaries — that is how one report
