@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # email, this is a commercial layer over the same filings that returns
     # parsed JSON instead of HTML that has to be scraped.
     sec_api_key: Optional[str] = Field(None, validation_alias="SEC_API_KEY")
+    # Market data with an explicit previous-session close, which is what the
+    # report's "last close" wording needs; both halves are required.
+    alpaca_api_key: Optional[str] = Field(None, validation_alias="ALPACA_API_KEY")
+    alpaca_api_secret: Optional[str] = Field(None, validation_alias="ALPACA_API_SECRET")
     # Finnhub — analyst recommendation trends, earnings surprises, insider
     # sentiment and structured company news. Free tier covers all of these.
     finnhub_api_key: Optional[str] = Field(None, validation_alias="FINNHUB_API_KEY")

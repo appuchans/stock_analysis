@@ -72,13 +72,45 @@ def _polygon() -> Optional[base.ProviderBase]:
     return PolygonProvider(settings.polygon_api_key)
 
 
+def _alpaca() -> Optional[base.ProviderBase]:
+    if not (settings.alpaca_api_key and settings.alpaca_api_secret):
+        return None
+    from .alpaca import AlpacaProvider
+
+    return AlpacaProvider(settings.alpaca_api_key, settings.alpaca_api_secret)
+
+
 class ProviderRouter:
     def __init__(self) -> None:
         self._yfinance = YFinanceProvider()
 
     def _price_chain(self) -> List[base.ProviderBase]:
-        polygon = _polygon()
-        return ([polygon] if polygon else []) + [self._yfinance]
+        # Alpaca leads: it is the only source here that reports the previous
+        # session's close as a distinct field, so "last close" comes from the
+        # data rather than from inferring whether today's bar has settled.
+        chain = [p for p in (_alpaca(), _polygon()) if p]
+        return chain + [self._yfinance]
+
+    def get_last_close(self, symbol: str) -> Dict[str, Any]:
+        """The last settled close, from the first provider that reports one.
+
+        Outside the eight-capability Protocol, like get_batch_quotes: only
+        Alpaca distinguishes a completed session from one in progress, so
+        callers treat an empty result as "fall back to inferring it" rather
+        than as an error.
+        """
+        for provider in self._price_chain():
+            fn = getattr(provider, "get_last_close", None)
+            if not fn:
+                continue
+            try:
+                result = fn(symbol)
+            except Exception as exc:  # pragma: no cover - defensive
+                _logger.warning("%s get_last_close failed: %s", provider.name, exc)
+                continue
+            if result and not result.get("error"):
+                return result
+        return {}
 
     def _fundamentals_chain(self) -> List[base.ProviderBase]:
         fmp = _fmp()
@@ -246,6 +278,11 @@ class ProviderRouter:
         return {
             "fmp": {"configured": bool(settings.fmp_api_key)},
             "polygon": {"configured": bool(settings.polygon_api_key)},
+            "alpaca": {
+                "configured": bool(
+                    settings.alpaca_api_key and settings.alpaca_api_secret
+                )
+            },
             "sec_api": {"configured": bool(settings.sec_api_key)},
             "finnhub": {"configured": bool(settings.finnhub_api_key)},
             "alpha_vantage": {"configured": bool(settings.alpha_vantage_api_key)},

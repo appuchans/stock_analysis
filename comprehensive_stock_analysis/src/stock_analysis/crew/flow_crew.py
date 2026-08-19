@@ -973,7 +973,13 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # "closed at $237.45 on August 19" with the market open and the price
         # already $236.53 an hour later. A settled close is also stable, so two
         # stages running minutes apart cannot disagree.
-        settled = ys.last_settled_close(ticker)
+        # A provider that reports the previous session explicitly beats
+        # inferring it from a bar's date against market hours. Alpaca does;
+        # nothing else in the chain has the concept, so the yfinance-derived
+        # fallback stays for every keyless install.
+        from ..tools.providers import ROUTER as _ROUTER
+
+        settled = _ROUTER.get_last_close(sym) or ys.last_settled_close(ticker)
         px = settled.get("price")
         price_date = settled.get("date")
         basis = settled.get("basis")

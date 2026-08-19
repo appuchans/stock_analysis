@@ -975,3 +975,54 @@ class TestNewsSentimentProviders:
         monkeypatch.setattr(sm.settings, "alpha_vantage_api_key", None)
         monkeypatch.setattr(sm.settings, "marketaux_api_key", None)
         assert rm.ProviderRouter()._news_sentiment_chain() == []
+
+
+class TestAlpacaProvider:
+    """The one source that reports a settled previous close as its own field.
+
+    Everything else in the chain returns a bar whose date has to be checked
+    against market hours to know whether it has closed — which is how a report
+    said IBM "closed at $237.45 on August 19" mid-session.
+    """
+
+    def _provider(self):
+        from src.stock_analysis.tools.providers.alpaca import AlpacaProvider
+
+        return AlpacaProvider("key", "secret")
+
+    def _snapshot(self):
+        return {
+            "dailyBar": {"c": 236.53, "v": 1_200_000, "t": "2026-08-19T20:00:00Z"},
+            "prevDailyBar": {"c": 232.67, "t": "2026-08-18T20:00:00Z"},
+            "latestTrade": {"p": 236.60},
+        }
+
+    def test_last_close_is_the_previous_session_not_today(self, monkeypatch):
+        p = self._provider()
+        monkeypatch.setattr(p, "_get", lambda *a, **k: self._snapshot())
+        assert p.get_last_close("IBM") == {
+            "symbol": "IBM",
+            "price": 232.67,
+            "date": "2026-08-18",
+            "basis": "last close",
+            "source": "alpaca",
+        }
+
+    def test_quote_still_reports_the_live_price(self, monkeypatch):
+        """The live price is legitimate for a quote; it just is not a close."""
+        p = self._provider()
+        monkeypatch.setattr(p, "_get", lambda *a, **k: self._snapshot())
+        q = p.get_quote("IBM")
+        assert q["price"] == 236.53
+        assert q["previous_close"] == 232.67
+
+    def test_missing_previous_bar_returns_empty_not_an_error(self, monkeypatch):
+        p = self._provider()
+        monkeypatch.setattr(p, "_get", lambda *a, **k: {"dailyBar": {"c": 1.0}})
+        assert p.get_last_close("IBM") == {}
+
+    def test_router_falls_back_when_no_provider_reports_a_close(self):
+        from src.stock_analysis.tools.providers import ROUTER
+
+        # No Alpaca key configured in the test environment.
+        assert ROUTER.get_last_close("IBM") == {}
