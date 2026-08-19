@@ -91,6 +91,8 @@ shared:
       fragments, no snake_case field names.
     - Never invent a number. Quote a price only from the stated as-of snapshot.
 
+    MARKET SNAPSHOT: {snapshot_data}
+
   # Prepended to {historical_context} by _format_historical_context, but ONLY
   # when prior calls actually exist. Previously the instruction sat
   # unconditionally in the recommendation prompt beside a "No prior analysis on
@@ -107,13 +109,17 @@ shared:
     Use the following pre-collected data as your primary source:
     {collected_data}
 
+    MARKET SNAPSHOT: {snapshot_data}
+
     IMPORTANT: Write your entire response in clean, human-readable markdown.
     Do NOT output raw JSON or code blocks — use prose, bullet points, and tables.
 
   # Expected output for the parallel analysis stages
   stage_expected_output: >-
-    Clear, citation-backed markdown report covering the {analysis_key} analysis
-    of {symbol}, ending with a Data Sources & Gaps section.
+    Clear, well-evidenced markdown report covering the {analysis_key} analysis
+    of {symbol}, ending with a Data Sources & Gaps section. Figures carry their
+    fiscal period inline as prose; named provenance belongs only in that closing
+    section.
 
 collect_data:
   stock: |
@@ -372,6 +378,12 @@ competitor:
     in scale, growth, margin and valuation, and where is it winning or losing
     share? Where a peer's figures are not to hand, compare on business model
     and position rather than skipping the peer.
+
+    {peer_metrics_data} carries the comparable multiples themselves — trailing
+    and forward P/E, operating margin, revenue growth and market cap for each
+    peer alongside {symbol}. Ground the valuation comparison in those numbers:
+    state where {symbol} trades relative to the peer set and whether its growth
+    and margin profile justifies the gap. Present it as a table.
 
     Close with the competitive verdict: is {symbol} structurally advantaged,
     at parity, or disadvantaged against this group, and what would change it?

@@ -269,6 +269,16 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             s = json.dumps(v, separators=(",", ":"), default=str)
             return s[:cap]
 
+        # The one price and date every stage must quote. Rendered as prose
+        # rather than a JSON blob so the model has no field names to copy.
+        snap = self.state.snapshot or {}
+        base["snapshot_data"] = (
+            f"Price {snap['price']} as of {str(snap['as_of'])[:16].replace('T', ' ')} "
+            f"({snap.get('price_source') or 'market data'}). This is the ONLY "
+            "price to quote anywhere; always give it with its as-of date."
+            if snap.get("price") is not None
+            else "No verified price snapshot — do not quote a share price."
+        )
         base["analyst_data"] = _blob("analyst")
         base["financials_data"] = _blob("financials")
         base["ownership_data"] = _blob("ownership")
@@ -291,6 +301,13 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # Named peers with market cap (FMP) or tickers (Finnhub) — the
         # competitor stage previously had to compare qualitatively.
         base["peers_data"] = _blob("peer_set", 2500)
+        # The comparable-multiples table (P/E trailing and forward, operating
+        # margin, revenue growth, market cap per peer). summarize_peers has
+        # always computed this and written it into chart_data, but it had no
+        # blob here — so the stage asked to judge relative valuation could see
+        # only the bare peer tickers above, and reported that no valuation
+        # multiples were available.
+        base["peer_metrics_data"] = _blob("peers", 3000)
         # Dividend/buyback yields for the capital-allocation verdict.
         base["shareholder_returns_data"] = _blob("shareholder_returns", 2000)
 
