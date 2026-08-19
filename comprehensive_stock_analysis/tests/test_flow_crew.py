@@ -584,3 +584,113 @@ class TestResumeSkipsCompletedStages:
 
         assert StockAnalysisFlow()._resume is False
         assert StockAnalysisFlow(resume=True)._resume is True
+
+
+class TestResumeRejectsStaleStages:
+    """A stage file is reusable only while it describes the same snapshot.
+
+    This is the defect that produced the MSFT report a reviewer rejected:
+    resume reused stage prose written three days earlier, so the document
+    quoted a $502.54 price and 56 analysts beside charts built from a fetch
+    minutes old showing $495.40 and 69 analysts.
+    """
+
+    def _flow(self, tmp_path, monkeypatch, as_of):
+        from src.stock_analysis.crew import flow_crew as fc
+
+        monkeypatch.setattr(fc.settings, "report_output_dir", str(tmp_path))
+        monkeypatch.setattr(fc.settings, "data_cache_ttl", 0)
+        flow = fc.StockAnalysisFlow(resume=True)
+        flow.state.symbol = "TEST"
+        flow.state.asset_type = "stock"
+        flow.state.snapshot = {"as_of": as_of, "price": 495.4}
+        return flow, fc
+
+    def _write_stage(self, tmp_path, age_days):
+        import os
+        import time
+
+        d = tmp_path / "TEST"
+        d.mkdir(parents=True, exist_ok=True)
+        p = d / "TEST_risk_analysis.md"
+        p.write_text("R" * 500, encoding="utf-8")
+        when = time.time() - age_days * 86400
+        os.utime(p, (when, when))
+        return p
+
+    def test_stage_older_than_the_snapshot_is_re_run(self, tmp_path, monkeypatch):
+        from datetime import datetime
+
+        flow, fc = self._flow(tmp_path, monkeypatch, datetime.now().isoformat())
+        self._write_stage(tmp_path, age_days=3)
+
+        todo = flow._skip_completed_stages([(fc.RiskAnalystAgent, "risk", "desc")])
+        assert [k for _, k, _ in todo] == ["risk"]
+        assert flow.state.resumed_stages == []
+
+    def test_stage_newer_than_the_snapshot_is_still_reused(self, tmp_path, monkeypatch):
+        """The freshness gate must not defeat resume's original purpose."""
+        from datetime import datetime, timedelta
+
+        as_of = (datetime.now() - timedelta(hours=1)).isoformat()
+        flow, fc = self._flow(tmp_path, monkeypatch, as_of)
+        self._write_stage(tmp_path, age_days=0)
+
+        todo = flow._skip_completed_stages([(fc.RiskAnalystAgent, "risk", "desc")])
+        assert todo == []
+        assert flow.state.resumed_stages == ["risk"]
+
+    def test_no_snapshot_leaves_resume_unchanged(self, tmp_path, monkeypatch):
+        """Callers that skip collection have nothing to compare against."""
+        flow, fc = self._flow(tmp_path, monkeypatch, as_of=None)
+        flow.state.snapshot = {}
+        self._write_stage(tmp_path, age_days=99)
+
+        todo = flow._skip_completed_stages([(fc.RiskAnalystAgent, "risk", "desc")])
+        assert todo == []
+        assert flow.state.resumed_stages == ["risk"]
+
+
+class TestAbortedRunDoesNotPublish:
+    """A cancelled run must not overwrite the last good report.
+
+    The MSFT report a reviewer rejected was rendered by an aborted run: it
+    republished three-day-old workpapers and 15:58 prose around chart data
+    fetched at 16:18, producing a document that contradicted itself throughout.
+    """
+
+    def test_render_is_skipped_when_cancelled(self, monkeypatch):
+        from src.stock_analysis import llm_budget
+        from src.stock_analysis.crew import flow_crew as fc
+
+        called = []
+        monkeypatch.setattr(
+            "src.stock_analysis.tools.report_tools.render_html_report",
+            lambda *a, **k: called.append(a) or {"report_path": "x"},
+        )
+        monkeypatch.setattr(llm_budget, "aborted", lambda: True)
+
+        flow = fc.StockAnalysisFlow()
+        flow.state.symbol = "TEST"
+        flow._render_html()
+
+        assert called == []
+        assert any("cancelled" in d for d in flow.state.degradations)
+
+    def test_render_runs_normally_when_not_cancelled(self, monkeypatch):
+        from src.stock_analysis import llm_budget
+        from src.stock_analysis.crew import flow_crew as fc
+
+        called = []
+        monkeypatch.setattr(
+            "src.stock_analysis.tools.report_tools.render_html_report",
+            lambda *a, **k: called.append(a) or {"report_path": "x"},
+        )
+        monkeypatch.setattr(llm_budget, "aborted", lambda: False)
+
+        flow = fc.StockAnalysisFlow()
+        flow.state.symbol = "TEST"
+        flow._render_html()
+
+        assert len(called) == 1
+        assert flow.state.report == "x"

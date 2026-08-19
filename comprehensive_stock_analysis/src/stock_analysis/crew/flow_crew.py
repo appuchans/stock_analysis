@@ -98,6 +98,15 @@ class StockAnalysisState(BaseModel):
     # Stages whose previous output was reused instead of re-run (resume mode).
     # Reported so a resumed run is never mistaken for a fully fresh one.
     resumed_stages: List[str] = Field(default_factory=list)
+    # The single authoritative {as_of, price, price_source} for this run.
+    #
+    # Every stage quotes the price from here, so the document states one number
+    # and one date. Without it each consumer read whichever field answered when
+    # it happened to run: one MSFT report carried $494.97, $495, $495.40 and
+    # $502.54 as "the current price" and 12%, 12.9% and 14% as "the upside",
+    # because the prose came from a three-day-old resumed stage while the charts
+    # came from a fetch twenty minutes later.
+    snapshot: Dict[str, Any] = Field(default_factory=dict)
 
 
 def _step_callback(step_output: Any) -> None:
@@ -464,9 +473,14 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             "[collect_data] structured blocks for %s: %s", sym, list(structured.keys())
         )
 
+        # Restored before the chart write so a cache hit carries the same
+        # snapshot the cached prose was written against.
+        self.state.snapshot = dict(bundle.get("snapshot") or {})
+
         chart = bundle.get("chart")
         if chart:
             chart = dict(chart)
+            chart["snapshot"] = self.state.snapshot
             # Recomputed at apply time so the trend stays fresh and is appended
             # at most once per day even when the rest of the bundle was cached.
             chart["sentiment_history"] = self._update_sentiment_history(
@@ -750,6 +764,22 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # UI's freshness indicator would be misleading if this were stamped on
         # every cache-hit apply instead of the real network fetch.
         bundle["data_fetched_at"] = datetime.now().isoformat(timespec="seconds")
+
+        # The price every stage must quote. Two fields can answer "what does it
+        # trade at" — the last daily close and the analyst-target payload's
+        # `current` — and they disagree (495.40 vs 495.4 vs a 3-day-old 502.54).
+        # Pick one, name where it came from, and carry it with its timestamp.
+        px = ((bundle.get("chart") or {}).get("key_stats") or {}).get("current_price")
+        source = "daily close (Yahoo Finance)"
+        if px is None:
+            pt = (structured.get("analyst") or {}).get("price_targets") or {}
+            px = pt.get("current_price")
+            source = "analyst price-target snapshot (Yahoo Finance)"
+        bundle["snapshot"] = {
+            "as_of": bundle["data_fetched_at"],
+            "price": round(px, 2) if isinstance(px, (int, float)) else None,
+            "price_source": source if px is not None else None,
+        }
         return bundle
 
     def _enrich_with_premium_providers(
@@ -1085,6 +1115,25 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
     # an empty or one-line file means the stage did not actually produce work.
     _MIN_RESUMABLE_CHARS = 200
 
+    def _resume_cutoff(self) -> Optional[float]:
+        """Epoch seconds before which a stage file is too old to reuse.
+
+        Derived from the run's own snapshot, with `data_cache_ttl` as the
+        tolerance — the same window that decides a fetched bundle is still
+        current, so resume and caching cannot disagree about what "fresh"
+        means. Returns None (reuse anything) when there is no snapshot to
+        compare against, which keeps resume working for callers that skip
+        collection entirely.
+        """
+        as_of = (self.state.snapshot or {}).get("as_of")
+        if not as_of:
+            return None
+        try:
+            stamped = datetime.fromisoformat(str(as_of)).timestamp()
+        except ValueError:
+            return None
+        return stamped - max(0, int(getattr(settings, "data_cache_ttl", 0) or 0))
+
     def _skip_completed_stages(
         self, stages: List[Tuple[type, str, str]]
     ) -> List[Tuple[type, str, str]]:
@@ -1095,8 +1144,16 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         already succeeded. Only the specialist stages are reusable: the
         recommendation and report are always regenerated, because they
         synthesize *all* stages and would otherwise reflect a partial set.
+
+        A stage file is only reusable while it still describes the *same*
+        market snapshot. Without that test, resume silently mixed vintages: an
+        MSFT run reused stage prose written three days earlier, so the report
+        quoted a $502.54 price and 56 analysts beside charts built from a fetch
+        minutes old showing $495.40 and 69 analysts. Anything older than the
+        snapshot is re-run rather than reused.
         """
         todo: List[Tuple[type, str, str]] = []
+        cutoff = self._resume_cutoff()
         for spec in stages:
             key = spec[1]
             path = (
@@ -1108,6 +1165,18 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 text = path.read_text(encoding="utf-8").strip()
             except OSError:
                 text = ""
+            if text and cutoff is not None:
+                try:
+                    if path.stat().st_mtime < cutoff:
+                        _logger.info(
+                            "[resume] discarding stale %s analysis for %s "
+                            "(predates this run's data snapshot)",
+                            key,
+                            self.state.symbol,
+                        )
+                        text = ""
+                except OSError:
+                    text = ""
             if len(text) >= self._MIN_RESUMABLE_CHARS:
                 setattr(self.state, key, {"result": text})
                 self.state.resumed_stages.append(key)
@@ -1306,8 +1375,32 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             )
             self.state.report = narrative
 
-        # Rendering is deterministic — always done in code, never by the LLM.
+        self._render_html()
+
+    def _render_html(self) -> None:
+        """Publish the HTML report. Deterministic — never done by the LLM."""
+        from .. import llm_budget
         from ..tools.report_tools import render_html_report
+
+        sym = self.state.symbol
+
+        # A cancelled run has, by definition, only some of its stages. Rendering
+        # anyway republishes the previous run's files around whatever this one
+        # managed to write: the report a reviewer rejected was rendered by an
+        # aborted run and mixed three collection times in one document. Leave
+        # the last good report in place instead.
+        if llm_budget.aborted():
+            _logger.warning(
+                "Run for %s was cancelled — keeping the previous report rather "
+                "than publishing a partial one",
+                sym,
+            )
+            self.state.degradations.append(
+                "html render: skipped because the run was cancelled (the "
+                "previous report is left untouched rather than overwritten "
+                "with a partial one)"
+            )
+            return
 
         try:
             rendered = render_html_report(sym, asset_type=self.state.asset_type)

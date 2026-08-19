@@ -98,3 +98,13 @@ def check_and_increment() -> None:
 def used() -> int:
     with _lock:
         return _count
+
+
+def aborted() -> bool:
+    """Whether cancellation was requested for the current run.
+
+    Read by the flow before it publishes: a cancelled run must not overwrite
+    the previous good report with a half-built one.
+    """
+    with _lock:
+        return _aborted
