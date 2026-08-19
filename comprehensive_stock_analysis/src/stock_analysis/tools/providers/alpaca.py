@@ -34,13 +34,19 @@ _BASE_URL = "https://data.alpaca.markets/v2"
 class AlpacaProvider(base.ProviderBase):
     name = "alpaca"
 
-    def __init__(self, api_key: str, api_secret: str) -> None:
+    def __init__(self, api_key: str, api_secret: str, feed: str = "iex") -> None:
         self._headers = {
             "APCA-API-KEY-ID": api_key,
             "APCA-API-SECRET-KEY": api_secret,
         }
+        # Without an explicit feed the API assumes SIP, which a free key may
+        # not read: bars return 403 "subscription does not permit querying
+        # recent SIP data" while the snapshot endpoint happens to succeed, so
+        # it looks like a broken bars call rather than a plan limit.
+        self._feed = feed or "iex"
 
     def _get(self, path: str, **params: Any) -> Any:
+        params.setdefault("feed", self._feed)
         resp = _http.get(
             f"{_BASE_URL}{path}", params=params, headers=self._headers, timeout=15
         )

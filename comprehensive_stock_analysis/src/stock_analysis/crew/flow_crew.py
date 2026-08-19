@@ -993,7 +993,13 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             "price": round(px, 2) if isinstance(px, (int, float)) else None,
             "price_date": price_date,
             "price_basis": basis,
-            "price_source": "Yahoo Finance" if px is not None else None,
+            "price_source": (
+                {"alpaca": "Alpaca (IEX)", "polygon": "Polygon"}.get(
+                    str(settled.get("source") or ""), "Yahoo Finance"
+                )
+                if px is not None
+                else None
+            ),
         }
         # One price in the file, not two. key_stats.current_price carried the
         # live bar while the snapshot carried the settled close, so a single

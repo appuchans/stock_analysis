@@ -77,7 +77,11 @@ def _alpaca() -> Optional[base.ProviderBase]:
         return None
     from .alpaca import AlpacaProvider
 
-    return AlpacaProvider(settings.alpaca_api_key, settings.alpaca_api_secret)
+    return AlpacaProvider(
+        settings.alpaca_api_key,
+        settings.alpaca_api_secret,
+        feed=settings.alpaca_data_feed,
+    )
 
 
 class ProviderRouter:

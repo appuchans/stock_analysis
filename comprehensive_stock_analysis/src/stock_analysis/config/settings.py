@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     # report's "last close" wording needs; both halves are required.
     alpaca_api_key: Optional[str] = Field(None, validation_alias="ALPACA_API_KEY")
     alpaca_api_secret: Optional[str] = Field(None, validation_alias="ALPACA_API_SECRET")
+    # Alpaca's data endpoints assume the consolidated SIP feed, which a free
+    # key may not read — bars come back 403 "subscription does not permit
+    # querying recent SIP data" while the snapshot endpoint still succeeds, so
+    # it presents as a broken bars call rather than a plan limit. IEX is what a
+    # free key can read; set "sip" on a paid plan.
+    alpaca_data_feed: str = Field("iex", validation_alias="ALPACA_DATA_FEED")
     # Finnhub — analyst recommendation trends, earnings surprises, insider
     # sentiment and structured company news. Free tier covers all of these.
     finnhub_api_key: Optional[str] = Field(None, validation_alias="FINNHUB_API_KEY")

@@ -1026,3 +1026,48 @@ class TestAlpacaProvider:
 
         # No Alpaca key configured in the test environment.
         assert ROUTER.get_last_close("IBM") == {}
+
+
+class TestAlpacaFeedSelection:
+    """The free tier cannot read SIP, and the failure is misleading.
+
+    Without an explicit feed the API assumes consolidated SIP: bars return 403
+    "subscription does not permit querying recent SIP data" while the snapshot
+    endpoint still succeeds, so it presents as a broken bars call rather than a
+    plan limit.
+    """
+
+    def test_feed_defaults_to_iex_and_is_sent_on_every_request(self, monkeypatch):
+        from src.stock_analysis.tools.providers.alpaca import AlpacaProvider
+
+        seen = {}
+
+        class _Resp:
+            status_code = 200
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+            @staticmethod
+            def json():
+                return {"bars": []}
+
+        def _fake_get(url, params=None, headers=None, timeout=None):
+            seen.update(params or {})
+            return _Resp()
+
+        monkeypatch.setattr("src.stock_analysis.tools._http.get", _fake_get)
+        AlpacaProvider("k", "s").get_daily_bars("IBM", "2026-08-10", "2026-08-19")
+        assert seen.get("feed") == "iex"
+
+    def test_paid_plans_can_request_sip(self, monkeypatch):
+        from src.stock_analysis.tools.providers.alpaca import AlpacaProvider
+
+        p = AlpacaProvider("k", "s", feed="sip")
+        assert p._feed == "sip"
+
+    def test_empty_feed_falls_back_rather_than_omitting_it(self):
+        from src.stock_analysis.tools.providers.alpaca import AlpacaProvider
+
+        assert AlpacaProvider("k", "s", feed="")._feed == "iex"

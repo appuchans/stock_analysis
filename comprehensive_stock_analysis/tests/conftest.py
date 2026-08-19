@@ -34,3 +34,30 @@ def _reset_llm_budget():
     llm_budget.reset()
     yield
     llm_budget.reset()
+
+
+@pytest.fixture(autouse=True)
+def _no_premium_provider_keys(monkeypatch):
+    """Premium providers stay unconfigured unless a test opts in.
+
+    Provider keys are read from the developer's .env, so a machine with real
+    credentials ran a different test suite from CI's: adding Alpaca to the
+    price chain made four router tests reach the live API and assert against
+    whichever provider happened to answer. Tests that want a provider construct
+    it directly or set the key themselves.
+    """
+    from src.stock_analysis.config.settings import settings
+
+    for field in (
+        "fmp_api_key",
+        "polygon_api_key",
+        "alpaca_api_key",
+        "alpaca_api_secret",
+        "sec_api_key",
+        "finnhub_api_key",
+        "alpha_vantage_api_key",
+        "marketaux_api_key",
+    ):
+        if hasattr(settings, field):
+            monkeypatch.setattr(settings, field, None, raising=False)
+    yield
