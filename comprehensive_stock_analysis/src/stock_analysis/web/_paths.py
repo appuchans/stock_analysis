@@ -33,6 +33,12 @@ def html_path(symbol: str) -> Optional[Path]:
     return d / "html" / f"{sym}_report.html" if d else None
 
 
+def pdf_path(symbol: str) -> Optional[Path]:
+    d = report_dir(symbol)
+    sym = safe_symbol(symbol)
+    return d / "pdf" / f"{sym}_report.pdf" if d else None
+
+
 def chart_path(symbol: str) -> Optional[Path]:
     d = report_dir(symbol)
     sym = safe_symbol(symbol)

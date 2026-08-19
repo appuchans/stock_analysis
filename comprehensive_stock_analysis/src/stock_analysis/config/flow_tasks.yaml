@@ -454,6 +454,19 @@ recommendation:
        (low/mean/high targets) and explicitly state whether you are above,
        below, or in line with consensus and why. Consensus is a cross-check,
        not the anchor: do not simply restate the mean.
+    8. Stop-loss, risk level and confidence — each justified in the reasoning,
+       never left as a bare number:
+       - Stop-loss: derive it from something stated. A level below a named
+         support or 52-week low, or a stated percentage below the entry price
+         reflecting this company's volatility. Say which.
+       - Risk level: must agree with the risk analysis. If that work describes
+         high volatility, a large drawdown or a negative Sharpe ratio, a
+         'Medium' label contradicts it — either justify the label against those
+         figures or change it.
+       - Confidence: state what would raise or lower it. A bare percentage is
+         not a view. Lower confidence belongs with a thesis resting on
+         unproven monetization; higher with one resting on demonstrated,
+         recurring results.
 
     Write in plain, direct prose. Do not lead with ratios or indicator values.
     A smart reader who knows nothing about this stock should finish your memo

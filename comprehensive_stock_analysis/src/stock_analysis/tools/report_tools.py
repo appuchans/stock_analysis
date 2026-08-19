@@ -328,9 +328,7 @@ _HTML_TEMPLATE = """\
     {% if industry %}<li><a href="#industry-analysis">Industry Analysis</a></li>{% endif %}
     {% if competitive %}<li><a href="#competitive-analysis">Competitive Analysis</a></li>{% endif %}
     {% endif %}
-    {% for slug, title, _ in detail_sections %}
-    <li><a href="#detail-{{ slug }}">Appendix {{ loop.index }}: {{ title }}</a></li>
-    {% endfor %}
+    <li><a href="#appendix">Appendix</a></li>
   </ul>
 </div>
 
@@ -569,17 +567,31 @@ _HTML_TEMPLATE = """\
 
 {% endif %}
 
-{% if detail_sections %}
-<hr>
-<h2 style="border:none; font-size:1.35em">Appendices — Specialist Workpapers</h2>
-<p class="meta">Full underlying analyses. Click a section to expand.</p>
-{% for slug, title, html_content in detail_sections %}
-<details class="detail-section" id="detail-{{ slug }}">
-  <summary><strong>Appendix {{ loop.index }}: {{ title }}</strong></summary>
-  <div class="md-content">{{ html_content }}</div>
-</details>
-{% endfor %}
+<h2 id="appendix" style="border:none; font-size:1.35em">Appendix</h2>
+
+<h3 style="margin-bottom:.3em">Rating definitions</h3>
+<table>
+  <thead><tr><th>Rating</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Buy</td><td>Total return expected to exceed the market
+      over the stated horizon.</td></tr>
+    <tr><td>Hold</td><td>Total return expected to track the market
+      over the stated horizon.</td></tr>
+    <tr><td>Sell</td><td>Total return expected to trail the market
+      over the stated horizon.</td></tr>
+  </tbody>
+</table>
+{% if inv_rec and inv_rec.get('time_horizon') %}
+<p class="meta">Ratings apply over a {{ inv_rec['time_horizon'] }} horizon.</p>
 {% endif %}
+
+{% if scenarios_table %}
+<h3 style="margin-bottom:.3em">Valuation method</h3>
+{{ scenarios_table }}
+{% endif %}
+
+<h3 style="margin-bottom:.3em">Basis and disclosures</h3>
+<p class="meta">{{ disclaimer }}</p>
 
 
 <script>
@@ -1890,12 +1902,18 @@ class ReportGeneratorTool(BaseTool):
         for key in ("exchange", "sector", "industry"):
             meta.setdefault(key, company.get(key))
 
-        detail_sections, consolidated_gaps = self._load_detail_sections(
-            symbol, asset_type
-        )
+        # The specialist workpapers are still read — their gaps feed the
+        # operator run report — but they are no longer reprinted in the client
+        # document. They were ~31 of its ~39 pages, and every topic they
+        # covered already appears in the narrative, so the reader met each
+        # argument twice: once condensed, once verbatim. One appendix even
+        # reprinted the recommendation card, because both rendered the same
+        # investment_recommendation.json.
+        _, consolidated_gaps = self._load_detail_sections(symbol, asset_type)
         # Provenance and gaps are operator concerns, not client-facing content:
         # they go to a separate run report instead of an appendix in the report.
         _write_run_report(symbol, consolidated_gaps)
+        detail_sections: List[Tuple[str, str, Any]] = []
 
         html = template.render(
             symbol=symbol.upper(),
@@ -1938,6 +1956,18 @@ class ReportGeneratorTool(BaseTool):
             supporting=supporting,
             appendices=analysis_data.get("appendices") or {},
             detail_sections=detail_sections,
+            # The scenario grid also appears inline beside the valuation
+            # narrative; the appendix restates it with its assumptions so the
+            # method is disclosed where a reader checks methods.
+            scenarios_table=scenarios_table,
+            disclaimer=(
+                settings.report_disclaimer
+                or "This report was produced by automated analysis of public "
+                "data sources. It is information, not investment advice, and "
+                "no recommendation is made as to the suitability of any "
+                "security for any particular investor. Figures are as stated "
+                "above and may have moved since."
+            ),
         )
 
         path = self._output_path(symbol, "html")

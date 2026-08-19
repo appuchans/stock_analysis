@@ -168,11 +168,17 @@ class TestRenderHtmlReport:
         content = html_files[0].read_text(encoding="utf-8")
         # Recommendation extracted from the markdown fallback
         assert "BUY" in content
-        # Specialist sections embedded
-        assert "Revenue grew 12% YoY" in content
-        assert "customer concentration" in content
 
-    def test_narrative_is_body_and_specialists_are_appendices(self, report_dir):
+    def test_specialist_workpapers_are_not_reprinted_in_the_client_report(
+        self, report_dir
+    ):
+        """The narrative is the document; the workpapers are operator material.
+
+        Reprinting them verbatim made up ~31 of the report's ~39 pages and put
+        every argument in front of the reader twice — once condensed in the
+        narrative, once in full. One appendix even restated the recommendation
+        card, since both rendered the same investment_recommendation.json.
+        """
         render_html_report("TEST")
         html = next((report_dir / "TEST" / "html").glob("*.html")).read_text(
             encoding="utf-8"
@@ -180,11 +186,24 @@ class TestRenderHtmlReport:
         # Synthesized narrative is the main body
         assert 'id="analysis"' in html
         assert "TestCorp sells widgets" in html
-        # Specialist reports demoted to collapsible appendices
-        assert html.count("<details") >= 2
-        assert "Appendix 1:" in html
+        # ...and the workpaper prose is gone from it.
+        assert "Revenue grew 12% YoY" not in html
+        assert "customer concentration" not in html
+        assert "Specialist Workpapers" not in html
+        assert html.count("<details") == 0
         # No auto-built executive summary when the narrative exists
         assert 'id="executive-summary"' not in html
+
+    def test_appendix_carries_the_sell_side_scaffolding(self, report_dir):
+        """What replaced the workpapers: what the rating means, and on what basis."""
+        render_html_report("TEST")
+        html = next((report_dir / "TEST" / "html").glob("*.html")).read_text(
+            encoding="utf-8"
+        )
+        assert 'id="appendix"' in html
+        assert "Rating definitions" in html
+        assert "Basis and disclosures" in html
+        assert "not investment advice" in html
 
     def test_gaps_go_to_the_run_report_not_the_client_report(self, report_dir):
         """Provenance and coverage notes are operator material.

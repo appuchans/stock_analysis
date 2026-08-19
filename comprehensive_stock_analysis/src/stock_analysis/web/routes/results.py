@@ -23,6 +23,33 @@ def report_html(symbol: str) -> FileResponse:
     return FileResponse(path, media_type="text/html")
 
 
+@router.get("/{symbol}/pdf")
+def report_pdf(symbol: str) -> FileResponse:
+    """The typeset research note.
+
+    Rendered on demand rather than served from disk alone: the PDF is built
+    from the same artifacts the HTML view reads, so it should reflect whatever
+    the last run produced even if that run predates PDF output. Falls back to
+    an already-rendered file if typesetting fails.
+    """
+    path = _paths.pdf_path(symbol)
+    if path is None:
+        raise HTTPException(status_code=404, detail="invalid symbol")
+    try:
+        from ...tools.pdf_report import render_pdf_report
+
+        rendered = render_pdf_report(symbol)
+    except Exception:  # pragma: no cover - falls through to any existing file
+        rendered = None
+    if not rendered and not path.exists():
+        raise HTTPException(status_code=404, detail="report not found")
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=f"{_paths.safe_symbol(symbol)}_research_note.pdf",
+    )
+
+
 @router.get("/{symbol}/chart")
 def report_chart(symbol: str) -> FileResponse:
     path = _paths.chart_path(symbol)

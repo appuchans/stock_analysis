@@ -627,27 +627,10 @@ window.addEventListener("themechange", () => {
  * PDF is complete even though nothing in it had to execute.
  */
 export function downloadReportPdf(symbol) {
-  const w = window.open(`/api/reports/${encodeURIComponent(symbol)}/html`, "_blank");
-  if (!w) {
-    alert(
-      "Allow pop-ups for this site to save the report as a PDF, " +
-      "then choose \"Save as PDF\" as the destination."
-    );
-    return;
-  }
-  // Print once the document is laid out. `load` may already have fired for a
-  // cached report, so check readyState rather than relying on the event alone.
-  const print = () => {
-    try {
-      w.focus();
-      w.print();
-    } catch (_) {
-      /* The user can still print from the opened tab. */
-    }
-  };
-  if (w.document && w.document.readyState === "complete") {
-    setTimeout(print, 300);
-  } else {
-    w.addEventListener("load", () => setTimeout(print, 300), { once: true });
-  }
+  // The server typesets this with Typst. It used to open the HTML report and
+  // call window.print(), which meant the browser's own print chrome — headers,
+  // footers and a localhost URL — was stamped onto every page, and the CSS
+  // @page furniture the report declared was ignored because no browser
+  // implements it.
+  window.location.href = `/api/reports/${encodeURIComponent(symbol)}/pdf`;
 }

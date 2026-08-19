@@ -1608,6 +1608,20 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 f"html render: {exc} (no viewable report for this run)"
             )
 
+        # The typeset note. Separate from the HTML view and non-fatal: a
+        # failure here costs the PDF, not the run.
+        try:
+            from ..tools.pdf_report import render_pdf_report
+
+            if render_pdf_report(sym, asset_type=self.state.asset_type) is None:
+                self.state.degradations.append(
+                    "pdf render: produced no file (the Download PDF button will "
+                    "fall back to the previous note)"
+                )
+        except Exception as exc:
+            _logger.warning("PDF render failed for %s: %s", sym, exc)
+            self.state.degradations.append(f"pdf render: {exc} (no typeset note)")
+
     # ── public API ─────────────────────────────────────────────────────────────
 
     def analyze_stock(
