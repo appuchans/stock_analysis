@@ -278,10 +278,21 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # The one price and date every stage must quote. Rendered as prose
         # rather than a JSON blob so the model has no field names to copy.
         snap = self.state.snapshot or {}
+        # CrewAI injects today's date into every task (inject_date), which the
+        # model then attaches to whatever price it is holding. Mid-session that
+        # is false twice over: the price belongs to the prior close, and the
+        # figure it quotes has already moved. The rule has to be stated, not
+        # implied — a note said "IBM closed at $237.45 on August 19" at 11:27
+        # ET with the market open and the price $236.53 an hour later.
         base["snapshot_data"] = (
-            f"Price {snap['price']} as of {str(snap['as_of'])[:16].replace('T', ' ')} "
-            f"({snap.get('price_source') or 'market data'}). This is the ONLY "
-            "price to quote anywhere; always give it with its as-of date."
+            f"{(snap.get('price_basis') or 'Close').capitalize()}: "
+            f"${snap['price']} on {snap.get('price_date') or 'the last session'}. "
+            "This is the ONLY share price you may quote, and "
+            f"{snap.get('price_date') or 'that date'} is the ONLY date you may "
+            "attach to it. Never write that the company closed at this price "
+            "on today's date, never call it a current or live price, and never "
+            "pair it with the date given to you as today. Describe it as the "
+            "last close and give that date."
             if snap.get("price") is not None
             else "No verified price snapshot — do not quote a share price."
         )

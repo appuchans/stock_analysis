@@ -27,7 +27,8 @@ key or an outage never aborts a run.
 import html
 import logging
 import re
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Dict, List
 
 from .. import _http
 from . import base
@@ -61,6 +62,9 @@ _SECTIONS = {
 
 # Section text is fed to an LLM; a full Item 1A can run 100k+ characters.
 _SECTION_CHAR_CAP = 8000
+
+# Spacing between item requests on one filing; three in a row draw a 429.
+_EXTRACTOR_PAUSE_S = 1.5
 
 
 class SecApiProvider(base.ProviderBase):
@@ -188,7 +192,14 @@ class SecApiProvider(base.ProviderBase):
                 return {}
 
             sections: Dict[str, str] = {}
-            for item, label in _SECTIONS.items():
+            missing: Dict[str, str] = {}
+            for n, (item, label) in enumerate(_SECTIONS.items()):
+                # The extractor rate-limits three back-to-back item requests on
+                # the same filing. Losing Item 7 costs the segment revenue and
+                # margin discussion, which is the single most useful thing in
+                # the filing and exists nowhere else in the free data.
+                if n:
+                    time.sleep(_EXTRACTOR_PAUSE_S)
                 try:
                     resp = _http.get(
                         _EXTRACTOR_URL,
@@ -201,6 +212,17 @@ class SecApiProvider(base.ProviderBase):
                         timeout=30,
                     )
                     if resp.status_code != 200:
+                        # Recorded, not swallowed: a 429 here used to drop Risk
+                        # Factors and MD&A with nothing anywhere saying so, and
+                        # the report simply read as though the filing had no
+                        # such sections.
+                        missing[label] = f"http {resp.status_code}"
+                        _logger.warning(
+                            "sec-api extractor %s for %s returned %s",
+                            label,
+                            symbol,
+                            resp.status_code,
+                        )
                         continue
                     text = (resp.text or "").strip()
                     # The extractor marks table boundaries with a sentinel that
@@ -215,6 +237,7 @@ class SecApiProvider(base.ProviderBase):
                     if len(text) > 200:
                         sections[label] = text[:_SECTION_CHAR_CAP]
                 except Exception as exc:  # one bad item must not lose the rest
+                    missing[label] = str(exc)[:80]
                     _logger.debug("sec-api extractor item %s failed: %s", item, exc)
 
             if not sections:
@@ -226,6 +249,7 @@ class SecApiProvider(base.ProviderBase):
                 "period_of_report": filing.get("periodOfReport"),
                 "accession_no": filing.get("accessionNo"),
                 "sections": sections,
+                "sections_unavailable": missing or None,
                 "source": self.name,
             }
         except Exception as exc:
