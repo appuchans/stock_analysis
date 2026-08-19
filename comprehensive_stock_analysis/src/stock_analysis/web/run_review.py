@@ -339,6 +339,72 @@ _READER_FACING_SUFFIXES = (
 )
 
 
+_SHORT_INTEREST_RE = re.compile(
+    r"([\d.]+)\s*%\s*of\s+(?:the\s+)?(?:float|shares outstanding)", re.IGNORECASE
+)
+_ANALYST_COUNT_RE = re.compile(r"(\d{1,3})\s+analysts\b", re.IGNORECASE)
+
+
+def _check_narrative_consistency(symbol: str, issues: List[Dict[str, str]]) -> None:
+    """Do the narrative's figures still match the data they came from?
+
+    The synthesis stage rewrites nine specialist reports into one document, and
+    it can silently corrupt a number on the way through. On an IBM run every
+    upstream workpaper said short interest was 2.62% of float and the collected
+    data agreed — the client-facing narrative said 2.1%. Nothing caught it:
+    the artifacts all existed, all validated, and the figure was simply wrong.
+
+    Only figures with an unambiguous structured counterpart are checked, so a
+    warning here means a real contradiction rather than a parsing guess.
+    """
+    chart = _read_json(_paths.chart_path(symbol)) or {}
+    path = Path(settings.report_output_dir) / symbol.upper()
+    narrative_path = path / f"{symbol.upper()}_comprehensive_report.md"
+    try:
+        text = narrative_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+    from ..tools.report_tools import _split_gaps
+
+    text = _split_gaps(text)[0]
+
+    truth = (chart.get("sentiment_snapshot") or {}).get("short_pct_of_float")
+    if _is_number(truth):
+        claimed = [float(m) for m in _SHORT_INTEREST_RE.findall(text)]
+        # Rounding to one decimal is fine; a different number is not.
+        if claimed and not any(abs(c - float(truth)) <= 0.06 for c in claimed):
+            issues.append(
+                _issue(
+                    "warning",
+                    "narrative_contradicts_data",
+                    f"narrative says short interest is "
+                    f"{', '.join(f'{c}%' for c in claimed)} of float, but the "
+                    f"collected data says {float(truth)}%",
+                )
+            )
+
+    counts = (chart.get("analyst") or {}).get("rating_counts") or {}
+    total = counts.get("total_analysts")
+    if not _is_number(total):
+        parts = [
+            counts.get(k)
+            for k in ("strong_buy", "buy", "hold", "sell", "strong_sell")
+            if _is_number(counts.get(k))
+        ]
+        total = sum(float(p) for p in parts) if parts else None
+    if _is_number(total):
+        claimed_counts = [int(m) for m in _ANALYST_COUNT_RE.findall(text)]
+        if claimed_counts and int(float(total)) not in claimed_counts:
+            issues.append(
+                _issue(
+                    "warning",
+                    "narrative_contradicts_data",
+                    f"narrative cites {claimed_counts} analysts, but the "
+                    f"consensus data covers {int(float(total))}",
+                )
+            )
+
+
 def _check_prompt_leaks(symbol: str, issues: List[Dict[str, str]]) -> None:
     """Flag instruction text that leaked into reader-facing output.
 
@@ -403,6 +469,7 @@ def review_run(symbol: str, degradations: Optional[List[str]] = None) -> Dict[st
         chart = _read_json(_paths.chart_path(symbol)) or {}
         _check_recommendation(symbol, chart.get("asset_type"), issues)
         _check_prompt_leaks(symbol, issues)
+        _check_narrative_consistency(symbol, issues)
         for detail in degradations or []:
             issues.append(_issue("warning", "stage_degraded", detail))
     except Exception as exc:  # pragma: no cover - review must never break a run

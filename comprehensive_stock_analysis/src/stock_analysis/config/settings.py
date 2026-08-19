@@ -119,6 +119,15 @@ class Settings(BaseSettings):
     web_scraping_enabled: bool = Field(True, validation_alias="WEB_SCRAPING_ENABLED")
 
     # ── Output locations (relative values anchor to the project root) ─────────
+    # Masthead and disclosures on the client-facing report. Defaults are
+    # deliberately unbranded: this is generated analysis, and putting a firm
+    # name on it is a claim the tool cannot make on the operator's behalf.
+    report_firm_name: str = Field(
+        "Equity Research", validation_alias="REPORT_FIRM_NAME"
+    )
+    report_author: str = Field("", validation_alias="REPORT_AUTHOR")
+    report_disclaimer: str = Field("", validation_alias="REPORT_DISCLAIMER")
+
     report_output_dir: str = Field(
         str(PROJECT_ROOT / "reports"), validation_alias="REPORT_OUTPUT_DIR"
     )

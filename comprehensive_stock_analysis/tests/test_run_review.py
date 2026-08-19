@@ -380,3 +380,87 @@ class TestPipelineNarrationLeaks:
         issues = []
         run_review._check_prompt_leaks("TEST", issues)
         assert issues == []
+
+
+class TestNarrativeConsistency:
+    """The synthesis stage can corrupt a figure that was right upstream.
+
+    On an IBM run every workpaper and the collected data said short interest
+    was 2.62% of float; the client-facing narrative said 2.1%. Every artifact
+    existed and validated — the number was simply wrong, and nothing looked.
+    """
+
+    def _seed(self, tmp_path, monkeypatch, narrative, chart):
+        import json
+
+        from src.stock_analysis.config.settings import settings
+
+        monkeypatch.setattr(settings, "report_output_dir", str(tmp_path))
+        d = tmp_path / "TEST"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "TEST_comprehensive_report.md").write_text(narrative, encoding="utf-8")
+        (d / "TEST_chart_data.json").write_text(json.dumps(chart), encoding="utf-8")
+
+    def test_short_interest_mismatch_is_flagged(self, tmp_path, monkeypatch):
+        from src.stock_analysis.web import run_review
+
+        self._seed(
+            tmp_path,
+            monkeypatch,
+            "## X\n\nShort interest is about 2.1% of the float.\n",
+            {"sentiment_snapshot": {"short_pct_of_float": 2.62}},
+        )
+        issues = []
+        run_review._check_narrative_consistency("TEST", issues)
+        assert [i["code"] for i in issues] == ["narrative_contradicts_data"]
+
+    def test_rounding_is_not_a_contradiction(self, tmp_path, monkeypatch):
+        """2.62 written as 2.6 is fine; 2.1 is not."""
+        from src.stock_analysis.web import run_review
+
+        self._seed(
+            tmp_path,
+            monkeypatch,
+            "## X\n\nShort interest is 2.6% of float.\n",
+            {"sentiment_snapshot": {"short_pct_of_float": 2.62}},
+        )
+        issues = []
+        run_review._check_narrative_consistency("TEST", issues)
+        assert issues == []
+
+    def test_analyst_count_mismatch_is_flagged(self, tmp_path, monkeypatch):
+        from src.stock_analysis.web import run_review
+
+        self._seed(
+            tmp_path,
+            monkeypatch,
+            "## X\n\nCoverage spans 56 analysts.\n",
+            {"analyst": {"rating_counts": {"total_analysts": 69}}},
+        )
+        issues = []
+        run_review._check_narrative_consistency("TEST", issues)
+        assert [i["code"] for i in issues] == ["narrative_contradicts_data"]
+
+    def test_partial_count_alongside_the_total_is_accepted(self, tmp_path, monkeypatch):
+        """ "17 of 31 analysts" cites two numbers; one matching is enough."""
+        from src.stock_analysis.web import run_review
+
+        self._seed(
+            tmp_path,
+            monkeypatch,
+            "## X\n\n17 of 31 analysts rate it Buy.\n",
+            {"analyst": {"rating_counts": {"total_analysts": 31}}},
+        )
+        issues = []
+        run_review._check_narrative_consistency("TEST", issues)
+        assert issues == []
+
+    def test_no_structured_counterpart_means_no_guessing(self, tmp_path, monkeypatch):
+        from src.stock_analysis.web import run_review
+
+        self._seed(
+            tmp_path, monkeypatch, "## X\n\nShort interest is 2.1% of float.\n", {}
+        )
+        issues = []
+        run_review._check_narrative_consistency("TEST", issues)
+        assert issues == []
