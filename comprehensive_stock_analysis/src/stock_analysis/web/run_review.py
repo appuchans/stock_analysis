@@ -170,16 +170,36 @@ def _check_target_against_model(
         for s in scenarios
         if isinstance(s, dict) and _is_number(s.get("intrinsic_per_share"))
     ]
+    target = rec.get("target_price")
+    mean = ((chart.get("analyst") or {}).get("price_targets") or {}).get("mean")
+
     if not values:
+        # No model at all is exactly when a target needs the most scrutiny, and
+        # returning here disabled the echo check precisely then: Amazon
+        # published $325.00 against a consensus mean of $326.84 and a median of
+        # $325.00, with no valuation work behind it, and the run reviewed clean.
+        if (
+            _is_number(target)
+            and _is_number(mean)
+            and float(mean)
+            and abs(float(target) - float(mean)) / float(mean) < 0.01
+        ):
+            issues.append(
+                _issue(
+                    "warning",
+                    "target_is_consensus_without_a_model",
+                    f"target {float(target):.2f} sits within 1% of the consensus "
+                    f"mean {float(mean):.2f} and no valuation model was produced "
+                    "— this is the Street's number with a house label on it",
+                )
+            )
         return
 
     lo, hi = min(values), max(values)
-    target = rec.get("target_price")
 
     # A target that lands on the consensus mean while the model disagrees is
     # the failure a reviewer named twice: "$244 is not a view" when the Street
     # mean was $244.16 and the base case $269.32.
-    mean = ((chart.get("analyst") or {}).get("price_targets") or {}).get("mean")
     base = next(
         (
             float(s["intrinsic_per_share"])

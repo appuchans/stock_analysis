@@ -844,3 +844,73 @@ class TestShareClassIsNotAPeer:
         picked = [r["symbol"] for r in select_comparables(rows)]
         assert "GOOGL" not in picked
         assert "META" in picked
+
+
+class TestSizeOutliersAreExcluded:
+    def test_a_micro_cap_is_not_a_peer_for_a_mega_cap(self):
+        """Tandy Leather ($0.03bn) reached Amazon's ($2,819bn) comparables
+        table: ranking by size similarity orders candidates but never drops
+        any, and with four candidates for four slots that changes nothing."""
+        from src.stock_analysis.tools.yf_summaries import select_comparables
+
+        rows = [
+            {
+                "symbol": "AMZN",
+                "is_subject": True,
+                "sector": "Consumer Cyclical",
+                "industry": "Internet Retail",
+                "market_cap_b": 2818.6,
+            },
+            {
+                "symbol": "BABA",
+                "sector": "Consumer Cyclical",
+                "industry": "Internet Retail",
+                "market_cap_b": 307.2,
+            },
+            {
+                "symbol": "TLF",
+                "sector": "Consumer Cyclical",
+                "industry": "Specialty Retail",
+                "market_cap_b": 0.03,
+            },
+            {
+                "symbol": "EBAY",
+                "sector": "Consumer Cyclical",
+                "industry": "Internet Retail",
+                "market_cap_b": 46.3,
+            },
+            {
+                "symbol": "CPNG",
+                "sector": "Consumer Cyclical",
+                "industry": "Internet Retail",
+                "market_cap_b": 29.1,
+            },
+        ]
+        assert "TLF" not in [r["symbol"] for r in select_comparables(rows)]
+
+    def test_a_small_cap_subject_still_gets_a_table(self):
+        """The cut must not disable comparison for smaller companies."""
+        from src.stock_analysis.tools.yf_summaries import select_comparables
+
+        rows = [
+            {
+                "symbol": "SUBJ",
+                "is_subject": True,
+                "sector": "Tech",
+                "industry": "Software",
+                "market_cap_b": 1.0,
+            },
+            {
+                "symbol": "A",
+                "sector": "Tech",
+                "industry": "Software",
+                "market_cap_b": 2.0,
+            },
+            {
+                "symbol": "B",
+                "sector": "Tech",
+                "industry": "Software",
+                "market_cap_b": 0.5,
+            },
+        ]
+        assert len(select_comparables(rows)) == 3

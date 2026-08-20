@@ -879,6 +879,12 @@ def _key_metrics(
 # trade off against each other rather than acting as gates.
 _DIFFERENT_INDUSTRY_PENALTY = 1.0
 _DIFFERENT_SECTOR_PENALTY = 2.5
+# Widest market-cap ratio to the subject that still reads as a comparable.
+# Deliberately loose: at $2.8tn almost nothing sits within 20x of Amazon, and a
+# tight band simply disabled itself via the "enough must survive" guard. This
+# is an outlier cut, not a similarity measure — ranking handles similarity.
+# Tandy Leather at 0.001% of Amazon is excluded; eBay at 1.6% is not.
+_MAX_SIZE_RATIO = 100.0
 
 
 def select_comparables(
@@ -933,6 +939,20 @@ def select_comparables(
             not subject_name or str(r.get("name") or "").lower().strip() != subject_name
         )
     ]
+    # Rank, then exclude. Scoring alone put Tandy Leather Factory ($0.03bn) in
+    # Amazon's ($2,819bn) comparables table: with four candidates and room for
+    # four, ordering them changes nothing. Nothing two orders of magnitude away
+    # is a comparable, however it ranks — but the cut only applies while enough
+    # survive it, so a subject with few true peers still gets a table.
+    if base > 0:
+        in_band = [
+            r
+            for r in candidates
+            if (r.get("market_cap_b") or 0) > 0
+            and 1 / _MAX_SIZE_RATIO <= (r["market_cap_b"] / base) <= _MAX_SIZE_RATIO
+        ]
+        if len(in_band) >= 2:
+            candidates = in_band
     others = sorted(candidates, key=score)
     return [subject] + others[:limit]
 

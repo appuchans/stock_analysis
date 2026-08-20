@@ -464,3 +464,56 @@ class TestNarrativeConsistency:
         issues = []
         run_review._check_narrative_consistency("TEST", issues)
         assert issues == []
+
+
+class TestTargetWithoutAModel:
+    """No valuation model is when a target needs the most scrutiny.
+
+    The echo check returned early when no scenarios existed, so Amazon
+    published $325.00 against a consensus mean of $326.84 — and a median of
+    exactly $325.00 — with no valuation work behind it, and reviewed clean.
+    """
+
+    def _seed(self, tmp_path, monkeypatch, target, mean, scenarios=None):
+        import json
+
+        from src.stock_analysis.config.settings import settings
+
+        monkeypatch.setattr(settings, "report_output_dir", str(tmp_path))
+        d = tmp_path / "TEST"
+        d.mkdir(parents=True, exist_ok=True)
+        chart = {
+            "asset_type": "stock",
+            "company": {"name": "Test"},
+            "key_stats": {"current_price": 265.8},
+            "price_history": [{"date": "2026-08-18", "close": 265.8}],
+            "analyst": {"price_targets": {"mean": mean}},
+        }
+        if scenarios:
+            chart["valuation_scenarios"] = scenarios
+        (d / "TEST_chart_data.json").write_text(json.dumps(chart), encoding="utf-8")
+        (d / "TEST_investment_recommendation.json").write_text(
+            json.dumps(
+                {
+                    "recommendation": "Buy",
+                    "target_price": target,
+                    "confidence": 0.8,
+                    "risk_level": "High",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_consensus_target_with_no_model_is_flagged(self, tmp_path, monkeypatch):
+        from src.stock_analysis.web import run_review
+
+        self._seed(tmp_path, monkeypatch, target=325.0, mean=326.84)
+        codes = [i["code"] for i in run_review.review_run("TEST")["issues"]]
+        assert "target_is_consensus_without_a_model" in codes
+
+    def test_an_independent_target_with_no_model_is_fine(self, tmp_path, monkeypatch):
+        from src.stock_analysis.web import run_review
+
+        self._seed(tmp_path, monkeypatch, target=290.0, mean=326.84)
+        codes = [i["code"] for i in run_review.review_run("TEST")["issues"]]
+        assert "target_is_consensus_without_a_model" not in codes
