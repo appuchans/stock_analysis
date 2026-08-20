@@ -345,6 +345,60 @@ def _cover(model: ReportModel, charts: Dict[str, str]) -> str:
     return "".join(parts)
 
 
+def _forecast_table(model: ReportModel) -> str:
+    """The explicit three-year forecast, and the value derived from it.
+
+    The absence of this was the standing objection to every note the system
+    produced: segments and drivers were described, never measured, so the
+    target had nothing underneath it and defaulted to consensus.
+    """
+    fc = model.chart.get("forecast") or {}
+    rows = fc.get("years") or []
+    if not rows:
+        return ""
+    header = [
+        "Year",
+        "Revenue ($B)",
+        "Growth",
+        "Op margin",
+        "Op income ($B)",
+        "Capex (% rev)",
+        "FCF ($B)",
+    ]
+    body = [
+        [
+            str(r["year"]),
+            f"{r['revenue_m'] / 1000:,.1f}",
+            f"{r['revenue_growth_pct']:,.1f}%",
+            f"{r['operating_margin_pct']:,.1f}%",
+            f"{r['operating_income_m'] / 1000:,.1f}",
+            f"{r['capex_pct_of_revenue']:,.1f}%",
+            f"{r['free_cash_flow_m'] / 1000:,.1f}",
+        ]
+        for r in rows
+    ]
+    out = ["\n== Three-year forecast\n\n", _table([header] + body)]
+
+    a = fc.get("assumptions") or {}
+    if a:
+        out.append(
+            "\n#text(7.5pt, fill: muted)[Revenue: "
+            f"{_inline(str(a.get('revenue_basis', '')))}. Operating margin from "
+            f"{a.get('base_operating_margin_pct')}% moving "
+            f"{a.get('margin_change_ppt_per_year')}pp a year. Capital spending "
+            f"{a.get('capex_pct_now')}% of revenue reverting toward "
+            f"{a.get('capex_pct_reverting_to')}%. Operating cash flow "
+            f"{a.get('operating_cf_margin_pct')}% of revenue.]\n"
+        )
+    v = model.chart.get("forecast_valuation") or {}
+    if v.get("value_per_share"):
+        out.append(
+            f"\n*Value from this forecast: ${v['value_per_share']:,.2f} a share* — "
+            f"{_inline(str(v.get('method', '')))}.\n"
+        )
+    return "".join(out)
+
+
 def _peer_table(model: ReportModel) -> str:
     """Comparable multiples side by side, rendered from data.
 
@@ -549,6 +603,7 @@ def build_typst_source(model: ReportModel, charts: Dict[str, str]) -> str:
                     f'\n#figure(image("{charts[exhibit]}", width: 100%){tail})\n'
                 )
                 if exhibit == "football":
+                    src.append(_forecast_table(model))
                     src.append(_peer_table(model))
                 break
 

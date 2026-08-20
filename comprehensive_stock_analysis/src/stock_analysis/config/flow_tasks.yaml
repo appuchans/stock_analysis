@@ -449,6 +449,13 @@ recommendation:
        {valuation_multiples_data} gives the multiples this company actually
        trades at. Quote those figures and no others — never supply a P/E,
        EV/EBITDA, PEG or cash-flow yield from memory.
+       {forecast_data} is this run's explicit three-year forecast and the value
+       that falls out of it. That value is your starting point. Adopt it, or
+       name the single assumption you disagree with — revenue growth, operating
+       margin, capital intensity or the exit multiple — and say what you change
+       it to and what the target becomes. A target that is not traceable to
+       that forecast, or to a stated change in one of its assumptions, must not
+       be published at all.
        Anchor the target to your OWN valuation work first: {valuation_model_data}
        gives this run's discounted-cash-flow range. State where your target sits
        within that range. If it falls outside the range, you must name the

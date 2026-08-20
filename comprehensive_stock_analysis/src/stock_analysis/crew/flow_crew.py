@@ -391,6 +391,40 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             else "No verified positioning figures — do not quote any."
         )
 
+        # The forecast and the value it implies, so the target has something to
+        # be derived from. Without it the advisor had only consensus to anchor
+        # on, and duly reproduced it.
+        chart_now = (self.state.data.get("chart") or {}) or {}
+        fcast = chart_now.get("forecast") or {}
+        fval = chart_now.get("forecast_valuation") or {}
+        if fcast.get("years"):
+            lines = [
+                f"{r['year']}: revenue ${r['revenue_m'] / 1000:,.1f}bn "
+                f"(+{r['revenue_growth_pct']}%), operating margin "
+                f"{r['operating_margin_pct']}%, operating income "
+                f"${r['operating_income_m'] / 1000:,.1f}bn, capex "
+                f"{r['capex_pct_of_revenue']}% of revenue, free cash flow "
+                f"${r['free_cash_flow_m'] / 1000:,.1f}bn"
+                for r in fcast["years"]
+            ]
+            base["forecast_data"] = (
+                "Three-year forecast for this run — "
+                + "; ".join(lines)
+                + ". "
+                + (
+                    f"Value implied by it: ${fval['value_per_share']:,.2f} a "
+                    f"share ({fval.get('method', '')}). Your target must follow "
+                    "from this forecast: either adopt this value, or state which "
+                    "assumption you change and what it changes it to."
+                    if fval.get("value_per_share")
+                    else "No value could be derived from it."
+                )
+            )
+        else:
+            base["forecast_data"] = (
+                "No forecast was produced — do not publish a price target."
+            )
+
         base["valuation_multiples_data"] = (
             f"{self.state.symbol} trades at " + ", ".join(stated) + "."
             if stated
@@ -956,6 +990,46 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             )
             if scen:
                 chart["valuation_scenarios"] = scen
+
+            # An explicit three-year forecast, and a value derived from it.
+            # Built revenue-first from consensus rather than from a single EPS
+            # growth figure, because that figure is a one-year comparison and
+            # broke on every capex-heavy compounder it was applied to.
+            try:
+                from ..tools import forecast as fc
+
+                fcast = fc.build_forecast(
+                    fin.get("annual_income") or {},
+                    cf_years,
+                    an.get("revenue_estimates_m"),
+                )
+                if fcast.get("years"):
+                    chart["forecast"] = fcast
+                    ebit_now = (
+                        (fin.get("annual_income") or {})
+                        .get(max(fin["annual_income"]), {})
+                        .get("operating_income_m")
+                    )
+                    mult = fc.current_ev_ebit(
+                        (mcap / 1e6) if mcap else None,
+                        (debt_m or 0) - (cash_m or 0),
+                        ebit_now,
+                    )
+                    valued = fc.value_by_exit_multiple(
+                        fcast,
+                        shares_m,
+                        mult,
+                        (debt_m or 0) - (cash_m or 0),
+                        discount_pct=ys.wacc_pct(
+                            beta=ks.get("beta"),
+                            market_cap_m=(mcap / 1e6) if mcap else None,
+                            total_debt_m=debt_m,
+                        ),
+                    )
+                    if valued:
+                        chart["forecast_valuation"] = valued
+            except Exception as exc:
+                _logger.warning("forecast failed for %s: %s", sym, exc)
             # sentiment_history is appended at apply time (kept fresh on cache
             # hits), so it is intentionally not stored in the cached chart here.
             bundle["chart"] = chart
