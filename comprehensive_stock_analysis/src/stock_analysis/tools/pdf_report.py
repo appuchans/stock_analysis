@@ -15,6 +15,7 @@ resolve them in the same place.
 import logging
 import re
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
@@ -277,17 +278,23 @@ _RATING_KEY = [
 ]
 
 
-def _cover(model: ReportModel, charts: Dict[str, str]) -> str:
+def _cover(model: ReportModel, charts: Dict[str, str], generated_at: str) -> str:
     tiles = model.key_stat_tiles()
     tile_src = ", ".join(f'(("{_str(lb)}"), ("{_str(val)}"))' for lb, val in tiles)
     parts = [
+        # Distinct from the price date beneath it: this is when the file was
+        # produced, not the session the prices belong to. Placed absolutely so
+        # it sits at the top-right corner of the cover regardless of what the
+        # centred masthead above it needs.
+        f"#place(top + right, dx: 0pt, dy: -8pt)"
+        f"[#text(7.5pt, fill: muted)[Generated {_esc(generated_at)}]]\n",
         f"#align(center)[\n"
         f"  #text(9pt, fill: muted)[{_esc(settings.report_firm_name)}]\n"
         f"  #v(2pt)\n"
         f'  #text(21pt, weight: "bold")[{_esc(model.name)}]\n'
         f"  #v(-5pt)\n"
         f"  #text(10pt, fill: muted)[{_esc(model.subtitle)}]\n"
-        f"]\n#v(9pt)\n"
+        f"]\n#v(9pt)\n",
     ]
     if tiles:
         parts.append(
@@ -575,7 +582,9 @@ _PREAMBLE = """
 """
 
 
-def build_typst_source(model: ReportModel, charts: Dict[str, str]) -> str:
+def build_typst_source(
+    model: ReportModel, charts: Dict[str, str], generated_at: Optional[str] = None
+) -> str:
     """The complete Typst document for this run."""
     header_left = _esc(f"{model.symbol} — {model.name}")
     header_right = _esc(settings.report_firm_name)
@@ -586,7 +595,9 @@ def build_typst_source(model: ReportModel, charts: Dict[str, str]) -> str:
         _PREAMBLE.replace("#HEADER_LEFT", header_left)
         .replace("#HEADER_RIGHT", header_right)
         .replace("#FOOTER_LEFT", footer_left),
-        _cover(model, charts),
+        _cover(
+            model, charts, generated_at or datetime.now().strftime("%Y-%m-%d %H:%M")
+        ),
     ]
 
     # Seeded with what the cover already showed. The cover renders the

@@ -660,19 +660,30 @@ class TestSelectComparables:
             },
         ]
 
-    def test_same_industry_outranks_a_bigger_mismatch(self):
-        """Scored, not gated. A hard industry filter traded one failure for
-        another: it excluded SAP and Cisco — far closer in size and plainly
-        comparable — over a yfinance label, and admitted a $5bn firm against a
-        $224bn subject."""
+    def test_same_industry_wins_outright_when_enough_exist(self):
+        """Industry match is checked first, and restricts the pool outright
+        when it finds enough — a semiconductor maker has no business appearing
+        just because it ranks well on size once admitted."""
         from src.stock_analysis.tools.yf_summaries import select_comparables
 
         picked = [r["symbol"] for r in select_comparables(self._rows())]
         assert picked[0] == "IBM"
-        # Same industry and closest in size leads.
+        assert set(picked[1:]) == {"ACN", "INFY"}
+        assert "MU" not in picked
+
+    def test_falls_back_to_size_ranking_when_industry_match_is_too_thin(self):
+        """With only one same-industry peer, the industry-only pool is too
+        small to use, so ranking falls back across the wider candidate set —
+        and a same-industry peer still wins there on size alone."""
+        from src.stock_analysis.tools.yf_summaries import select_comparables
+
+        rows = [r for r in self._rows() if r["symbol"] != "INFY"]
+        picked = [r["symbol"] for r in select_comparables(rows)]
+        assert picked[0] == "IBM"
         assert picked[1] == "ACN"
-        # A semiconductor maker does not outrank same-industry peers.
-        assert picked.index("MU") > picked.index("INFY")
+        # A semiconductor maker still does not outrank a same-industry peer.
+        assert "CSCO" in picked
+        assert picked.index("MU") > picked.index("CSCO")
 
     def test_wrong_sector_is_pushed_to_the_back(self):
         from src.stock_analysis.tools.yf_summaries import select_comparables
@@ -914,3 +925,108 @@ class TestSizeOutliersAreExcluded:
             },
         ]
         assert len(select_comparables(rows)) == 3
+
+
+class TestConglomerateSegmentPeers:
+    """A single industry label cannot describe a conglomerate.
+
+    yfinance calls Amazon "Internet Retail" and says nothing about AWS, so
+    screened discovery only ever returned retail names — Casey's General
+    Stores reached the table before Microsoft or Google did, though every
+    note's own risk section names them as AWS's actual competitors.
+    """
+
+    def test_recognises_named_business_lines_from_segment_names(self):
+        from src.stock_analysis.tools.yf_summaries import named_segment_peer_tickers
+
+        groups = named_segment_peer_tickers(
+            ["Online Stores", "Amazon Web Services", "Advertising Services"]
+        )
+        assert groups["cloud/hyperscale"] == ["MSFT", "GOOGL"]
+        assert groups["digital advertising"] == ["GOOGL", "META"]
+        assert "logistics/delivery" not in groups
+
+    def test_unrecognised_segments_yield_nothing(self):
+        from src.stock_analysis.tools.yf_summaries import named_segment_peer_tickers
+
+        assert named_segment_peer_tickers(["Widgets", "Gadgets"]) == {}
+        assert named_segment_peer_tickers([]) == {}
+        assert named_segment_peer_tickers(None) == {}
+
+    def test_segment_peers_are_reserved_slots_not_ranked_out(self):
+        """MSFT is not 'Internet Retail' and would lose the industry-match
+        restriction outright without an explicit reservation."""
+        from src.stock_analysis.tools.yf_summaries import select_comparables
+
+        rows = [
+            {
+                "symbol": "AMZN",
+                "is_subject": True,
+                "sector": "Consumer Cyclical",
+                "industry": "Internet Retail",
+                "market_cap_b": 2830.8,
+            },
+            {
+                "symbol": "BABA",
+                "sector": "Consumer Cyclical",
+                "industry": "Internet Retail",
+                "market_cap_b": 308.3,
+            },
+            {
+                "symbol": "EBAY",
+                "sector": "Consumer Cyclical",
+                "industry": "Internet Retail",
+                "market_cap_b": 46.5,
+            },
+            {
+                "symbol": "CPNG",
+                "sector": "Consumer Cyclical",
+                "industry": "Internet Retail",
+                "market_cap_b": 29.2,
+            },
+            {
+                "symbol": "MSFT",
+                "sector": "Technology",
+                "industry": "Software - Infrastructure",
+                "market_cap_b": 3800.0,
+            },
+            {
+                "symbol": "GOOGL",
+                "sector": "Communication Services",
+                "industry": "Internet Content & Information",
+                "market_cap_b": 2200.0,
+            },
+        ]
+        groups = {"cloud/hyperscale": ["MSFT", "GOOGL"]}
+        picked = [r["symbol"] for r in select_comparables(rows, segment_groups=groups)]
+        assert "MSFT" in picked  # reserved, not out-ranked by the retail screen
+        assert picked[0] == "AMZN"
+
+    def test_no_segment_groups_behaves_exactly_as_before(self):
+        """Passing no groups must not change the general-screen result."""
+        from src.stock_analysis.tools.yf_summaries import select_comparables
+
+        rows = [
+            {
+                "symbol": "AMZN",
+                "is_subject": True,
+                "sector": "Consumer Cyclical",
+                "industry": "Internet Retail",
+                "market_cap_b": 2830.8,
+            },
+            {
+                "symbol": "BABA",
+                "sector": "Consumer Cyclical",
+                "industry": "Internet Retail",
+                "market_cap_b": 308.3,
+            },
+            {
+                "symbol": "EBAY",
+                "sector": "Consumer Cyclical",
+                "industry": "Internet Retail",
+                "market_cap_b": 46.5,
+            },
+        ]
+        with_none = [r["symbol"] for r in select_comparables(rows)]
+        with_empty = [r["symbol"] for r in select_comparables(rows, segment_groups={})]
+        assert with_none == with_empty

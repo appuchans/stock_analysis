@@ -581,8 +581,11 @@ report:
        the short interest, analyst mix and consensus targets as verified data.
        Do not re-derive them from the stage summaries — that is how one report
        published short interest as 2.1% of float when the data said 2.62%.
+    {decision_data}
     7. '## Valuation & Recommendation' — close the argument: tie valuation back to the
        thesis pillars and restate the rating and target with the key trade-off.
+       State the rating and target exactly as given above — never a figure
+       carried over from the analyst consensus discussed earlier in the note.
     8. '## Market Timing Note' — ONLY if technical analysis appears in the source
        material: one short paragraph, clearly framed as short-term context with limited
        weight for a long-term investor. Omit the section entirely otherwise.

@@ -373,11 +373,13 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 + f" across {total} analysts"
             )
         if pts.get("mean"):
+            # Rounded to the cent. Interpolated raw this printed "consensus
+            # target 326.8373" straight into the client document.
             facts.append(
-                f"consensus target {pts['mean']}"
-                + (f", median {pts['median']}" if pts.get("median") else "")
+                f"consensus target ${pts['mean']:,.2f}"
+                + (f", median ${pts['median']:,.2f}" if pts.get("median") else "")
                 + (
-                    f", range {pts['low']}-{pts['high']}"
+                    f", range ${pts['low']:,.2f}-${pts['high']:,.2f}"
                     if pts.get("low") and pts.get("high")
                     else ""
                 )
@@ -423,6 +425,38 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         else:
             base["forecast_data"] = (
                 "No forecast was produced — do not publish a price target."
+            )
+
+        # What the advisor actually decided, so the narrative cannot contradict
+        # it. The report stage previously saw only the stage summaries: when the
+        # advisor declined to set a target, the narrative wrote "$325.0 target
+        # price" anyway, lifted from the consensus median printed a page above.
+        rec_state = self.state.recommendation or {}
+        decided: Dict[str, Any] = {}
+        if rec_state.get("result"):
+            try:
+                decided = json.loads(_strip_md_fences(str(rec_state["result"])))
+            except Exception:
+                decided = {}
+        if decided:
+            tgt = decided.get("target_price")
+            base["decision_data"] = (
+                f"The rating is {decided.get('recommendation', 'unrated')}. "
+                + (
+                    f"The published target is ${tgt}. Use that figure and no "
+                    "other; never restate the consensus target as ours."
+                    if tgt is not None
+                    else "NO price target is published for this company. Do not "
+                    "state a target price anywhere, do not infer one, and do "
+                    "not repeat the consensus figure as though it were ours. "
+                    "Say the rating rests on margin of safety at the current "
+                    "level instead."
+                )
+            )
+        else:
+            base["decision_data"] = (
+                "No recommendation is available; do not state a rating or a "
+                "target price."
             )
 
         base["valuation_multiples_data"] = (
@@ -741,6 +775,21 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # after the parallel fetch, so this is the first point where both are
         # known: if discovery found nothing but the providers did, price the
         # provider's peers instead of publishing an empty table.
+        # A conglomerate's segments name business lines a single industry
+        # label cannot: Amazon's own label is "Internet Retail", which never
+        # surfaces Microsoft or Google Cloud though every note's own risk
+        # section names them as AWS's competitors. Matched here so those
+        # tickers are priced and reach select_comparables alongside the
+        # provider pool, whichever path populated it.
+        seg_periods = ((structured.get("segments") or {}).get("by_product")) or []
+        seg_names = list(
+            (seg_periods[0].get("segments") or {}).keys() if seg_periods else []
+        )
+        segment_groups = ys.named_segment_peer_tickers(seg_names)
+        segment_tickers = sorted(
+            {t for tickers in segment_groups.values() for t in tickers}
+        )
+
         if not (structured.get("peers") or {}).get("rows"):
             tickers = [
                 p.get("symbol")
@@ -749,13 +798,16 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 # The pool is the union of two providers and carries junk from
                 # both; screening needs enough candidates to choose between.
             ][:14]
+            tickers = list(dict.fromkeys(tickers + segment_tickers))
             if tickers:
                 try:
                     priced = ys.summarize_peers(sym, peer_symbols=tickers)
                 except Exception as exc:
                     _logger.debug("provider-peer metrics failed for %s: %s", sym, exc)
                     priced = {}
-                rows = ys.select_comparables(priced.get("rows") or [])
+                rows = ys.select_comparables(
+                    priced.get("rows") or [], segment_groups=segment_groups
+                )
                 if len(rows) >= 2:
                     structured["peers"] = {"rows": rows, "basis": "provider peer list"}
                     _logger.info(
@@ -974,7 +1026,15 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             price = ks.get("current_price")
             # yfinance exposes no clean diluted share count here, but market cap
             # and price are both present and their ratio is exactly it.
-            shares_m = (mcap / price) / 1e6 if mcap and price and price > 0 else None
+            # Derived from the same market cap the cover prints, after that
+            # figure is normalised to the peer row. Taken before, the cover
+            # implied 10,650m shares while the valuation divided by 10,783m.
+            norm_mcap = (
+                (me.get("market_cap_b") * 1e9) if me.get("market_cap_b") else mcap
+            )
+            shares_m = (
+                (norm_mcap / price) / 1e6 if norm_mcap and price and price > 0 else None
+            )
             debt_m = latest_bs.get("total_debt_m")
             cash_m = latest_bs.get("cash_and_sti_m")
             scen = ys.fcf_dcf_scenarios(

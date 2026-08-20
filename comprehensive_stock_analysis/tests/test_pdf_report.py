@@ -170,3 +170,109 @@ class TestTheDocumentActuallyCompiles:
         (work / "r.typ").write_text(P.build_typst_source(model, {}), encoding="utf-8")
         typst.compile(str(work / "r.typ"), output=str(work / "r.pdf"))
         assert (work / "r.pdf").exists()
+
+
+class TestTargetClaimRedaction:
+    """A refused target must not survive in the prose.
+
+    The advisor declined to set a target_price, and the cover correctly showed
+    no target tile — but the narrative wrote "$325.0 target price" twice,
+    lifted from the consensus median printed a page earlier. The prose is
+    published unchecked, so a refusal upstream never reached the reader.
+    """
+
+    def _model(self, tmp_path, monkeypatch, narrative):
+        import json
+
+        from src.stock_analysis.config.settings import settings
+
+        monkeypatch.setattr(settings, "report_output_dir", str(tmp_path))
+        d = tmp_path / "TEST"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "TEST_chart_data.json").write_text(
+            json.dumps({"asset_type": "stock", "key_stats": {"current_price": 100.0}}),
+            encoding="utf-8",
+        )
+        (d / "TEST_investment_recommendation.json").write_text(
+            json.dumps({"recommendation": "Buy", "target_price": None}),
+            encoding="utf-8",
+        )
+        (d / "TEST_comprehensive_report.md").write_text(narrative, encoding="utf-8")
+        return ReportModel("TEST")
+
+    def test_bold_target_price_is_struck_grammatically(self, tmp_path, monkeypatch):
+        m = self._model(
+            tmp_path,
+            monkeypatch,
+            "## Investment Thesis\n\n"
+            "We rate Amazon **Buy** with a **$325.0 target price**. More text.\n",
+        )
+        assert m.prose_asserts_a_target is True
+        out = m._readable_narrative()
+        assert "$325.0" not in out
+        assert "target**" not in out  # no orphaned emphasis marker
+        assert "a no published" not in out.lower()  # no orphaned article
+        assert "no published price target" in out
+
+    def test_target_price_of_phrasing_is_struck(self, tmp_path, monkeypatch):
+        m = self._model(
+            tmp_path,
+            monkeypatch,
+            "## Investment Thesis\n\nBuy, with a target price of $325.0. More.\n",
+        )
+        out = m._readable_narrative()
+        assert "$325.0" not in out
+        assert "no published price target" in out
+
+    def test_a_genuinely_reported_consensus_figure_is_left_alone(
+        self, tmp_path, monkeypatch
+    ):
+        """Only a *target* claim is struck — the consensus median is real data."""
+        m = self._model(
+            tmp_path,
+            monkeypatch,
+            "## Sentiment\n\nThe consensus target is **326.8373**, with a "
+            "median of **325.0** and a range of 230-405.\n",
+        )
+        out = m._readable_narrative()
+        assert "325.0" in out
+        assert "326.8373" in out
+
+    def test_a_published_target_is_never_redacted(self, tmp_path, monkeypatch):
+        import json
+
+        from src.stock_analysis.config.settings import settings
+
+        monkeypatch.setattr(settings, "report_output_dir", str(tmp_path))
+        d = tmp_path / "TEST2"
+        d.mkdir(parents=True)
+        (d / "TEST2_chart_data.json").write_text(
+            json.dumps({"asset_type": "stock", "key_stats": {"current_price": 100.0}}),
+            encoding="utf-8",
+        )
+        (d / "TEST2_investment_recommendation.json").write_text(
+            json.dumps({"recommendation": "Hold", "target_price": 116.0}),
+            encoding="utf-8",
+        )
+        (d / "TEST2_comprehensive_report.md").write_text(
+            "## Investment Thesis\n\nHold, with a **$116.0 target price**.\n",
+            encoding="utf-8",
+        )
+        m = ReportModel("TEST2")
+        assert m.prose_asserts_a_target is False
+        assert "$116.0" in m._readable_narrative()
+
+
+class TestGenerationTimestamp:
+    """When the file was produced, distinct from the price's own as-of date."""
+
+    def test_generated_at_appears_and_is_distinct_from_the_price_date(self, model):
+        src = P.build_typst_source(model, {}, generated_at="2026-08-20 14:04")
+        assert "Generated 2026-08-20 14:04" in src
+        # Not the same string as the price label, so a reader cannot confuse
+        # "when this file was made" with "what session the price belongs to".
+        assert "Generated 2026-08-18" not in src
+
+    def test_defaults_to_now_when_not_supplied(self, model):
+        src = P.build_typst_source(model, {})
+        assert "Generated " in src

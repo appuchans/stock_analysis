@@ -887,8 +887,50 @@ _DIFFERENT_SECTOR_PENALTY = 2.5
 _MAX_SIZE_RATIO = 100.0
 
 
+# Named peers for the individual business lines a conglomerate reports as
+# segments. A single yfinance industry label cannot describe one: it calls
+# Amazon "Internet Retail" and says nothing about AWS, so screened discovery
+# only ever returns retail names — Casey's General Stores reached a
+# comparables table before Microsoft or Google did, though every note's own
+# risk section names them as AWS's actual competitors.
+_SEGMENT_PEER_GROUPS: Dict[str, List[str]] = {
+    "cloud/hyperscale": ["MSFT", "GOOGL"],
+    "logistics/delivery": ["UPS", "FDX"],
+    "digital advertising": ["GOOGL", "META"],
+}
+
+_SEGMENT_KEYWORDS: List[Tuple[str, str]] = [
+    ("web services", "cloud/hyperscale"),
+    ("cloud", "cloud/hyperscale"),
+    ("logistics", "logistics/delivery"),
+    ("delivery", "logistics/delivery"),
+    ("fulfillment", "logistics/delivery"),
+    ("shipping", "logistics/delivery"),
+    ("advertising", "digital advertising"),
+]
+
+
+def named_segment_peer_tickers(segment_names: List[str]) -> Dict[str, List[str]]:
+    """Map a subject's reported segment names onto named competitor groups.
+
+    Returns ``{group_label: [tickers]}`` for each business line recognised in
+    ``segment_names``. Deliberately a small curated table rather than an
+    inferred one — these are competitors a reader would name unprompted, not a
+    screen's best guess.
+    """
+    hits: Dict[str, List[str]] = {}
+    for seg in segment_names or []:
+        low = str(seg).lower()
+        for keyword, group in _SEGMENT_KEYWORDS:
+            if keyword in low and group not in hits:
+                hits[group] = _SEGMENT_PEER_GROUPS[group]
+    return hits
+
+
 def select_comparables(
-    rows: List[Dict[str, Any]], limit: int = 4
+    rows: List[Dict[str, Any]],
+    limit: int = 4,
+    segment_groups: Optional[Dict[str, List[str]]] = None,
 ) -> List[Dict[str, Any]]:
     """Rank candidates by how comparable they actually are to the subject.
 
@@ -939,11 +981,21 @@ def select_comparables(
             not subject_name or str(r.get("name") or "").lower().strip() != subject_name
         )
     ]
-    # Rank, then exclude. Scoring alone put Tandy Leather Factory ($0.03bn) in
-    # Amazon's ($2,819bn) comparables table: with four candidates and room for
-    # four, ordering them changes nothing. Nothing two orders of magnitude away
-    # is a comparable, however it ranks — but the cut only applies while enough
-    # survive it, so a subject with few true peers still gets a table.
+    # Industry match first, and without a size restriction on this pass:
+    # business model is stronger evidence of comparability than size, and for
+    # a subject the scale of Amazon almost nothing clears a size band anyway.
+    # Applying the size cut first excluded Etsy (same industry, $7.5bn — a
+    # 0.27% size ratio) while Casey's General Stores ($30.7bn, "Specialty
+    # Retail") cleared the cut on size alone and reached the table on a
+    # scoring penalty that four candidates for four slots could not act on.
+    if industry:
+        same_industry = [r for r in candidates if r.get("industry") == industry]
+        if len(same_industry) >= 2:
+            candidates = same_industry
+
+    # Size-outlier cut, now a backstop against pathological cases within
+    # whatever survived the industry match — Tandy Leather Factory at 0.001%
+    # of IBM's size, in the same industry label, still is not a comparable.
     if base > 0:
         in_band = [
             r
@@ -954,6 +1006,40 @@ def select_comparables(
         if len(in_band) >= 2:
             candidates = in_band
     others = sorted(candidates, key=score)
+
+    # A conglomerate is compared against several competitive sets at once, not
+    # screened for the single closest match. Amazon's retail label alone never
+    # produces Microsoft or Google Cloud, though AWS is the profit engine every
+    # note's own risk section names them against. One slot is reserved per
+    # recognised business line, filled from that line's named peers rather than
+    # the general ranking, before the remaining slots go to the general pool.
+    if segment_groups:
+        # Looked up in the full candidate pool, not the post-filter "others" —
+        # a named segment peer is exempt from the general industry/size screen
+        # by construction. MSFT and GOOGL are never "Internet Retail" and were
+        # dropped before reaching this point when looked up in the filtered set.
+        by_symbol = {
+            r["symbol"]: r for r in rows if r.get("symbol") and not r.get("is_subject")
+        }
+        reserved: List[Dict[str, Any]] = []
+        used_symbols = set()
+        for group_tickers in segment_groups.values():
+            pick = next(
+                (
+                    by_symbol[t]
+                    for t in group_tickers
+                    if t in by_symbol and t not in used_symbols
+                ),
+                None,
+            )
+            if pick:
+                reserved.append(pick)
+                used_symbols.add(pick["symbol"])
+        if reserved:
+            remaining_slots = max(0, limit - len(reserved))
+            fill = [r for r in others if r["symbol"] not in used_symbols]
+            return [subject] + reserved + fill[:remaining_slots]
+
     return [subject] + others[:limit]
 
 

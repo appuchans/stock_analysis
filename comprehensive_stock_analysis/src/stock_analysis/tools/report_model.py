@@ -261,6 +261,33 @@ class ReportModel:
     def sections(self) -> List[Tuple[str, str]]:
         return split_sections(self._readable_narrative())
 
+    # "with a **$325.0 target price**", "target price of $325.0", "$325.0
+    # target price", "target of $325" — including a leading article and
+    # markdown emphasis markers on either side of the figure, all consumed in
+    # one match so the replacement never leaves an orphaned "**" or "a".
+    _TARGET_CLAIM = re.compile(
+        r"\b(?:a|an)\s+\**(?:price\s+)?target(?:\s+price)?\s+(?:of\s+)?"
+        r"\**\$\s?[\d,]+(?:\.\d+)?\**"
+        r"|\**(?:price\s+)?target(?:\s+price)?\s+(?:of\s+)?"
+        r"\**\$\s?[\d,]+(?:\.\d+)?\**"
+        r"|\b(?:a|an)\s+\**\$\s?[\d,]+(?:\.\d+)?\**\s+(?:price\s+)?"
+        r"target(?:\s+price)?\**"
+        r"|\**\$\s?[\d,]+(?:\.\d+)?\**\s+(?:price\s+)?target(?:\s+price)?\**",
+        re.IGNORECASE,
+    )
+
+    @property
+    def prose_asserts_a_target(self) -> bool:
+        """Whether the narrative names a target the document does not publish.
+
+        The advisor declined to set one — target_price was null, and the cover
+        correctly showed no target tile — while the narrative wrote "$325.0
+        target price" twice, taken from the consensus median it had printed a
+        page earlier. The prose is published unchecked, so a refusal upstream
+        does not reach the reader.
+        """
+        return self.target is None and bool(self._TARGET_CLAIM.search(self.narrative))
+
     def _readable_narrative(self) -> str:
         """The narrative with a withheld target removed from the prose.
 
@@ -270,6 +297,11 @@ class ReportModel:
         a literal replacement rather than an attempt to rewrite the sentence.
         """
         text = self.narrative
+        # No target published, but the prose names one anyway: strike the claim
+        # in one pass, article and emphasis markers included, rather than
+        # letting the document contradict its own cover.
+        if self.target is None:
+            text = self._TARGET_CLAIM.sub("no published price target", text)
         raw = _num(self.rec.get("target_price"))
         if not self.target_withheld or raw is None:
             return text
