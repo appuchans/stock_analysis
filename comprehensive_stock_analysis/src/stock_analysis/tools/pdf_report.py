@@ -497,7 +497,21 @@ def _appendix(model: ReportModel) -> str:
                 " section.]\n"
             )
     else:
-        parts.append("No discounted-cash-flow model was produced for this run.\n")
+        # The forecast valuation is a valuation. Reporting "none was produced"
+        # here while page five printed a value per share had the document
+        # contradicting itself in two places — the signature of a section
+        # patched in without regenerating the rest.
+        fv = model.chart.get("forecast_valuation") or {}
+        if fv.get("value_per_share"):
+            parts.append(
+                "Valued from the three-year forecast rather than a discounted "
+                "cash flow. " + _inline(str(fv.get("method", ""))) + ".\n"
+            )
+        else:
+            parts.append(
+                "No valuation model could be produced for this run, so no "
+                "house target is published.\n"
+            )
 
     parts.append("\n== Basis and disclosures\n\n")
     disclaimer = (

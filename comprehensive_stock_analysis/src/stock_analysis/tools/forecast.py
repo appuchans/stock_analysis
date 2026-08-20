@@ -209,11 +209,19 @@ def value_by_exit_multiple(
             return {}
         return {
             "value_per_share": round(equity / shares_m, 2),
+            # Every input, so the arithmetic closes for a reader. Naming the
+            # multiple and the discount rate but omitting net debt and the
+            # share count made the printed $371.92 irreproducible — working it
+            # through gave $379.16 and looked like an error in the model.
             "method": (
                 f"{final['year']} operating income of "
-                f"${ebit / 1000:,.1f}bn at {exit_ev_ebit:,.1f}x EV/EBIT, "
-                f"discounted {years} years at {discount_pct:,.1f}%"
+                f"${ebit / 1000:,.1f}bn at {exit_ev_ebit:,.2f}x EV/EBIT, "
+                f"discounted {years} years at {discount_pct:,.2f}%, "
+                f"less net debt of ${(net_debt_m or 0) / 1000:,.1f}bn, "
+                f"over {shares_m:,.0f}m shares"
             ),
+            "net_debt_m": round(net_debt_m or 0.0, 1),
+            "shares_m": round(shares_m, 1),
             "exit_ev_ebit": round(exit_ev_ebit, 1),
             "terminal_year": final["year"],
             "terminal_ebit_m": round(ebit, 1),
