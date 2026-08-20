@@ -563,7 +563,11 @@ report:
     Then these sections, in order (heading lines contain ONLY the section name):
     1. '## Business Overview' — what the company sells, its segments, why customers choose it.
     2. '## Strategy & Management Track Record' — stated goals, guidance, delivery record.
-    3. '## Financial Performance' — revenue, margins, cash flow trends with cited figures.
+    3. '## Financial Performance' — revenue, margins, cash flow trends with cited
+       figures. Use the fiscal-year operating margins given in
+       {fy_financial_facts_data} exactly as stated. Do not reuse a TTM
+       multiple from elsewhere in this brief as though it were a fiscal
+       year's margin — the two are on different bases and will not match.
     4. '## Ownership & Capital Allocation' — insider/institutional ownership, insider
        activity, buybacks and dividends (only if ownership analysis is in the source
        material; otherwise omit this section).
@@ -586,6 +590,11 @@ report:
        thesis pillars and restate the rating and target with the key trade-off.
        State the rating and target exactly as given above — never a figure
        carried over from the analyst consensus discussed earlier in the note.
+       End this section with one sentence stating the variant: what this note's
+       own model or reasoning concludes that the sell-side consensus does not,
+       naming both figures side by side (e.g. 'our $X compares with the
+       Street's $Y because ...'). A rating that matches consensus with no
+       stated variant gives the reader nothing they could not get for free.
     8. '## Market Timing Note' — ONLY if technical analysis appears in the source
        material: one short paragraph, clearly framed as short-term context with limited
        weight for a long-term investor. Omit the section entirely otherwise.

@@ -354,6 +354,13 @@ class ReportModel:
         risk = str(self.rec.get("risk_level") or "").strip()
         if risk:
             tiles.append(("Risk", risk))
+        # The appendix defines a confidence scale; nothing printed the value it
+        # scores until this tile — the figure existed only in the HTML view's
+        # separate raw-reasoning block, so the PDF carried a scale with
+        # nothing on it to read against.
+        conf = self.rec.get("confidence")
+        if isinstance(conf, (int, float)):
+            tiles.append(("Confidence", f"{conf * 100:.0f}%"))
         return tiles
 
     def peers(self) -> List[Dict[str, Any]]:

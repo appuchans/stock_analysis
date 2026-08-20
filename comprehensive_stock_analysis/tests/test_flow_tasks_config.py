@@ -30,6 +30,7 @@ _KNOWN_INPUTS = {
     "valuation_multiples_data",  # the subject's own P/E, EV/EBITDA, PEG, FCF yield
     "forecast_data",  # explicit three-year forecast and the value it implies
     "decision_data",  # the advisor's actual rating and target, for the narrative
+    "fy_financial_facts_data",  # verified FY-basis operating margins
     "positioning_data",  # verified short interest / analyst mix / targets
     "shareholder_returns_data",  # any depth, when FMP_API_KEY is configured
     "analyses_summary",  # passed by synthesize_recommendation / generate_report

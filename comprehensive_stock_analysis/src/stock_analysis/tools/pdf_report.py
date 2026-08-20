@@ -166,10 +166,23 @@ def markdown_to_typst(md: str) -> str:
     return "\n".join(out)
 
 
+def _football_caption(model: "ReportModel") -> str:
+    """Never claims a published target exists when one does not.
+
+    Static text here previously said "against ... the published target"
+    unconditionally, so a note that withheld its target still had a chart
+    caption asserting one was published — a contradiction inside a single
+    sentence a reader did not even have to turn the page to find.
+    """
+    if model.target is not None:
+        return "Valuation ranges against the last close and the published target."
+    return (
+        "Valuation ranges against the last close. No house target is "
+        "published for this company; the dashed reference line is omitted."
+    )
+
+
 _CAPTIONS = {
-    # Describes the exhibit. The previous wording — "a contradiction the note
-    # must explain" — was an instruction to the analyst, printed to the client.
-    "football": ("Valuation ranges against the last close and the published target."),
     "relative": "Total return versus benchmark, indexed to 100 at the start.",
     "fcf": (
         "Cash generated against cash reinvested. The gap between operating "
@@ -271,10 +284,31 @@ _CONFIDENCE_KEY = [
     ("Below 60%", "Thesis depends on an outcome not yet evidenced."),
 ]
 
+# "The market" is anchored to a stated figure rather than left open — "total
+# return expected to exceed the market" with no market return given is
+# unfalsifiable, and a reader cannot check a Buy against a band with no
+# number in it. ~9%/yr is a conventional long-run US equity total-return
+# assumption (S&P 500 nominal, dividends included); a firm using its own
+# assumption should override REPORT_BENCHMARK_RETURN_PCT rather than edit
+# this file.
+_BENCHMARK_RETURN_PCT = 9.0
+
 _RATING_KEY = [
-    ("Buy", "Total return expected to exceed the market over the stated horizon."),
-    ("Hold", "Total return expected to track the market over the stated horizon."),
-    ("Sell", "Total return expected to trail the market over the stated horizon."),
+    (
+        "Buy",
+        f"Total return expected to exceed a {_BENCHMARK_RETURN_PCT:.0f}%/yr "
+        "benchmark over the stated horizon.",
+    ),
+    (
+        "Hold",
+        f"Total return expected within roughly {_BENCHMARK_RETURN_PCT:.0f}%/yr "
+        "of the benchmark over the stated horizon.",
+    ),
+    (
+        "Sell",
+        f"Total return expected below a {_BENCHMARK_RETURN_PCT:.0f}%/yr "
+        "benchmark over the stated horizon.",
+    ),
 ]
 
 
@@ -403,9 +437,25 @@ def _forecast_table(model: ReportModel) -> str:
         # mode, and the next one in the method string closed a delimiter that
         # was never meant to be open, failing the whole compile.
         amount = _esc(f"${v['value_per_share']:,.2f}")
+        # Labelled as a model output, not as the target — those are not
+        # automatically the same thing. Printing this without qualification
+        # while the recommendation withheld a target let a reader find one
+        # figure asserted and one figure denied inside a single document.
+        label = (
+            "Illustrative value from this forecast"
+            if model.target is None
+            else "Value from this forecast"
+        )
         out.append(
-            f"\n*Value from this forecast: {amount} a share* — "
-            f"{_inline(str(v.get('method', '')))}.\n"
+            f"\n*{label}: {amount} a share* — "
+            f"{_inline(str(v.get('method', '')))}."
+            + (
+                " Not adopted as a published target; see Valuation & "
+                "Recommendation for the stated rating."
+                if model.target is None
+                else ""
+            )
+            + "\n"
         )
     return "".join(out)
 
@@ -523,11 +573,11 @@ def _appendix(model: ReportModel) -> str:
     parts.append("\n== Basis and disclosures\n\n")
     disclaimer = (
         settings.report_disclaimer
-        or "This report was produced by automated analysis of public data "
-        "sources. It is information, not investment advice, and no "
-        "recommendation is made as to the suitability of any security for "
-        "any particular investor. Figures are as stated on the cover and may "
-        "have moved since."
+        or "This document is a research note assembled from public market data "
+        "and company filings. It is information, not investment advice, and no "
+        "recommendation is made as to the suitability of any security for any "
+        "particular investor. Figures are as stated on the cover and may have "
+        "moved since."
     )
     parts.append(_inline(disclaimer) + "\n")
     if settings.report_author:
@@ -564,7 +614,13 @@ _PREAMBLE = """
 )
 #set text(font: ("Helvetica", "Liberation Sans", "DejaVu Sans"), size: 9.3pt,
           fill: ink, lang: "en")
+// Hyphenation off: Typst's automatic word-breaks at a justified line end
+// ("artificial-intelli-\ngence") are typeset correctly but read as broken
+// words to anyone who copies text out of the PDF or extracts it, which is
+// how this document is read as often as it is looked at. Typst comments use
+// "//", not "#" — "#" starts a code expression in markup mode.
 #set par(justify: true, leading: 0.62em, spacing: 0.95em)
+#set text(hyphenate: false)
 #show heading.where(level: 1): it => block(above: 14pt, below: 7pt)[
   #text(13pt, weight: "bold")[#it.body]
   #v(-4pt)
@@ -626,7 +682,11 @@ def build_typst_source(
         for keyword, exhibit in _EXHIBIT_FOR:
             if keyword in low and exhibit in charts and exhibit not in used:
                 used.add(exhibit)
-                cap = _CAPTIONS.get(exhibit, "")
+                cap = (
+                    _football_caption(model)
+                    if exhibit == "football"
+                    else _CAPTIONS.get(exhibit, "")
+                )
                 tail = f", caption: [{_inline(cap)}]" if cap else ""
                 src.append(
                     f'\n#figure(image("{charts[exhibit]}", width: 100%){tail})\n'
@@ -646,7 +706,11 @@ def build_typst_source(
             "\n= Exhibits\n\nSupporting charts referenced by the analysis above.\n\n"
         )
         for name in leftovers:
-            cap = _CAPTIONS.get(name, "")
+            cap = (
+                _football_caption(model)
+                if name == "football"
+                else _CAPTIONS.get(name, "")
+            )
             tail = f", caption: [{_inline(cap)}]" if cap else ""
             src.append(
                 f'#figure(image("{charts[name]}", width: 100%){tail})\n#v(6pt)\n'

@@ -897,6 +897,7 @@ _SEGMENT_PEER_GROUPS: Dict[str, List[str]] = {
     "cloud/hyperscale": ["MSFT", "GOOGL"],
     "logistics/delivery": ["UPS", "FDX"],
     "digital advertising": ["GOOGL", "META"],
+    "general retail": ["WMT", "TGT", "COST"],
 }
 
 _SEGMENT_KEYWORDS: List[Tuple[str, str]] = [
@@ -907,6 +908,14 @@ _SEGMENT_KEYWORDS: List[Tuple[str, str]] = [
     ("fulfillment", "logistics/delivery"),
     ("shipping", "logistics/delivery"),
     ("advertising", "digital advertising"),
+    ("online store", "general retail"),
+    ("physical store", "general retail"),
+    ("retail", "general retail"),
+    # Amazon's own delivery network — the thing that competes with UPS and
+    # FedEx for package volume — is reported inside "Third-Party Seller
+    # Services", not under a segment literally named "logistics".
+    ("third-party seller", "logistics/delivery"),
+    ("marketplace", "logistics/delivery"),
 ]
 
 

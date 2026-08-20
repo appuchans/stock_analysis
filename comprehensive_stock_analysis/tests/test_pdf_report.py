@@ -276,3 +276,23 @@ class TestGenerationTimestamp:
     def test_defaults_to_now_when_not_supplied(self, model):
         src = P.build_typst_source(model, {})
         assert "Generated " in src
+
+
+class TestTypstCommentSyntax:
+    """Typst comments are "//", not "#" — "#" starts a code expression.
+
+    A Python-style "#"-prefixed explanatory comment was written directly into
+    the Typst preamble string, so it compiled as literal source and failed
+    with "expected expression" — caught only by the compile-verification test,
+    since every other test in this file operates above the string level.
+    """
+
+    def test_preamble_contains_no_python_style_comment_lines(self):
+        from src.stock_analysis.tools.pdf_report import _PREAMBLE
+
+        for line in _PREAMBLE.split("\n"):
+            stripped = line.strip()
+            assert not stripped.startswith("# "), (
+                f"line starts with a Python-style comment, which Typst parses "
+                f"as code: {stripped!r}"
+            )

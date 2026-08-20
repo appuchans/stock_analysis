@@ -281,7 +281,16 @@ _HTML_TEMPLATE = """\
   {% if inv_rec.get('rationale') %}
   <h3 style="margin-top:12px">Rationale</h3>
   <ul>{% for r in inv_rec['rationale'] %}<li>{{ r | md }}</li>{% endfor %}</ul>
-  {% elif inv_rec.get('reasoning') %}
+  {% elif inv_rec.get('reasoning') and not narrative_html %}
+  {# Fallback only. 'rationale' is not a real schema field — the model always
+     produces 'reasoning' (an unstructured numbered brief: "1. What the
+     business does... 7. Target price... 8. Stop-loss..."), so this branch
+     fired on every report with a recommendation and dumped that raw brief
+     into the page verbatim. When narrative_html exists it already covers the
+     same ground in polished prose (Investment Thesis, Financial Performance,
+     Valuation & Recommendation, ...), so showing both told the same story
+     twice — once as internal analyst scratch notes, once properly written.
+     This now renders only when there is no narrative to fall back on. #}
   <div>{{ inv_rec['reasoning'] | md }}</div>
   {% endif %}
   <div class="two-col">
@@ -573,11 +582,12 @@ _HTML_TEMPLATE = """\
 <table>
   <thead><tr><th>Rating</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td>Buy</td><td>Total return expected to exceed the market
-      over the stated horizon.</td></tr>
-    <tr><td>Hold</td><td>Total return expected to track the market
-      over the stated horizon.</td></tr>
-    <tr><td>Sell</td><td>Total return expected to trail the market
+    <tr><td>Buy</td><td>Total return expected to exceed a 9%/yr benchmark
+      (a conventional long-run US equity assumption) over the stated
+      horizon.</td></tr>
+    <tr><td>Hold</td><td>Total return expected within roughly 9%/yr of
+      that benchmark over the stated horizon.</td></tr>
+    <tr><td>Sell</td><td>Total return expected below a 9%/yr benchmark
       over the stated horizon.</td></tr>
   </tbody>
 </table>

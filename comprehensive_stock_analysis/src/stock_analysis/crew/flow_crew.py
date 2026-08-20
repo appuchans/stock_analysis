@@ -415,11 +415,20 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 + ". "
                 + (
                     f"Value implied by it: ${fval['value_per_share']:,.2f} a "
-                    f"share ({fval.get('method', '')}). Your target must follow "
-                    "from this forecast: either adopt this value, or state which "
-                    "assumption you change and what it changes it to."
+                    f"share ({fval.get('method', '')}). THIS VALUE EXISTS AND "
+                    "IS AVAILABLE — do not write that no valuation could be "
+                    "produced, that a forecast is unavailable, or that "
+                    "assigning a target would be false precision; all of those "
+                    "statements would be false while this figure is present. "
+                    "Your target must follow from this forecast: either adopt "
+                    "this value, or state which assumption you change and what "
+                    "it changes it to. This is separate from any discounted-"
+                    "cash-flow scenario range mentioned elsewhere, which may be "
+                    "unavailable for a different reason — that absence does not "
+                    "make this value unavailable too."
                     if fval.get("value_per_share")
-                    else "No value could be derived from it."
+                    else "No value could be derived from it — this one, "
+                    "specifically, genuinely does not exist for this run."
                 )
             )
         else:
@@ -458,6 +467,37 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 "No recommendation is available; do not state a rating or a "
                 "target price."
             )
+
+        # Fiscal-year statement facts, computed here rather than left to the
+        # model to recall. The Financial Performance section is meant to
+        # discuss FY-basis figures, but "operating margin 13.7%" — the TTM
+        # multiple stated in valuation_multiples_data below, for a different
+        # section — was pulled into that narrative instead of the FY2025
+        # figure the same document's own numbers compute to: $80.0bn operating
+        # income on $716.9bn revenue is 11.2%, not 13.7%. Both figures are
+        # correct on their own basis; the fault was using one where the other
+        # belonged with no label distinguishing them.
+        fin_income = (structured.get("financials") or {}).get("annual_income") or {}
+        fy_facts = []
+        for period in sorted(fin_income)[-3:]:
+            row = fin_income[period]
+            rev, op = row.get("revenue_m"), row.get("operating_income_m")
+            if isinstance(rev, (int, float)) and isinstance(op, (int, float)) and rev:
+                fy_facts.append(
+                    f"FY{str(period)[:4]}: revenue ${rev / 1000:,.1f}bn, operating "
+                    f"income ${op / 1000:,.1f}bn, operating margin "
+                    f"{op / rev * 100:.1f}%"
+                )
+        base["fy_financial_facts_data"] = (
+            "Verified fiscal-year figures — use these exact operating margins "
+            "when discussing a fiscal year's results: " + "; ".join(fy_facts) + ". "
+            "These are on a DIFFERENT basis from any trailing-twelve-month "
+            "multiple stated elsewhere in this prompt (labelled TTM) — the two "
+            "will not match, and that is expected. Never state a fiscal year's "
+            "operating margin as a TTM figure or vice versa."
+            if fy_facts
+            else "No verified fiscal-year figures available."
+        )
 
         base["valuation_multiples_data"] = (
             f"{self.state.symbol} trades at " + ", ".join(stated) + "."
@@ -805,8 +845,14 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 except Exception as exc:
                     _logger.debug("provider-peer metrics failed for %s: %s", sym, exc)
                     priced = {}
+                # One slot per recognised business line, plus room for the
+                # general-pool comparison so named competitors do not crowd it
+                # out entirely — a subject competing in three industries at
+                # once needs more than four total rows to show all three.
                 rows = ys.select_comparables(
-                    priced.get("rows") or [], segment_groups=segment_groups
+                    priced.get("rows") or [],
+                    limit=4 + max(0, len(segment_groups) - 1),
+                    segment_groups=segment_groups,
                 )
                 if len(rows) >= 2:
                     structured["peers"] = {"rows": rows, "basis": "provider peer list"}
@@ -964,10 +1010,32 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             for key in ("ev_to_ebitda", "peg", "fcf_yield_pct", "fwd_pe"):
                 if me.get(key) is not None:
                     chart["key_stats"][key] = _f(me[key])
-            # One market cap in the file. key_stats and the peer row are two
-            # fetches moments apart, which printed $2,820.5B on the cover and
-            # $2,818.6B in the comparables table of the same document.
-            if me.get("market_cap_b") is not None:
+            # Share count is the single number everything else in this block
+            # is derived from — never divided back out of a market cap that
+            # embeds a different price. me["market_cap_b"] was computed inside
+            # summarize_peers from *its own* live-quote fetch, seconds or
+            # minutes apart from the settled-close snapshot used everywhere
+            # else in the report; dividing that market cap by the settled
+            # price recovered a share count 225m off (10,784m vs the correct
+            # 10,559m), which then fed a market cap ($2,866B) that matched
+            # neither the cover's nor the peer table's own figure. Shares are
+            # instead derived from me's own internally consistent
+            # (market_cap_b, current_price) pair, and every other dollar
+            # figure in the file — cover market cap included — is built by
+            # multiplying that share count back out against the settled
+            # close, so cover mcap / cover price is exactly the share count
+            # the valuation uses, by construction rather than by coincidence.
+            subject_shares_m = None
+            if me.get("market_cap_b") and me.get("current_price"):
+                subject_shares_m = (
+                    (me["market_cap_b"] * 1e9) / me["current_price"] / 1e6
+                )
+            settled_price = chart["key_stats"].get("current_price")
+            if subject_shares_m and settled_price:
+                chart["key_stats"]["market_cap"] = _f(
+                    subject_shares_m * 1e6 * settled_price
+                )
+            elif me.get("market_cap_b") is not None:
                 chart["key_stats"]["market_cap"] = _f(me["market_cap_b"] * 1e9)
 
             # Cash-flow history, for the free-cash-flow-versus-capex exhibit.
@@ -1024,16 +1092,13 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             ks = chart.get("key_stats") or {}
             mcap = ks.get("market_cap")
             price = ks.get("current_price")
-            # yfinance exposes no clean diluted share count here, but market cap
-            # and price are both present and their ratio is exactly it.
-            # Derived from the same market cap the cover prints, after that
-            # figure is normalised to the peer row. Taken before, the cover
-            # implied 10,650m shares while the valuation divided by 10,783m.
-            norm_mcap = (
-                (me.get("market_cap_b") * 1e9) if me.get("market_cap_b") else mcap
-            )
-            shares_m = (
-                (norm_mcap / price) / 1e6 if norm_mcap and price and price > 0 else None
+            # The one share count computed above, reused rather than
+            # re-derived. Re-dividing chart mcap by chart price here was the
+            # second of two independent share-count computations in this
+            # function — they used different price sources and disagreed by
+            # 225m shares (2.1%) in the artifact a reviewer caught it in.
+            shares_m = subject_shares_m or (
+                (mcap / price) / 1e6 if mcap and price and price > 0 else None
             )
             debt_m = latest_bs.get("total_debt_m")
             cash_m = latest_bs.get("cash_and_sti_m")
