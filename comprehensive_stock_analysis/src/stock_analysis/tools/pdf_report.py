@@ -392,8 +392,12 @@ def _forecast_table(model: ReportModel) -> str:
         )
     v = model.chart.get("forecast_valuation") or {}
     if v.get("value_per_share"):
+        # The dollar sign has to be escaped: unescaped it opens Typst math
+        # mode, and the next one in the method string closed a delimiter that
+        # was never meant to be open, failing the whole compile.
+        amount = _esc(f"${v['value_per_share']:,.2f}")
         out.append(
-            f"\n*Value from this forecast: ${v['value_per_share']:,.2f} a share* — "
+            f"\n*Value from this forecast: {amount} a share* — "
             f"{_inline(str(v.get('method', '')))}.\n"
         )
     return "".join(out)

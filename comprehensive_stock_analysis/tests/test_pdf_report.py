@@ -113,3 +113,60 @@ class TestTargetBridge:
         model.rec["target_price"] = 137.0
         assert model.target_bridge_required is False
         assert "Target reconciliation" not in P.build_typst_source(model, {})
+
+
+class TestTheDocumentActuallyCompiles:
+    """A render failure returns None, which is easy to miss and easy to ship.
+
+    An unescaped dollar sign in "Value from this forecast: $371.92" opened
+    Typst math mode; the next dollar in the method string beside it closed a
+    delimiter that was never meant to be open, and the whole compile failed.
+    The report silently became None while every other test stayed green.
+    """
+
+    def test_a_full_document_compiles(self, model, tmp_path):
+        import typst
+
+        work = tmp_path / "typst"
+        work.mkdir()
+        charts = P._build_exhibits(model, work)
+        (work / "r.typ").write_text(
+            P.build_typst_source(model, charts), encoding="utf-8"
+        )
+        typst.compile(str(work / "r.typ"), output=str(work / "r.pdf"))
+        assert (work / "r.pdf").stat().st_size > 1000
+
+    def test_a_forecast_with_currency_compiles(self, model, tmp_path):
+        """Currency in the forecast block is what broke it."""
+        import typst
+
+        model.chart["forecast"] = {
+            "years": [
+                {
+                    "year": 2026,
+                    "revenue_m": 828157.2,
+                    "revenue_growth_pct": 15.5,
+                    "operating_margin_pct": 12.3,
+                    "operating_income_m": 102163.0,
+                    "capex_pct_of_revenue": 17.6,
+                    "free_cash_flow_m": 15600.0,
+                },
+            ],
+            "assumptions": {
+                "revenue_basis": "consensus",
+                "base_operating_margin_pct": 11.2,
+                "margin_change_ppt_per_year": 1.19,
+                "operating_cf_margin_pct": 19.5,
+                "capex_pct_now": 18.4,
+                "capex_pct_reverting_to": 13.5,
+            },
+        }
+        model.chart["forecast_valuation"] = {
+            "value_per_share": 371.92,
+            "method": "2028 operating income of $154.2bn at 35.8x EV/EBIT",
+        }
+        work = tmp_path / "typst2"
+        work.mkdir()
+        (work / "r.typ").write_text(P.build_typst_source(model, {}), encoding="utf-8")
+        typst.compile(str(work / "r.typ"), output=str(work / "r.pdf"))
+        assert (work / "r.pdf").exists()
