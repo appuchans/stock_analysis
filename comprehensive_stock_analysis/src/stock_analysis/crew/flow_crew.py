@@ -878,14 +878,23 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             for key in ("ev_to_ebitda", "peg", "fcf_yield_pct", "fwd_pe"):
                 if me.get(key) is not None:
                     chart["key_stats"][key] = _f(me[key])
+            # One market cap in the file. key_stats and the peer row are two
+            # fetches moments apart, which printed $2,820.5B on the cover and
+            # $2,818.6B in the comparables table of the same document.
+            if me.get("market_cap_b") is not None:
+                chart["key_stats"]["market_cap"] = _f(me["market_cap_b"] * 1e9)
 
             # Cash-flow history, for the free-cash-flow-versus-capex exhibit.
             # summarize_financial_statements has always produced this; nothing
             # carried it into chart_data, so the one chart a reviewer wanted at
             # the centre of the note had no data to draw.
             fin = structured.get("financials") or {}
-            if fin.get("cash_flow"):
-                chart["financials"] = {"cash_flow": fin["cash_flow"]}
+            if fin.get("cash_flow") or fin.get("annual_income"):
+                # annual_income travels too so the review can divide operating
+                # income by revenue and check it against the printed margin.
+                chart["financials"] = {
+                    k: fin[k] for k in ("cash_flow", "annual_income") if fin.get(k)
+                }
             an = structured.get("analyst") or {}
             chart["analyst"] = {
                 "price_targets": an.get("price_targets") or {},

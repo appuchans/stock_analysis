@@ -517,3 +517,102 @@ class TestTargetWithoutAModel:
         self._seed(tmp_path, monkeypatch, target=290.0, mean=326.84)
         codes = [i["code"] for i in run_review.review_run("TEST")["issues"]]
         assert "target_is_consensus_without_a_model" not in codes
+
+
+class TestFiguresMustReconcile:
+    """A reader checks a note with a calculator.
+
+    A reviewer divided Amazon's printed operating income by its printed revenue,
+    got 11.2% against a stated 13.7%, and stopped trusting the document. The
+    figures were both correct — one trailing-twelve-month, one fiscal-year — and
+    neither said so.
+    """
+
+    def _seed(self, tmp_path, monkeypatch, *, stated_margin, mcap_cover, mcap_peer):
+        import json
+
+        from src.stock_analysis.config.settings import settings
+
+        monkeypatch.setattr(settings, "report_output_dir", str(tmp_path))
+        d = tmp_path / "TEST"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "TEST_chart_data.json").write_text(
+            json.dumps(
+                {
+                    "asset_type": "stock",
+                    "company": {"name": "Test"},
+                    "key_stats": {"current_price": 265.8, "market_cap": mcap_cover},
+                    "price_history": [{"date": "2026-08-18", "close": 265.8}],
+                    "peers": [
+                        {
+                            "symbol": "TEST",
+                            "market_cap_b": mcap_peer,
+                            "operating_margin_pct": stated_margin,
+                        }
+                    ],
+                    "financials": {
+                        "annual_income": {
+                            "2025-12-31": {
+                                "revenue_m": 716924.0,
+                                "operating_income_m": 79975.0,
+                            }
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (d / "TEST_investment_recommendation.json").write_text(
+            json.dumps(
+                {
+                    "recommendation": "Buy",
+                    "target_price": 290.0,
+                    "confidence": 0.8,
+                    "risk_level": "High",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_margin_that_contradicts_the_statements_is_flagged(
+        self, tmp_path, monkeypatch
+    ):
+        from src.stock_analysis.web import run_review
+
+        # 79,975 / 716,924 = 11.2%, not 13.7%.
+        self._seed(
+            tmp_path,
+            monkeypatch,
+            stated_margin=13.7,
+            mcap_cover=2.8194e12,
+            mcap_peer=2819.4,
+        )
+        codes = [i["code"] for i in run_review.review_run("TEST")["issues"]]
+        assert "margin_does_not_reconcile_with_statements" in codes
+
+    def test_a_margin_that_ties_out_is_silent(self, tmp_path, monkeypatch):
+        from src.stock_analysis.web import run_review
+
+        self._seed(
+            tmp_path,
+            monkeypatch,
+            stated_margin=11.2,
+            mcap_cover=2.8194e12,
+            mcap_peer=2819.4,
+        )
+        codes = [i["code"] for i in run_review.review_run("TEST")["issues"]]
+        assert "margin_does_not_reconcile_with_statements" not in codes
+
+    def test_two_market_caps_in_one_document_are_flagged(self, tmp_path, monkeypatch):
+        from src.stock_analysis.web import run_review
+
+        # $2,820.5B on the cover against $2,818.6B in the table.
+        self._seed(
+            tmp_path,
+            monkeypatch,
+            stated_margin=11.2,
+            mcap_cover=2.8205e12,
+            mcap_peer=2818.6,
+        )
+        codes = [i["code"] for i in run_review.review_run("TEST")["issues"]]
+        assert "market_cap_disagrees_within_the_document" in codes

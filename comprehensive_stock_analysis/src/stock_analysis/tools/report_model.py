@@ -311,7 +311,11 @@ class ReportModel:
             tiles.append(("Market cap", f"${mcap / 1e9:,.1f}B"))
         pe = _num(ks.get("pe_ratio"))
         if pe:
-            tiles.append(("P/E", f"{pe:,.1f}x"))
+            # Labelled because it is a market-data TTM multiple, not the ratio
+            # a reader gets by dividing the fiscal-year figures in the
+            # financials section: Amazon shows 21.0x TTM against 36.3x on
+            # FY2025 earnings.
+            tiles.append(("P/E (TTM)", f"{pe:,.1f}x"))
         horizon = str(self.rec.get("time_horizon") or "").strip()
         if horizon:
             tiles.append(("Horizon", horizon))

@@ -166,11 +166,9 @@ def markdown_to_typst(md: str) -> str:
 
 
 _CAPTIONS = {
-    "football": (
-        "Valuation ranges against the traded price and the published target. "
-        "A target outside every band, or a price above all of them, is a "
-        "contradiction the note must explain."
-    ),
+    # Describes the exhibit. The previous wording — "a contradiction the note
+    # must explain" — was an instruction to the analyst, printed to the client.
+    "football": ("Valuation ranges against the last close and the published target."),
     "relative": "Total return versus benchmark, indexed to 100 at the start.",
     "fcf": (
         "Cash generated against cash reinvested. The gap between operating "
@@ -178,7 +176,7 @@ _CAPTIONS = {
     ),
     "peers": (
         "Comparable companies on growth against forward multiple; bubble area "
-        "is market capitalisation and the subject is filled. Comparables are "
+        "is market capitalization and the subject is filled. Comparables are "
         "screened to the subject's industry, then ranked by similarity of "
         "size - a provider's raw peer list ranks by size alone and mixes in "
         "businesses that are not comparable."
@@ -388,7 +386,13 @@ def _peer_table(model: ReportModel) -> str:
                 _f("revenue_growth_pct", "%"),
             ]
         )
-    return "\n== Comparable companies\n\n" + _table([header] + body)
+    return (
+        "\n== Comparable companies\n\n"
+        + _table([header] + body)
+        + "\n#text(7.5pt, fill: muted)[Multiples are trailing twelve months "
+        "from market data and will not tie to the fiscal-year statements "
+        "elsewhere in this note.]\n"
+    )
 
 
 def _appendix(model: ReportModel) -> str:

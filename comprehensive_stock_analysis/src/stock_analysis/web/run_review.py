@@ -532,6 +532,49 @@ def _check_reader_visible_defects(
                 )
             )
 
+    # A reader checks a note with a calculator. Where the same quantity can be
+    # derived two ways, the two must agree or be labelled — a reviewer divided
+    # Amazon's printed operating income by its printed revenue, got 11.2%
+    # against a stated 13.7%, and stopped trusting the document.
+    ks = chart.get("key_stats") or {}
+    peer_rows = [p for p in (chart.get("peers") or []) if isinstance(p, dict)]
+    me = next((p for p in peer_rows if p.get("symbol") == symbol.upper()), {})
+    mcap_cover, mcap_peer = ks.get("market_cap"), me.get("market_cap_b")
+    if _is_number(mcap_cover) and _is_number(mcap_peer) and float(mcap_peer):
+        # Compared as printed, not within a tolerance. $2,820.5B and $2,818.6B
+        # differ by 0.07% — under any sensible relative threshold, and plainly
+        # two different numbers to anyone reading the page.
+        if f"{float(mcap_cover) / 1e9:,.1f}" != f"{float(mcap_peer):,.1f}":
+            issues.append(
+                _issue(
+                    "warning",
+                    "market_cap_disagrees_within_the_document",
+                    f"cover shows ${float(mcap_cover) / 1e9:,.1f}B and the "
+                    f"comparables table ${float(mcap_peer):,.1f}B — two fetches "
+                    "moments apart, printed as one figure",
+                )
+            )
+
+    income = (chart.get("financials") or {}).get("annual_income") or {}
+    if income:
+        latest = max(income)
+        row = income.get(latest) or {}
+        rev, op = row.get("revenue_m"), row.get("operating_income_m")
+        stated = me.get("operating_margin_pct")
+        if _is_number(rev) and _is_number(op) and _is_number(stated) and float(rev):
+            computed = float(op) / float(rev) * 100
+            if abs(computed - float(stated)) > 1.0:
+                issues.append(
+                    _issue(
+                        "warning",
+                        "margin_does_not_reconcile_with_statements",
+                        f"operating margin printed as {float(stated):.1f}% "
+                        f"(trailing twelve months) while the {str(latest)[:4]} "
+                        f"statements give {computed:.1f}% — label the basis, or "
+                        "the reader's own arithmetic contradicts the page",
+                    )
+                )
+
     price = (chart.get("key_stats") or {}).get("current_price")
     target = rec.get("target_price")
     if not (_is_number(price) and _is_number(target) and float(price) > 0):
