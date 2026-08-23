@@ -111,7 +111,12 @@ class Settings(BaseSettings):
     # Set these to switch all agents at once without editing llm_config.yaml.
     llm_provider: str = Field("", validation_alias="LLM_PROVIDER")
     llm_model: str = Field("", validation_alias="LLM_MODEL")
-    temperature: float = Field(0.1, validation_alias="LLM_TEMPERATURE")
+    # None (not 0.1) is the true default: base_agent.py only applies this when
+    # it is set, so an unset LLM_TEMPERATURE now defers to llm_config.yaml's
+    # per-agent/global defaults instead of silently overriding them with 0.1 —
+    # which is what sent an unsupported temperature to gpt-5.6-luna and
+    # gpt-5.6-terra, models that only accept their own default.
+    temperature: Optional[float] = Field(None, validation_alias="LLM_TEMPERATURE")
     max_tokens: int = Field(4000, validation_alias="LLM_MAX_TOKENS")
 
     # ── Crew output log ───────────────────────────────────────────────────────

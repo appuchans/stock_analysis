@@ -43,7 +43,12 @@ class LLMGlobalConfig(BaseModel):
 
     provider: str = "openai"
     model: str = "gpt-4o"
-    temperature: float = 0.1
+    # None (not 0.1): this field's own Pydantic default used to fill in 0.1
+    # even when llm_config.yaml's global block omitted `temperature` entirely,
+    # which is what kept sending an unsupported value to models that only
+    # accept their own default temperature even after removing the key from
+    # the YAML — same class of bug as settings.temperature's old 0.1 default.
+    temperature: Optional[float] = None
     max_tokens: int = 4000
     timeout: int = 120
     max_retries: int = 3

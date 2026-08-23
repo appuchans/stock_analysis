@@ -242,8 +242,13 @@ class BaseAgent:
             resolved["provider"] = settings.llm_provider
         if settings.llm_model:
             resolved["model"] = settings.llm_model
-        # temperature / max_tokens from settings always apply (they have numeric defaults)
-        resolved["temperature"] = settings.temperature
+        # max_tokens from settings always applies (numeric default). temperature
+        # only applies when explicitly set (None means "defer to the YAML layers
+        # already in resolved") — settings.temperature used to default to 0.1 and
+        # override every layer unconditionally, which is what sent an unsupported
+        # temperature to models that only accept their own default.
+        if settings.temperature is not None:
+            resolved["temperature"] = settings.temperature
         resolved["max_tokens"] = settings.max_tokens
 
         # 3. Apply llm_config.yaml per-agent overrides

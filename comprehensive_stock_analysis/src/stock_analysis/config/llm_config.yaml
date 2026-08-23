@@ -16,7 +16,12 @@
 global:
   provider: openai
   model: gpt-5.6-luna
-  temperature: 0.1
+  # No temperature override: gpt-5.6-luna rejects any value other than its
+  # own default (1) — "Unsupported value: 'temperature' does not support 0.1
+  # with this model" on every call, self-corrected by the reactive fallback
+  # in base_agent.py but at the cost of one doomed request per agent. Fixed
+  # here at the source for a model we already know rejects it; the reactive
+  # fallback stays in place for any other model that turns out to as well.
   max_tokens: 16000
   timeout: 120        # seconds before LLM call is aborted
   max_retries: 3      # retry attempts on transient errors
@@ -38,7 +43,11 @@ global:
 agents:
   investment_advisor:
     model: gpt-5.6-terra     # or: provider: anthropic / model: claude-sonnet-4-6
-    temperature: 0.0        # deterministic output for the buy/sell/hold call
+    # No temperature override, for the same reason as the global default:
+    # gpt-5.6-terra also only accepts its own default temperature (1).
+    # "Deterministic output for the buy/sell/hold call" was the intent, but
+    # this model has no lever for that — every request was rejected and
+    # silently retried without it, same call cost as the unset default.
   report_generator:
     model: gpt-5.6-luna      # or: provider: anthropic / model: claude-sonnet-4-6
 
