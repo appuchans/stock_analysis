@@ -41,7 +41,7 @@ def _fault_log_path(log_path: Path) -> Path:
 def install(log_path: Path, role: str = "web") -> None:
     """Install crash diagnostics. Safe to call once per process; repeat calls
     are no-ops so an import-order surprise can't double-register handlers."""
-    global _fault_log, _installed
+    global _installed
     if _installed:
         return
     _installed = True

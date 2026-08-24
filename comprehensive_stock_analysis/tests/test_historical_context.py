@@ -1,8 +1,6 @@
 """Tests for historical recommendation context formatting."""
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from src.stock_analysis.crew.flow_crew import StockAnalysisFlow
 

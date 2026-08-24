@@ -31,7 +31,8 @@ def _envelope(symbol: str, payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class AnalystDataTool(BaseTool):
-    """Analyst consensus: price targets, rating trend, upgrades/downgrades, estimates."""
+    """Analyst consensus: price targets, rating trend, upgrades/downgrades,
+    estimates."""
 
     name: str = "Analyst Consensus and Estimates"
     description: str = (
@@ -54,7 +55,8 @@ class OwnershipTool(BaseTool):
 
     name: str = "Insider and Institutional Ownership"
     description: str = (
-        "Returns ownership data for a symbol: insider vs institutional percentage held, "
+        "Returns ownership data for a symbol: insider vs institutional "
+        "percentage held, "
         "top institutional holders, and recent insider transactions with a buy/sell "
         "summary. Free Yahoo Finance data."
     )
@@ -72,9 +74,11 @@ class FinancialStatementsTool(BaseTool):
 
     name: str = "Financial Statements Summary"
     description: str = (
-        "Returns a compact summary of the last 3 fiscal years: revenue, gross/operating/"
+        "Returns a compact summary of the last 3 fiscal years: revenue, "
+        "gross/operating/"
         "net income with YoY growth, total assets, cash, debt, equity, operating cash "
-        "flow, capex, free cash flow, buybacks, and dividends paid (all in USD millions). "
+        "flow, capex, free cash flow, buybacks, and dividends paid "
+        "(all in USD millions). "
         "Free Yahoo Finance data."
     )
 

@@ -130,7 +130,8 @@ def report_dir(tmp_path, monkeypatch):
     sym_dir = tmp_path / "TEST"
     sym_dir.mkdir()
     (sym_dir / "TEST_fundamental_analysis.md").write_text(
-        "# Fundamental Analysis\n\nRevenue grew 12% YoY in FY2025.\n\n- Strong margins\n"
+        "# Fundamental Analysis\n\nRevenue grew 12% YoY in FY2025."
+        "\n\n- Strong margins\n"
         "\n## Data Sources & Gaps\n\n- Source: Yahoo Finance statements (2026-06-12)\n"
         "- Gap: segment revenue not available\n",
         encoding="utf-8",
@@ -477,7 +478,8 @@ class TestInlineSourceStripping:
 
     def test_standalone_source_line_is_dropped(self):
         out = report_tools._strip_inline_sources(
-            "Revenue grew 12%.\n\n**Source:** user-provided data (collected data).\n\nMargins held."
+            "Revenue grew 12%.\n\n**Source:** user-provided data "
+            "(collected data).\n\nMargins held."
         )
         assert "Revenue grew 12%." in out
         assert "Margins held." in out

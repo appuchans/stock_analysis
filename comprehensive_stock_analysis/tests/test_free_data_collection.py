@@ -1,7 +1,6 @@
 """Tests for free data collection tools in free_data_collection.py."""
 
 import json
-from datetime import datetime
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -11,10 +10,7 @@ from src.stock_analysis.tools.free_data_collection import (
     FreeEconomicDataTool,
     FreeFREDTool,
     FreeIndustryAnalysisTool,
-    FreeNewsTool,
     FreeSECFilingTool,
-    FreeWebSearchTool,
-    YahooFinanceTool,
 )
 
 
@@ -219,7 +215,8 @@ class TestFreeCompetitorAnalysisTool:
         # Text containing:
         # - Target symbol AAPL (should be filtered out)
         # - Stop words: AND, NYSE, SEC, ETF (should be filtered out)
-        # - Tickers to validate: MSFT, GOOG, AMZN, META, NFLX, TSLA, NVDA, ORCL, IBM, CSCO (10 tickers)
+        # - Tickers to validate: MSFT, GOOG, AMZN, META, NFLX,
+        #   TSLA, NVDA, ORCL, IBM, CSCO (10 tickers)
         mock_search_instance._run.return_value = {
             "results": [
                 {
@@ -228,7 +225,7 @@ class TestFreeCompetitorAnalysisTool:
                 },
                 {
                     "title": "TSLA and NVDA compete in tech space",
-                    "snippet": "Other potential names include ORCL, IBM, CSCO, and CEO AAPL.",
+                    "snippet": "Other names include ORCL, IBM, CSCO, " "and CEO AAPL.",
                 },
             ]
         }
@@ -401,7 +398,10 @@ class TestCachingDecorators:
 
         with patch("src.stock_analysis.tools._http.SESSION.get") as mock_requests_get:
             mock_resp = Mock()
-            mock_resp.content = b'<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>10-K</title><link href="http://link"/></entry></feed>'
+            mock_resp.content = (
+                b'<feed xmlns="http://www.w3.org/2005/Atom"><entry>'
+                b'<title>10-K</title><link href="http://link"/></entry></feed>'
+            )
             mock_resp.raise_for_status = Mock()
             mock_resp.text = "mock filing content"
             mock_requests_get.return_value = mock_resp
@@ -419,7 +419,8 @@ class TestCachingDecorators:
             }
             mock_redis.get.return_value = json.dumps(cached_data)
 
-            # Second run: cache hit, should return cached data directly without requests.get
+            # Second run: cache hit, should return cached data
+            # directly without requests.get
             mock_requests_get.reset_mock()
             res_cached = tool._run("AAPL", limit=1)
             assert res_cached["filings"][0]["title"] == "Cached 10-K"

@@ -1115,6 +1115,23 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             )
             if scen:
                 chart["valuation_scenarios"] = scen
+                # Sensitivity grid over the same two-stage model — the centre
+                # cell equals the Base case by construction, so the two
+                # exhibits can never disagree. Computed here (inside the cached
+                # bundle) rather than at render time so cache hits carry it.
+                sens = ys.fcf_dcf_sensitivity(
+                    fcf_m=latest_cf.get("free_cash_flow_m"),
+                    shares_m=shares_m,
+                    net_debt_m=(debt_m or 0.0) - (cash_m or 0.0),
+                    base_wacc_pct=ys.wacc_pct(
+                        beta=ks.get("beta"),
+                        market_cap_m=(mcap / 1e6) if mcap else None,
+                        total_debt_m=debt_m,
+                    ),
+                    growth_pct=growth,
+                )
+                if sens:
+                    chart["dcf_sensitivity"] = sens
 
             # An explicit three-year forecast, and a value derived from it.
             # Built revenue-first from consensus rather than from a single EPS

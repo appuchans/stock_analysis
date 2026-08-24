@@ -3,6 +3,7 @@ import { $, $$ } from "./util.js";
 import { initAnalyzeForm, refreshSymbol } from "./analyze.js";
 import { renderReport, downloadReportPdf } from "./dashboard.js";
 import { loadHistory } from "./history.js";
+import { loadScorecard } from "./scorecard.js";
 import { loadWatchlist } from "./watchlist.js";
 import { loadPortfolio } from "./portfolio.js";
 import { loadCompare } from "./compare.js";
@@ -11,6 +12,7 @@ import { loadAutomation } from "./automation.js";
 
 const VIEWS = {
   new: "view-new", report: "view-report", history: "view-history",
+  scorecard: "view-scorecard",
   watchlist: "view-watchlist", portfolio: "view-portfolio", compare: "view-compare",
   alerts: "view-alerts", automation: "view-automation",
 };
@@ -26,6 +28,7 @@ function route() {
   const [view, arg] = (location.hash || "#/new").slice(2).split("/");
   if (view === "report" && arg) { showView("report"); renderReport(arg); }
   else if (view === "history") { showView("history"); loadHistory(); }
+  else if (view === "scorecard") { showView("scorecard"); loadScorecard(); }
   else if (view === "watchlist") { showView("watchlist"); loadWatchlist(); }
   else if (view === "portfolio") { showView("portfolio"); loadPortfolio(); }
   else if (view === "compare") { showView("compare"); loadCompare(); }

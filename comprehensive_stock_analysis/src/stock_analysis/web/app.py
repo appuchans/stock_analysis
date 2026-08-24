@@ -19,6 +19,7 @@ from .routes import (
     portfolio,
     providers,
     results,
+    scorecard,
     watchlist,
 )
 
@@ -84,6 +85,7 @@ app.include_router(watchlist.router)
 app.include_router(providers.router)
 app.include_router(automation.router)
 app.include_router(compare.router)
+app.include_router(scorecard.router)
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 

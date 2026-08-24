@@ -160,11 +160,13 @@ def _price_position(symbol: str) -> Optional[Dict[str, float]]:
 # invent — a first attempt asserted IBM was "near its recent high" while it sat
 # 28% below it. These are cheap to check against the numbers, so check them.
 _NEAR_HIGH = re.compile(
-    r"\b(near(ing)?|close to|at|around)\b[^.]{0,40}\b(record|all[- ]time|52[- ]week|recent|its)?\s*high",
+    r"\b(near(ing)?|close to|at|around)\b[^.]{0,40}"
+    r"\b(record|all[- ]time|52[- ]week|recent|its)?\s*high",
     re.I,
 )
 _NEAR_LOW = re.compile(
-    r"\b(near(ing)?|close to|at|around)\b[^.]{0,40}\b(record|all[- ]time|52[- ]week|recent|its)?\s*low",
+    r"\b(near(ing)?|close to|at|around)\b[^.]{0,40}"
+    r"\b(record|all[- ]time|52[- ]week|recent|its)?\s*low",
     re.I,
 )
 

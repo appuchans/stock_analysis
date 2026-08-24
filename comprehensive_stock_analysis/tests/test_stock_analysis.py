@@ -1,6 +1,6 @@
 """Tests for stock analysis functionality."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -616,7 +616,7 @@ class TestValuationCalculatorTool:
         assert result["terminal_value"] == pytest.approx(expected_terminal_value)
 
     def test_dcf_rejects_equal_rates(self):
-        """discount_rate == terminal_growth_rate must return an error dict, not divide by zero."""
+        """discount_rate == terminal_growth_rate must error, not divide by zero."""
         tool = ValuationCalculatorTool()
         result = tool._calculate_dcf(
             current_earnings=5.0,

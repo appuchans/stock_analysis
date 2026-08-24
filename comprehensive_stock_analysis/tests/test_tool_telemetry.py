@@ -1,10 +1,6 @@
 """Tests for per-tool telemetry tracking (call counts, errors, cache hits, latency)."""
 
 import threading
-import time
-from datetime import datetime, timedelta
-
-import pytest
 
 from src.stock_analysis import tool_telemetry
 
@@ -92,7 +88,8 @@ class TestToolTelemetryThreadSafety:
         snap = tool_telemetry.snapshot()
         assert snap["ToolA"]["calls"] == 30  # 20 + 10
         assert snap["ToolB"]["calls"] == 15
-        # Errors: ToolA has ~10-11 errors (from 20 calls + 10 calls with every other call erroring)
+        # Errors: ToolA has ~10-11 errors (20 calls + 10 calls with
+        # every other call erroring)
         # ToolB has ~7-8 errors (from 15 calls with every other call erroring)
         # Exact counts depend on thread interleaving, so we just verify some happened
         assert snap["ToolA"]["errors"] > 0

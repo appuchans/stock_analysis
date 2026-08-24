@@ -615,7 +615,7 @@ _PREAMBLE = """
 #set text(font: ("Helvetica", "Liberation Sans", "DejaVu Sans"), size: 9.3pt,
           fill: ink, lang: "en")
 // Hyphenation off: Typst's automatic word-breaks at a justified line end
-// ("artificial-intelli-\ngence") are typeset correctly but read as broken
+// ("artificial-intelli-\\ngence") are typeset correctly but read as broken
 // words to anyone who copies text out of the PDF or extracts it, which is
 // how this document is read as often as it is looked at. Typst comments use
 // "//", not "#" — "#" starts a code expression in markup mode.

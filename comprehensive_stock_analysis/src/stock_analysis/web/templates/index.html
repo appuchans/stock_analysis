@@ -31,6 +31,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
           History
         </a>
+        <a href="#/scorecard" data-nav="scorecard" class="sb-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M17 4h3a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-3M7 4H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h3"/><rect x="7" y="2" width="10" height="12" rx="1"/></svg>
+          Scorecard
+        </a>
         <a href="#/watchlist" data-nav="watchlist" class="sb-link">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2a9 9 0 1 0 6.32 15.43"/><path d="M22 12A9 9 0 0 0 13 3v9z"/></svg>
           Watchlist
@@ -186,6 +190,19 @@
           </div>
           <div id="history-grid" class="history-grid"></div>
           <div id="history-empty" class="empty-state hidden">No analyses yet. Run one to get started.</div>
+        </section>
+
+        <!-- Scorecard -->
+        <section id="view-scorecard" class="view">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Scorecard</h1>
+              <p class="page-sub">Was the advisor right? Recommendations graded against 90-day forward returns.</p>
+            </div>
+          </div>
+          <div id="scorecard-summary" class="stat-grid"></div>
+          <div id="scorecard-body"></div>
+          <div id="scorecard-empty" class="empty-state hidden">No recommendations recorded yet. Run an analysis to start the track record.</div>
         </section>
 
         <!-- Watchlist -->

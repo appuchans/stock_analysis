@@ -1,9 +1,7 @@
 """Network-free tests for the SocialSentimentTool."""
 
-import json
 from unittest.mock import Mock, patch
 
-import pytest
 import requests
 
 from src.stock_analysis.tools.social_sentiment import SocialSentimentTool

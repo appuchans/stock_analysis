@@ -9,13 +9,15 @@ from crewai.tools import BaseTool
 
 
 class PortfolioAnalysisTool(BaseTool):
-    """Analyses a portfolio: correlation matrix, per-stock metrics, and weight suggestions."""
+    """Analyses a portfolio: correlation matrix, per-stock metrics, and weight
+    suggestions."""
 
     name: str = "Portfolio Analysis Tool"
     description: str = (
         "Given a list of stock symbols, calculates the portfolio correlation matrix, "
         "per-stock risk/return metrics, equal-weight allocation, true covariance-based "
-        "minimum-variance weights (long-only, fully invested, solved via SLSQP; falls back "
+        "minimum-variance weights (long-only, fully invested, solved "
+        "via SLSQP; falls back "
         "to an inverse-variance proxy only if the optimizer fails to converge), "
         "and combined portfolio risk metrics."
     )
@@ -44,7 +46,8 @@ class PortfolioAnalysisTool(BaseTool):
             ]
             if len(available) < 2:
                 return {
-                    "error": "Insufficient price data returned for the requested symbols"
+                    "error": "Insufficient price data returned "
+                    "for the requested symbols"
                 }
 
             prices = raw[available].dropna()
@@ -57,7 +60,8 @@ class PortfolioAnalysisTool(BaseTool):
             if weights is not None:
                 if set(weights) != set(available):
                     return {
-                        "error": "User-supplied weights must match available price-data symbols"
+                        "error": "User-supplied weights must match "
+                        "available price-data symbols"
                     }
                 portfolio_weights = {
                     symbol: float(weights[symbol]) for symbol in available

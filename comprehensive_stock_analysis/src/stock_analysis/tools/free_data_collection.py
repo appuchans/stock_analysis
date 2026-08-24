@@ -1,32 +1,18 @@
-"""Free data collection tools for stock analysis using only open source and free APIs."""
+"""Free data collection tools for stock analysis using only open source and free
+APIs."""
 
 import logging
 import os
-
-_logger = logging.getLogger(__name__)
+import re
+import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+from urllib.parse import urljoin
 
 import pandas as pd
 import requests
 import yfinance as yf
-
-from . import _http
-
-try:
-    from bs4 import BeautifulSoup
-except ImportError:
-    BeautifulSoup = None  # type: ignore[assignment,misc]
-try:
-    import feedparser
-except ImportError:
-    feedparser = None  # type: ignore[assignment]
-import json
-import re
-import xml.etree.ElementTree as ET
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urljoin
-
 from crewai.tools import BaseTool
 from pydantic import Field as _PydanticField
 
@@ -39,7 +25,19 @@ from ..models.stock_data import (
     MarketData,
     NewsData,
 )
+from . import _http
 from .cache import cached_tool
+
+_logger = logging.getLogger(__name__)
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None  # type: ignore[assignment,misc]
+try:
+    import feedparser
+except ImportError:
+    feedparser = None  # type: ignore[assignment]
 
 _VALID_PERIODS = {
     "1d",
@@ -282,13 +280,15 @@ class YahooFinanceTool(BaseTool):
 
     name: str = "Yahoo Finance Data Collector"
     description: str = (
-        "Collects comprehensive stock data from Yahoo Finance including prices, fundamentals, and company information"
+        "Collects comprehensive stock data from Yahoo Finance: "
+        "prices, fundamentals, and company information"
     )
 
     def _run(
         self, symbol: str, period: str = "1y", interval: str = "1d"
     ) -> Dict[str, Any]:
-        """Collect data from Yahoo Finance. period accepts 1d/5d/1mo/3mo/6mo/1y/2y/5y/10y/ytd/max."""
+        """Collect data from Yahoo Finance. period accepts
+        1d/5d/1mo/3mo/6mo/1y/2y/5y/10y/ytd/max."""
         # Normalize BEFORE the cache key is computed (@cached_tool hashes the
         # args/kwargs it receives), so LLM-invented variants like "1-year"
         # share a cache entry with the canonical "1y" instead of fragmenting it.
@@ -598,7 +598,8 @@ class YahooFinanceTool(BaseTool):
 def _sec_extract_section(
     plain_text: str, markers: List[str], max_chars: int = 4000
 ) -> str:
-    """Locate a named section in plain text from an SEC filing and return up to max_chars.
+    """Locate a named section in plain text from an SEC filing
+    and return up to max_chars.
 
     Searches for every occurrence of the marker strings (case-insensitive) and picks
     the first one that has substantial body content (>= 500 chars before the next
@@ -654,10 +655,13 @@ def _sec_unwrap_ixbrl(href: str) -> str:
 def _sec_find_primary_doc_url(
     index_html: str, index_url: str, form_type: str
 ) -> Optional[str]:
-    """Parse an EDGAR filing index page and return the URL of the primary filing document.
+    """Parse an EDGAR filing index page and return the URL
+    of the primary filing document.
 
-    EDGAR index pages have a table with columns: Seq | Description | Document | Type | Size.
-    We find the row whose Type cell matches form_type.  iXBRL viewer wrappers are stripped.
+    EDGAR index pages have a table with columns:
+    Seq | Description | Document | Type | Size.
+    We find the row whose Type cell matches form_type.
+    iXBRL viewer wrappers are stripped.
     """
     if BeautifulSoup is None:
         return None
@@ -717,7 +721,8 @@ class FreeSECFilingTool(BaseTool):
         edgar_email = _edgar_settings.sec_edgar_email
         if edgar_email == "contact@example.com":
             _logger.warning(
-                "SEC_EDGAR_EMAIL is not configured — set it in .env to avoid EDGAR throttling"
+                "SEC_EDGAR_EMAIL is not configured — set it in "
+                ".env to avoid EDGAR throttling"
             )
         headers = {
             "User-Agent": f"Stock Analysis Tool ({edgar_email})",
@@ -919,7 +924,8 @@ class FreeNewsTool(BaseTool):
 
     name: str = "Free News Data Collector"
     description: str = (
-        "Collects news articles and sentiment data using free RSS feeds (Google News and others) and web scraping"
+        "Collects news articles and sentiment data using free RSS feeds "
+        "(Google News and others) and web scraping"
     )
 
     @cached_tool(ttl=1800)
@@ -1087,7 +1093,9 @@ class FreeNewsTool(BaseTool):
             for site_url in news_sites if BeautifulSoup is not None else []:
                 try:
                     headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; "
+                        "Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/91.0.4472.124 Safari/537.36"
                     }
 
                     response = _http.get(site_url, headers=headers, timeout=15)
@@ -1199,7 +1207,8 @@ class FreeEconomicDataTool(BaseTool):
     def _run(
         self, country: str = "US", indicators: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Collect economic data. indicators is an optional JSON array of FRED series IDs e.g. '["GDPC1","UNRATE"]'."""
+        """Collect economic data. indicators is an optional JSON array of FRED
+        series IDs e.g. '["GDPC1","UNRATE"]'."""
         try:
             if indicators is None or not str(indicators).strip():
                 indicator_list = [
@@ -1441,7 +1450,8 @@ class FreeEconomicDataTool(BaseTool):
                     "economic_data": {},
                     "indicator_summaries": {},
                     "market_indicators": fallback,
-                    "note": "FRED data unavailable; market-traded proxies provided instead",
+                    "note": "FRED data unavailable; market-traded "
+                    "proxies provided instead",
                 }
             return {"error": f"Failed to collect economic data: {str(e)}"}
 
@@ -1459,7 +1469,8 @@ class FreeWebSearchTool(BaseTool):
         """Perform web search using free methods."""
         if BeautifulSoup is None:
             return {
-                "error": "bs4 is not installed; install it with: pip install beautifulsoup4"
+                "error": "bs4 is not installed; install it with: "
+                "pip install beautifulsoup4"
             }
         try:
             # Use DuckDuckGo search (free)
@@ -1467,7 +1478,9 @@ class FreeWebSearchTool(BaseTool):
             params = {"q": query, "kl": "us-en"}
 
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/91.0.4472.124 Safari/537.36"
             }
 
             response = _http.get(search_url, params=params, headers=headers, timeout=15)
@@ -1481,7 +1494,6 @@ class FreeWebSearchTool(BaseTool):
             for result in search_results[:num_results]:
                 title_elem = result.find("a", class_="result__a")
                 snippet_elem = result.find("a", class_="result__snippet")
-                url_elem = result.find("a", class_="result__url")
 
                 if title_elem:
                     title = title_elem.get_text(strip=True)
@@ -1501,7 +1513,8 @@ class FreeCompetitorAnalysisTool(BaseTool):
 
     name: str = "Free Competitor Analysis Tool"
     description: str = (
-        "Analyzes competitors using free data sources like Yahoo Finance and web scraping"
+        "Analyzes competitors using free data sources like Yahoo "
+        "Finance and web scraping"
     )
 
     @cached_tool(ttl=43200)

@@ -1,7 +1,5 @@
 """Tests for the hard LLM-call budget — runaway loops must be impossible."""
 
-from unittest.mock import patch
-
 import pytest
 
 from src.stock_analysis import llm_budget

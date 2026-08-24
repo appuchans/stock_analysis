@@ -56,20 +56,26 @@ _HTML_TEMPLATE = """\
     --red: #822727; --red-bg: #fed7d7;
   }
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-         max-width: 1000px; margin: 0 auto; color: var(--ink); line-height: 1.65; padding: 0 24px 48px;
+  body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+         max-width: 1000px; margin: 0 auto; color: var(--ink); line-height: 1.65;
+         padding: 0 24px 48px
          font-size: 15.5px; -webkit-font-smoothing: antialiased; }
   .report-header { display: flex; align-items: center; gap: 18px; padding: 28px 0 18px;
                    border-bottom: 3px solid var(--brand); margin-bottom: 6px; }
   .logo { width: 56px; height: 56px; border-radius: 12px; background: var(--bg-soft);
-          display: flex; align-items: center; justify-content: center; border: 1px solid var(--line);
+          display: flex; align-items: center; justify-content: center;
+          border: 1px solid var(--line)
           overflow: hidden; flex-shrink: 0; }
   .logo img { width: 40px; height: 40px; }
   .logo-fallback { font-size: 1.5em; font-weight: 700; color: var(--brand); }
-  .title-block h1 { margin: 0; font-size: 1.65em; color: var(--brand); line-height: 1.2; }
+  .title-block h1 { margin: 0; font-size: 1.65em; color: var(--brand); line-height: 1.2;
+  }
   .title-block .subtitle { color: var(--ink-soft); font-size: 0.95em; margin-top: 2px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
-  .chip { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 14px;
+  .chip { background: var(--bg-soft); border: 1px solid var(--line);
+  border-radius: 14px;
           padding: 3px 12px; font-size: 0.82em; color: var(--ink-soft); }
   h2 { color: var(--brand); margin-top: 40px; font-size: 1.25em;
        border-bottom: 1px solid var(--line); padding-bottom: 8px; }
@@ -80,29 +86,35 @@ _HTML_TEMPLATE = """\
   th { background: var(--bg-soft); font-weight: 600; color: var(--ink-soft);
        text-transform: uppercase; font-size: 0.8em; letter-spacing: 0.4px; }
   tr:nth-child(even) td { background: #fbfdfe; }
-  .badge { display: inline-block; padding: 6px 20px; border-radius: 20px; font-weight: 700;
+  .badge { display: inline-block; padding: 6px 20px; border-radius: 20px;
+  font-weight: 700;
            font-size: 1.05em; letter-spacing: 1.2px; }
   .buy  { background: var(--green-bg); color: var(--green); }
   .hold { background: var(--amber-bg); color: var(--amber); }
   .sell { background: var(--red-bg); color: var(--red); }
   .meta { color: var(--ink-faint); font-size: 0.85em; }
-  .card { background: var(--bg-soft); border-left: 4px solid #4299e1; padding: 16px 20px;
+  .card { background: var(--bg-soft); border-left: 4px solid #4299e1;
+  padding: 16px 20px;
           margin: 12px 0; border-radius: 0 8px 8px 0; }
-  .rec-card { background: #ebf8ff; border: 1px solid #bee3f8; border-left: 5px solid var(--accent);
+  .rec-card { background: #ebf8ff; border: 1px solid #bee3f8;
+  border-left: 5px solid var(--accent);
               padding: 22px 26px; margin: 24px 0; border-radius: 10px; }
   .exec-card { background: #f0fff4; border-left: 4px solid #38a169; padding: 16px 20px;
                margin: 12px 0; border-radius: 0 8px 8px 0; }
   .chart { background: #fff; border: 1px solid var(--line); border-radius: 10px;
            padding: 16px 12px 8px; margin: 14px 0; }
   .chart svg { width: 100%; height: auto; display: block; }
-  .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  .stat-grid { display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
                gap: 12px; margin: 16px 0; }
-  .stat { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px;
+  .stat { background: var(--bg-soft); border: 1px solid var(--line);
+  border-radius: 10px;
           padding: 12px 14px; }
   .stat .label { font-size: 0.74em; text-transform: uppercase; letter-spacing: 0.5px;
                  color: var(--ink-faint); margin-bottom: 2px; }
   .stat .value { font-size: 1.15em; font-weight: 650; color: var(--ink); }
-  .detail-section { background: #fff; border: 1px solid var(--line); border-radius: 10px;
+  .detail-section { background: #fff; border: 1px solid var(--line);
+  border-radius: 10px;
                     padding: 24px 28px; margin: 24px 0; }
   .detail-section h2 { margin-top: 0; border: none; }
   .toc { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px;
@@ -114,7 +126,8 @@ _HTML_TEMPLATE = """\
   ul { margin: 6px 0; padding-left: 24px; }
   li { margin: 4px 0; }
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media (max-width: 640px) { .two-col, .toc ul { grid-template-columns: 1fr; columns: 1; } }
+  @media (max-width: 640px) { .two-col, .toc ul { grid-template-columns: 1fr;
+  columns: 1; } }
   /* Appendix body copy is dense reference material read in long stretches, so
      it gets a narrower measure and more line spacing than the main narrative —
      ~75 characters is where continuous prose stays comfortable to scan. */
@@ -126,7 +139,8 @@ _HTML_TEMPLATE = """\
      these must read as sub-headings, not compete with the report's own
      section headings — hence the step down in size and weight. */
   .md-content h1 { font-size: 1.18em; color: var(--brand); margin: 22px 0 8px; }
-  .md-content h2 { font-size: 1.06em; color: var(--accent); border-bottom: 1px solid var(--line);
+  .md-content h2 { font-size: 1.06em; color: var(--accent);
+  border-bottom: 1px solid var(--line);
                    padding-bottom: 3px; margin: 20px 0 8px; }
   .md-content h3 { font-size: 0.98em; color: var(--ink-soft); margin: 16px 0 6px;
                    text-transform: none; letter-spacing: 0.01em; }
@@ -134,13 +148,18 @@ _HTML_TEMPLATE = """\
      structure is visible at a glance. */
   .md-content p > strong:first-child { color: var(--ink); }
   .md-content table { font-size: 0.94em; }
-  .md-content code { background: #edf2f7; padding: 2px 5px; border-radius: 3px; font-size: 0.88em; }
-  .md-content pre { background: #f1f5f9; padding: 14px; border-radius: 6px; overflow: auto; }
-  .md-content blockquote { border-left: 3px solid #4299e1; margin: 10px 0; padding-left: 14px; color: #555; }
-  details.detail-section summary { cursor: pointer; font-size: 1.05em; color: var(--brand);
+  .md-content code { background: #edf2f7; padding: 2px 5px; border-radius: 3px;
+  font-size: 0.88em; }
+  .md-content pre { background: #f1f5f9; padding: 14px; border-radius: 6px;
+  overflow: auto; }
+  .md-content blockquote { border-left: 3px solid #4299e1; margin: 10px 0;
+  padding-left: 14px; color: #555; }
+  details.detail-section summary { cursor: pointer; font-size: 1.05em;
+  color: var(--brand);
     padding: 4px 0; list-style-position: outside; }
   details.detail-section summary:hover { color: var(--accent); }
-  details.detail-section[open] summary { margin-bottom: 12px; border-bottom: 1px solid var(--line);
+  details.detail-section[open] summary { margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
     padding-bottom: 10px; }
   .narrative > h2:first-child { margin-top: 12px; }
   /* Within the synthesized narrative, render any sub-headings the writer slips
@@ -157,11 +176,13 @@ _HTML_TEMPLATE = """\
     /* Print gets a serif body: on paper a serif holds up better at small sizes
        over long stretches than the screen sans, and the report is read as a
        document rather than scanned as a page. */
-    body { font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+    body {
+    font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
            font-size: 10.5pt; line-height: 1.5; max-width: none; padding: 0;
            color: #000; }
     h1, h2, h3, h4, .report-header .company,
-    .rec-badge, .stat .label, th { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+    .rec-badge, .stat .label, th {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
     h2 { font-size: 13pt; letter-spacing: -0.01em; }
     h3 { font-size: 11.5pt; }
     /* Masthead: logo and company sit together on the cover page, then the
@@ -181,7 +202,8 @@ _HTML_TEMPLATE = """\
     td, th { border-bottom: 0.4pt solid #ddd; padding: 3pt 5pt; }
     /* A link's href is invisible on paper, so surface the ones that carry
        information and leave in-page anchors silent. */
-    a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 8pt; color: #555; }
+    a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 8pt; color: #555;
+    }
     a[href^="#"]::after { content: none; }
     /* Appendices must appear in a PDF whether or not script ran. The
        beforeprint handler below opens them, but it never fires when the page
@@ -208,14 +230,20 @@ _HTML_TEMPLATE = """\
   @page {
     size: A4;
     margin: 16mm 14mm 18mm;
-    @top-left { content: "{{ symbol }} — {{ "ETF" if asset_type == "etf" else "Equity" }} Research";
-                font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color: #555; }
+    @top-left {
+      content: "{{ symbol }} — {{ "ETF" if asset_type == "etf"
+               else "Equity" }} Research";
+                font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color: #555;
+                }
     @top-right { content: "{{ generated_at }}";
-                 font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color: #555; }
+                 font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color: #555;
+                 }
     @bottom-right { content: "Page " counter(page) " of " counter(pages);
-                    font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color: #555; }
+                    font-family: Helvetica, Arial, sans-serif; font-size: 8pt;
+                    color: #555; }
     @bottom-left { content: "Generated for research purposes — not investment advice.";
-                   font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; color: #777; }
+                   font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt;
+                   color: #777; }
   }
   @page :first { @top-left { content: ""; } @top-right { content: ""; } }
   html { scroll-behavior: smooth; }
@@ -233,18 +261,28 @@ _HTML_TEMPLATE = """\
 
 <div class="report-header" id="top">
   <div class="logo">
-    {% if logo_url %}<img src="{{ logo_url }}" alt="" onerror="this.parentElement.innerHTML='<span class=&quot;logo-fallback&quot;>{{ symbol[0] }}</span>'">
+
+    {% if logo_url %}
+        <img src="{{ logo_url }}" alt=""
+            onerror="this.parentElement.innerHTML=
+              '<span class=&quot;logo-fallback&quot;>{{ symbol[0] }}</span>'">
     {% else %}<span class="logo-fallback">{{ symbol[0] }}</span>{% endif %}
   </div>
   <div class="title-block">
-    <h1>{{ company_name or symbol }} <span style="color:var(--ink-faint); font-weight:400">({{ symbol }})</span></h1>
-    <div class="subtitle">{{ "ETF Research Report" if asset_type == "etf" else "Equity Research Report" }}{% if price_as_of %} &bull; Prices as of {{ price_as_of }}{% endif %}</div>
+    <h1>{{ company_name or symbol }}
+    <span style="color:var(--ink-faint); font-weight:400">({{ symbol }})</span></h1>
+    <div
+    class="subtitle">
+        {{ "ETF Research Report" if asset_type == "etf" else "Equity Research Report" }}
+    {% if price_as_of %} &bull; Prices as of {{ price_as_of }}{% endif %}</div>
   </div>
 </div>
 <div class="chips">
-  {% if meta.get('exchange') %}<span class="chip">{{ meta['exchange'] }}</span>{% endif %}
+  {% if meta.get('exchange') %}<span class="chip">{{ meta['exchange'] }}</span>
+  {% endif %}
   {% if meta.get('sector') %}<span class="chip">{{ meta['sector'] }}</span>{% endif %}
-  {% if meta.get('industry') %}<span class="chip">{{ meta['industry'] }}</span>{% endif %}
+  {% if meta.get('industry') %}<span class="chip">{{ meta['industry'] }}</span>
+  {% endif %}
   <span class="chip">Timeframe: {{ timeframe }}</span>
   <span class="chip">{{ "ETF" if asset_type == "etf" else "Stock" }}</span>
 </div>
@@ -252,7 +290,8 @@ _HTML_TEMPLATE = """\
 {% if key_stats %}
 <div class="stat-grid" style="margin-top:18px">
   {% for label, value in key_stats %}
-  <div class="stat"><div class="label">{{ label }}</div><div class="value">{{ value }}</div></div>
+  <div class="stat"><div class="label">{{ label }}</div>
+  <div class="value">{{ value }}</div></div>
   {% endfor %}
 </div>
 {% endif %}
@@ -260,7 +299,9 @@ _HTML_TEMPLATE = """\
 {% if catalysts %}
 <div class="stat-grid" style="margin-top:4px">
   {% for label, value in catalysts %}
-  <div class="stat" style="border-left:3px solid var(--accent)"><div class="label">{{ label }}</div><div class="value" style="font-size:0.98em">{{ value }}</div></div>
+  <div class="stat" style="border-left:3px solid var(--accent)">
+  <div class="label">{{ label }}</div>
+  <div class="value" style="font-size:0.98em">{{ value }}</div></div>
   {% endfor %}
 </div>
 {% endif %}
@@ -272,11 +313,32 @@ _HTML_TEMPLATE = """\
     <span class="badge {{ rec_class }}">{{ rating }}</span>
   </h2>
   <div class="stat-grid">
-    {% if inv_rec.get('target_price') %}<div class="stat"><div class="label">Target Price</div><div class="value">${{ inv_rec['target_price'] }}</div></div>{% endif %}
-    {% if inv_rec.get('stop_loss') %}<div class="stat"><div class="label">Stop Loss</div><div class="value">${{ inv_rec['stop_loss'] }}</div></div>{% endif %}
-    {% if inv_rec.get('time_horizon') %}<div class="stat"><div class="label">Time Horizon</div><div class="value">{{ inv_rec['time_horizon'] }}</div></div>{% endif %}
-    {% if inv_rec.get('risk_level') %}<div class="stat"><div class="label">Risk Level</div><div class="value">{{ inv_rec['risk_level'] }}</div></div>{% endif %}
-    {% if inv_rec.get('confidence') is not none %}<div class="stat"><div class="label">Confidence</div><div class="value">{{ "%.0f%%"|format(inv_rec['confidence']|float * 100) }}</div></div>{% endif %}
+
+    {% if inv_rec.get('target_price') %}
+        <div class="stat"><div class="label">Target Price</div>
+            <div class="value">${{ inv_rec['target_price'] }}</div></div>
+    {% endif %}
+
+    {% if inv_rec.get('stop_loss') %}
+        <div class="stat"><div class="label">Stop Loss</div>
+            <div class="value">${{ inv_rec['stop_loss'] }}</div></div>
+    {% endif %}
+
+    {% if inv_rec.get('time_horizon') %}
+        <div class="stat"><div class="label">Time Horizon</div>
+            <div class="value">{{ inv_rec['time_horizon'] }}</div></div>
+    {% endif %}
+
+    {% if inv_rec.get('risk_level') %}
+        <div class="stat"><div class="label">Risk Level</div>
+            <div class="value">{{ inv_rec['risk_level'] }}</div></div>
+    {% endif %}
+
+    {% if inv_rec.get('confidence') is not none %}
+        <div class="stat"><div class="label">Confidence</div>
+            <div class="value">{{ "%.0f%%"|
+          format(inv_rec['confidence']|float * 100) }}</div></div>
+    {% endif %}
   </div>
   {% if inv_rec.get('rationale') %}
   <h3 style="margin-top:12px">Rationale</h3>
@@ -297,13 +359,20 @@ _HTML_TEMPLATE = """\
     {% if inv_rec.get('upside_drivers') or inv_rec.get('opportunities') %}
     <div>
       <h3>Upside Drivers</h3>
-      <ul>{% for d in (inv_rec.get('upside_drivers') or inv_rec.get('opportunities') or []) %}<li>{{ d }}</li>{% endfor %}</ul>
+      <ul>
+      {% for d in (inv_rec.get('upside_drivers')
+                   or inv_rec.get('opportunities') or []) %}
+          <li>{{ d }}</li>
+      {% endfor %}</ul>
     </div>
     {% endif %}
     {% if inv_rec.get('downside_risks') or inv_rec.get('risks') %}
     <div>
       <h3>Downside Risks</h3>
-      <ul>{% for r in (inv_rec.get('downside_risks') or inv_rec.get('risks') or []) %}<li>{{ r }}</li>{% endfor %}</ul>
+      <ul>
+      {% for r in (inv_rec.get('downside_risks') or inv_rec.get('risks') or []) %}
+          <li>{{ r }}</li>
+      {% endfor %}</ul>
     </div>
     {% endif %}
   </div>
@@ -314,28 +383,48 @@ _HTML_TEMPLATE = """\
   <strong>Contents</strong>
   <ul>
     {% if inv_rec %}<li><a href="#recommendation">Recommendation</a></li>{% endif %}
-    {% if exec_sum and not narrative_html %}<li><a href="#executive-summary">Executive Summary</a></li>{% endif %}
+
+    {% if exec_sum and not narrative_html %}
+        <li><a href="#executive-summary">Executive Summary</a></li>
+    {% endif %}
     {% for sec in narrative_sections %}
     <li><a href="#{{ sec.anchor }}">{{ sec.title }}</a></li>
     {% endfor %}
-    {% if standalone.get('consensus') %}<li><a href="#analyst-consensus">Analyst Consensus</a></li>{% endif %}
-    {% if standalone.get('peers') %}<li><a href="#peer-comparison">Peer Comparison</a></li>{% endif %}
-    {% if standalone.get('valuation') %}<li><a href="#valuation-scenarios">Valuation Scenarios</a></li>{% endif %}
-    {% if standalone.get('price') %}<li><a href="#price-chart">Price History</a></li>{% endif %}
-    {% if market_snap %}<li><a href="#market-snapshot">Market Snapshot</a></li>{% endif %}
+    {% if standalone.get('consensus')
+    %}<li><a href="#analyst-consensus">Analyst Consensus</a></li>{% endif %}
+    {% if standalone.get('peers')
+    %}<li><a href="#peer-comparison">Peer Comparison</a></li>{% endif %}
+    {% if standalone.get('valuation')
+    %}<li><a href="#valuation-scenarios">Valuation Scenarios</a></li>{% endif %}
+    {% if standalone.get('price')
+    %}<li><a href="#price-chart">Price History</a></li>{% endif %}
+    {% if market_snap %}<li><a href="#market-snapshot">Market Snapshot</a></li>
+    {% endif %}
     {% if asset_type == "etf" %}
-    {% if etf_profile %}<li><a href="#etf-profile">ETF Profile &amp; Cost</a></li>{% endif %}
-    {% if sector_chart_svg %}<li><a href="#sector-allocation">Sector Allocation</a></li>{% endif %}
+    {% if etf_profile %}<li><a href="#etf-profile">ETF Profile &amp;
+    Cost</a></li>{% endif %}
+    {% if sector_chart_svg %}<li><a href="#sector-allocation">Sector Allocation</a></li>
+    {% endif %}
     {% else %}
-    {% if technical %}<li><a href="#technical-analysis">Technical Analysis</a></li>{% endif %}
-    {% if fundamental %}<li><a href="#fundamental-analysis">Fundamental Analysis</a></li>{% endif %}
+    {% if technical %}<li><a href="#technical-analysis">Technical Analysis</a></li>
+    {% endif %}
+
+    {% if fundamental %}
+        <li><a href="#fundamental-analysis">Fundamental Analysis</a></li>
+    {% endif %}
     {% endif %}
     {% if risk %}<li><a href="#risk-assessment">Risk Assessment</a></li>{% endif %}
-    {% if sentiment %}<li><a href="#sentiment-analysis">Sentiment Analysis</a></li>{% endif %}
-    {% if market_ctx %}<li><a href="#market-context">Market &amp; Economic Context</a></li>{% endif %}
+    {% if sentiment %}<li><a href="#sentiment-analysis">Sentiment Analysis</a></li>
+    {% endif %}
+    {% if market_ctx %}<li><a href="#market-context">Market &amp;
+    Economic Context</a></li>{% endif %}
     {% if asset_type != "etf" %}
-    {% if industry %}<li><a href="#industry-analysis">Industry Analysis</a></li>{% endif %}
-    {% if competitive %}<li><a href="#competitive-analysis">Competitive Analysis</a></li>{% endif %}
+    {% if industry %}<li><a href="#industry-analysis">Industry Analysis</a></li>
+    {% endif %}
+
+    {% if competitive %}
+        <li><a href="#competitive-analysis">Competitive Analysis</a></li>
+    {% endif %}
     {% endif %}
     <li><a href="#appendix">Appendix</a></li>
   </ul>
@@ -395,7 +484,8 @@ _HTML_TEMPLATE = """\
 <h2 id="market-snapshot">Market Snapshot</h2>
 <div class="stat-grid">
   {% for k, v in market_snap.items() %}
-  <div class="stat"><div class="label">{{ k | replace('_', ' ') | title }}</div><div class="value">{{ v }}</div></div>
+  <div class="stat"><div class="label">{{ k | replace('_', ' ') | title }}</div>
+  <div class="value">{{ v }}</div></div>
   {% endfor %}
 </div>
 {% endif %}
@@ -406,16 +496,52 @@ _HTML_TEMPLATE = """\
 <h2 id="etf-profile">ETF Profile &amp; Cost Analysis</h2>
 <table>
   <tr><th>Metric</th><th>Value</th></tr>
-  {% if etf_profile.get('fund_family') %}<tr><td>Fund Family</td><td>{{ etf_profile['fund_family'] }}</td></tr>{% endif %}
-  {% if etf_profile.get('category') %}<tr><td>Category</td><td>{{ etf_profile['category'] }}</td></tr>{% endif %}
-  {% if etf_profile.get('total_assets_bn') is not none %}<tr><td>AUM (bn)</td><td>${{ etf_profile['total_assets_bn'] }}B</td></tr>{% endif %}
-  {% if etf_profile.get('expense_ratio') is not none %}<tr><td>Expense Ratio</td><td>{{ "%.2f%%"|format(etf_profile['expense_ratio'] * 100) }}</td></tr>{% endif %}
-  {% if etf_profile.get('distribution_yield') is not none %}<tr><td>Distribution Yield</td><td>{{ "%.2f%%"|format(etf_profile['distribution_yield'] * 100) }}</td></tr>{% endif %}
-  {% if etf_profile.get('ytd_return') is not none %}<tr><td>YTD Return</td><td>{{ "%.2f%%"|format(etf_profile['ytd_return'] * 100) }}</td></tr>{% endif %}
-  {% if etf_profile.get('three_year_return') is not none %}<tr><td>3Y Return (ann.)</td><td>{{ "%.2f%%"|format(etf_profile['three_year_return'] * 100) }}</td></tr>{% endif %}
-  {% if etf_profile.get('five_year_return') is not none %}<tr><td>5Y Return (ann.)</td><td>{{ "%.2f%%"|format(etf_profile['five_year_return'] * 100) }}</td></tr>{% endif %}
-  {% if etf_profile.get('turnover_ratio') is not none %}<tr><td>Turnover Ratio</td><td>{{ "%.0f%%"|format(etf_profile['turnover_ratio'] * 100) }}</td></tr>{% endif %}
-  {% if etf_profile.get('index_tracked') %}<tr><td>Index / Benchmark</td><td>{{ etf_profile['index_tracked'] }}</td></tr>{% endif %}
+
+  {% if etf_profile.get('fund_family') %}
+      <tr><td>Fund Family</td><td>{{ etf_profile['fund_family'] }}</td></tr>
+  {% endif %}
+
+  {% if etf_profile.get('category') %}
+      <tr><td>Category</td><td>{{ etf_profile['category'] }}</td></tr>
+  {% endif %}
+
+  {% if etf_profile.get('total_assets_bn') is not none %}
+      <tr><td>AUM (bn)</td><td>${{ etf_profile['total_assets_bn'] }}B</td></tr>
+  {% endif %}
+
+  {% if etf_profile.get('expense_ratio') is not none %}
+      <tr><td>Expense Ratio</td>
+       <td>{{ "%.2f%%"|format(etf_profile['expense_ratio'] * 100) }}</td></tr>
+  {% endif %}
+
+  {% if etf_profile.get('distribution_yield') is not none %}
+      <tr><td>Distribution Yield</td>
+       <td>{{ "%.2f%%"|format(etf_profile['distribution_yield'] * 100) }}</td></tr>
+  {% endif %}
+
+  {% if etf_profile.get('ytd_return') is not none %}
+      <tr><td>YTD Return</td>
+       <td>{{ "%.2f%%"|format(etf_profile['ytd_return'] * 100) }}</td></tr>
+  {% endif %}
+
+  {% if etf_profile.get('three_year_return') is not none %}
+      <tr><td>3Y Return (ann.)</td>
+       <td>{{ "%.2f%%"|format(etf_profile['three_year_return'] * 100) }}</td></tr>
+  {% endif %}
+
+  {% if etf_profile.get('five_year_return') is not none %}
+      <tr><td>5Y Return (ann.)</td>
+       <td>{{ "%.2f%%"|format(etf_profile['five_year_return'] * 100) }}</td></tr>
+  {% endif %}
+
+  {% if etf_profile.get('turnover_ratio') is not none %}
+      <tr><td>Turnover Ratio</td>
+       <td>{{ "%.0f%%"|format(etf_profile['turnover_ratio'] * 100) }}</td></tr>
+  {% endif %}
+
+  {% if etf_profile.get('index_tracked') %}
+      <tr><td>Index / Benchmark</td><td>{{ etf_profile['index_tracked'] }}</td></tr>
+  {% endif %}
 </table>
 {% if etf_profile.get('top_holdings') %}
 <h3>Top Holdings</h3>
@@ -425,7 +551,8 @@ _HTML_TEMPLATE = """\
   <tr>
     <td>{{ h.get('Symbol') or h.get('symbol') or '—' }}</td>
     <td>{{ h.get('Name') or h.get('name') or '—' }}</td>
-    <td>{{ h.get('% of Net Assets') or h.get('Holding Percent') or h.get('weight_pct') or '—' }}</td>
+    <td>{{ h.get('% of Net Assets')
+        or h.get('Holding Percent') or h.get('weight_pct') or '—' }}</td>
   </tr>
   {% endfor %}
 </table>
@@ -442,7 +569,8 @@ _HTML_TEMPLATE = """\
 
 {% if technical %}
 <h2 id="technical-analysis">Technical Analysis — Summary</h2>
-{% if technical.get('summary') %}<div class="card">{{ technical['summary'] | md }}</div>{% endif %}
+{% if technical.get('summary') %}<div class="card">{{ technical['summary'] | md }}</div>
+{% endif %}
 {% if technical.get('key_observations') %}
 <h3>Key Observations</h3>
 <ul>{% for o in technical['key_observations'] %}<li>{{ o | md }}</li>{% endfor %}</ul>
@@ -463,12 +591,16 @@ _HTML_TEMPLATE = """\
   {% endif %}
 </div>
 {% endif %}
-{% if technical.get('technical_bias') %}<p><strong>Technical Bias:</strong> {{ technical['technical_bias'] }}</p>{% endif %}
+{% if technical.get('technical_bias') %}
+    <p><strong>Technical Bias:</strong> {{ technical['technical_bias'] }}</p>
+{% endif %}
 {% endif %}
 
 {% if fundamental %}
 <h2 id="fundamental-analysis">Fundamental Analysis — Summary</h2>
-{% if fundamental.get('summary') %}<div class="card">{{ fundamental['summary'] | md }}</div>{% endif %}
+{% if fundamental.get('summary') %}
+    <div class="card">{{ fundamental['summary'] | md }}</div>
+{% endif %}
 {% if fundamental.get('key_metrics') %}
 <h3>Key Metrics</h3>
 <table>
@@ -482,16 +614,24 @@ _HTML_TEMPLATE = """\
 <h3>Interpretation</h3>
 <ul>{% for i in fundamental['interpretation'] %}<li>{{ i | md }}</li>{% endfor %}</ul>
 {% endif %}
-{% if fundamental.get('valuation_view') %}<p><strong>Valuation View:</strong> {{ fundamental['valuation_view'] }}</p>{% endif %}
-{% if fundamental.get('investment_quality_score') is not none %}<p><strong>Investment Quality Score:</strong> {{ fundamental['investment_quality_score'] }}/100</p>{% endif %}
+{% if fundamental.get('valuation_view') %}
+    <p><strong>Valuation View:</strong> {{ fundamental['valuation_view'] }}</p>
+{% endif %}
+{% if fundamental.get('investment_quality_score') is not none %}
+    <p><strong>Investment Quality Score:</strong>
+        {{ fundamental['investment_quality_score'] }}/100</p>
+{% endif %}
 {% endif %}
 
 {% endif %}
 
 {% if risk %}
 <h2 id="risk-assessment">Risk Assessment — Summary</h2>
-{% if risk.get('summary') %}<div class="card">{{ risk['summary'] | md }}</div>{% endif %}
-{% if risk.get('overall_risk_score') is not none %}<p><strong>Overall Risk Score:</strong> {{ risk['overall_risk_score'] }}/100</p>{% endif %}
+{% if risk.get('summary') %}<div class="card">{{ risk['summary'] | md }}</div>
+{% endif %}
+{% if risk.get('overall_risk_score') is not none %}
+    <p><strong>Overall Risk Score:</strong> {{ risk['overall_risk_score'] }}/100</p>
+{% endif %}
 {% if risk.get('risk_categories') %}
 <table>
   <tr><th>Risk Category</th><th>Score</th><th>Level</th></tr>
@@ -516,15 +656,24 @@ _HTML_TEMPLATE = """\
 
 {% if sentiment %}
 <h2 id="sentiment-analysis">Sentiment Analysis — Summary</h2>
-{% if sentiment.get('summary') %}<div class="card">{{ sentiment['summary'] | md }}</div>{% endif %}
-{% if sentiment.get('overall_sentiment') %}<p><strong>Overall Sentiment:</strong> {{ sentiment['overall_sentiment'] }}</p>{% endif %}
-{% if sentiment.get('analyst_sentiment') %}<p><strong>Analyst Sentiment:</strong> {{ sentiment['analyst_sentiment'] }}</p>{% endif %}
-{% if sentiment.get('market_sentiment') %}<p><strong>Market Sentiment:</strong> {{ sentiment['market_sentiment'] }}</p>{% endif %}
+{% if sentiment.get('summary') %}<div class="card">{{ sentiment['summary'] | md }}</div>
+{% endif %}
+{% if sentiment.get('overall_sentiment') %}
+    <p><strong>Overall Sentiment:</strong> {{ sentiment['overall_sentiment'] }}</p>
+{% endif %}
+{% if sentiment.get('analyst_sentiment') %}
+    <p><strong>Analyst Sentiment:</strong> {{ sentiment['analyst_sentiment'] }}</p>
+{% endif %}
+{% if sentiment.get('market_sentiment') %}
+    <p><strong>Market Sentiment:</strong> {{ sentiment['market_sentiment'] }}</p>
+{% endif %}
 {% endif %}
 
 {% if market_ctx %}
 <h2 id="market-context">Market &amp; Economic Context — Summary</h2>
-{% if market_ctx.get('summary') %}<div class="card">{{ market_ctx['summary'] | md }}</div>{% endif %}
+{% if market_ctx.get('summary') %}
+    <div class="card">{{ market_ctx['summary'] | md }}</div>
+{% endif %}
 {% if market_ctx.get('macro_metrics') %}
 <table>
   <tr><th>Indicator</th><th>Value</th></tr>
@@ -542,7 +691,8 @@ _HTML_TEMPLATE = """\
 
 {% if industry %}
 <h2 id="industry-analysis">Industry Analysis — Summary</h2>
-{% if industry.get('summary') %}<div class="card">{{ industry['summary'] | md }}</div>{% endif %}
+{% if industry.get('summary') %}<div class="card">{{ industry['summary'] | md }}</div>
+{% endif %}
 {% if industry.get('industry_trends') %}
 <h3>Industry Trends</h3>
 <ul>{% for t in industry['industry_trends'] %}<li>{{ t | md }}</li>{% endfor %}</ul>
@@ -551,24 +701,32 @@ _HTML_TEMPLATE = """\
 <h3>Growth Prospects</h3>
 <ul>{% for g in industry['growth_prospects'] %}<li>{{ g | md }}</li>{% endfor %}</ul>
 {% endif %}
-{% if industry.get('industry_positioning') %}<p><strong>Positioning:</strong> {{ industry['industry_positioning'] }}</p>{% endif %}
+{% if industry.get('industry_positioning') %}
+    <p><strong>Positioning:</strong> {{ industry['industry_positioning'] }}</p>
+{% endif %}
 {% endif %}
 
 {% if competitive %}
 <h2 id="competitive-analysis">Competitive Analysis — Summary</h2>
-{% if competitive.get('summary') %}<div class="card">{{ competitive['summary'] | md }}</div>{% endif %}
-{% if competitive.get('peer_set') %}<p><strong>Key Peers:</strong> {{ competitive['peer_set'] | join(', ') }}</p>{% endif %}
+{% if competitive.get('summary') %}
+    <div class="card">{{ competitive['summary'] | md }}</div>
+{% endif %}
+{% if competitive.get('peer_set') %}
+    <p><strong>Key Peers:</strong> {{ competitive['peer_set'] | join(', ') }}</p>
+{% endif %}
 <div class="two-col">
   {% if competitive.get('competitive_advantages') %}
   <div>
     <h3>Competitive Advantages</h3>
-    <ul>{% for a in competitive['competitive_advantages'] %}<li>{{ a | md }}</li>{% endfor %}</ul>
+    <ul>{% for a in competitive['competitive_advantages'] %}<li>{{ a | md }}</li>
+    {% endfor %}</ul>
   </div>
   {% endif %}
   {% if competitive.get('competitive_disadvantages') %}
   <div>
     <h3>Competitive Disadvantages</h3>
-    <ul>{% for d in competitive['competitive_disadvantages'] %}<li>{{ d | md }}</li>{% endfor %}</ul>
+    <ul>{% for d in competitive['competitive_disadvantages'] %}<li>{{ d | md }}</li>
+    {% endfor %}</ul>
   </div>
   {% endif %}
 </div>
@@ -630,18 +788,21 @@ _HTML_TEMPLATE = """\
 
 <script>
   window.addEventListener("beforeprint", function () {
-    document.querySelectorAll("details").forEach(function (d) { d.setAttribute("open", ""); });
+    document.querySelectorAll("details").forEach(function (d) {
+    d.setAttribute("open", ""); });
   });
 </script>
 
 <hr>
 <p class="meta">
   Prepared from public data sources (Yahoo Finance, SEC EDGAR, FRED,
-  Stocktwits, Google News). This report is generated automatically and is for informational
+  Stocktwits, Google News).
+      This report is generated automatically and is for informational
   purposes only. It does not constitute financial advice.
 </p>
 
-<a href="#top" class="to-top" id="to-top" aria-label="Back to top" title="Back to top">&uarr;</a>
+<a href="#top" class="to-top" id="to-top" aria-label="Back to top"
+title="Back to top">&uarr;</a>
 <script>
   (function () {
     var btn = document.getElementById('to-top');
@@ -1071,7 +1232,8 @@ def _md_to_html(text: str) -> str:
 
 
 def _strip_leading_title(md_text: str) -> str:
-    """Drop a leading markdown title — the template already renders the section header."""
+    """Drop a leading markdown title — the template already renders the section
+    header."""
     stripped = md_text.lstrip()
     if stripped.startswith("#"):
         first_break = stripped.find("\n")
@@ -1242,11 +1404,59 @@ def _scenarios_table_html(scenarios: List[Dict[str, Any]]) -> str:
     return (
         '<div id="valuation-scenarios"><h3>Valuation Scenarios</h3><table>'
         "<tr><th>Scenario</th><th>EPS Growth (3y)</th><th>Discount Rate</th>"
-        "<th>Terminal Growth</th><th>Intrinsic Value / Share</th><th>vs Current Price</th></tr>"
+        "<th>Terminal Growth</th>"
+        "<th>Intrinsic Value / Share</th><th>vs Current Price</th></tr>"
         + "".join(rows)
         + '</table><p class="meta">Two-stage DCF on consensus current-year EPS: '
         "3 years at scenario growth, 2 years fading to terminal, Gordon terminal "
         "value. Illustrative — sensitive to assumptions shown.</p></div>"
+    )
+
+
+def _sensitivity_table_html(
+    grid: Dict[str, Any], current_price: Optional[float]
+) -> str:
+    """DCF sensitivity: implied value/share per discount-rate × growth combo.
+
+    Rows are discount rates, columns are FCF-growth rates. The centre cell is
+    the Base case (guaranteed by fcf_dcf_sensitivity reusing the scenario
+    model), marked so a reader can orient. A None cell means that assumption
+    pair was rejected by the Gordon-spread guard — shown as '—', not invented.
+    """
+    values = grid.get("values") or []
+    discs = grid.get("discount_rates") or []
+    growths = grid.get("growth_rates") or []
+    if not values or not discs or not growths:
+        return ""
+    base = grid.get("base") or {}
+    base_d, base_g = base.get("discount_pct"), base.get("growth_pct")
+    header = (
+        "<tr><th>WACC \\ Growth</th>"
+        + "".join(f"<th>{g}%{' (base)' if g == base_g else ''}</th>" for g in growths)
+        + "</tr>"
+    )
+    rows = []
+    for d, row_vals in zip(discs, values):
+        cells = []
+        for v in row_vals:
+            if v is None:
+                cells.append("<td>—</td>")
+                continue
+            vs_price = ""
+            if current_price:
+                delta = (v - current_price) / current_price * 100
+                vs_price = f' <span class="meta">({delta:+.0f}%)</span>'
+            emph = " <strong>(base)</strong>" if d == base_d else ""
+            cells.append(f"<td>${v}{vs_price}{emph}</td>")
+        rows.append(f"<tr><td><strong>{d}%</strong></td>{''.join(cells)}</tr>")
+    return (
+        '<div id="dcf-sensitivity"><h3>DCF Sensitivity</h3><table>'
+        + header
+        + "".join(rows)
+        + '</table><p class="meta">Implied value per share across discount-rate '
+        "(rows) and FCF-growth (columns) assumptions — same two-stage model as "
+        "the scenarios above; centre cell is the Base case. '—' marks an "
+        "assumption pair rejected by the model's spread guard.</p></div>"
     )
 
 
@@ -1385,7 +1595,8 @@ class ReportGeneratorTool(BaseTool):
             return {"error": f"Report generation failed: {exc}"}
 
     def _extract_rec_from_md(self, symbol: str) -> Dict[str, Any]:
-        """Extract investment recommendation — tries JSON file first, then markdown fallback."""
+        """Extract investment recommendation — tries JSON file first, then markdown
+        fallback."""
         import re
 
         report_dir = Path(settings.report_output_dir) / symbol.upper()
@@ -1456,7 +1667,8 @@ class ReportGeneratorTool(BaseTool):
 
     @staticmethod
     def _extract_bullets(text: str, max_bullets: int = 6) -> List[str]:
-        """Pull the first `max_bullets` substantive bullet-point lines from markdown text."""
+        """Pull the first `max_bullets` substantive bullet-point lines from
+        markdown text."""
         bullets: List[str] = []
         # Metadata lines to skip (bold key: value patterns at the top of files)
         _SKIP_PREFIXES = (
@@ -1491,7 +1703,7 @@ class ReportGeneratorTool(BaseTool):
                 continue
             # Skip pure-metadata blocks (all lines are **Key:** Value)
             lines = block.splitlines()
-            if all(l.strip().startswith("**") for l in lines if l.strip()):
+            if all(ln.strip().startswith("**") for ln in lines if ln.strip()):
                 continue
             return block[:max_chars] + ("…" if len(block) > max_chars else "")
         return ""
@@ -1532,13 +1744,15 @@ class ReportGeneratorTool(BaseTool):
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
-                # First paragraph is preferred — narrative reports open with an analytical
+                # First paragraph is preferred — narrative reports open
+                # with an analytical
                 # summary sentence, while bullets are often product/item enumerations.
                 para = self._first_paragraph(text, max_chars=280)
                 if para:
                     key_findings.append(f"**{label}:** {para}")
                 else:
-                    # Fall back to the first substantive bullet if no good paragraph exists
+                    # Fall back to the first substantive bullet if no
+                    # good paragraph exists
                     bullets = self._extract_bullets(text, max_bullets=1)
                     if bullets:
                         key_findings.append(f"**{label}:** {bullets[0]}")
@@ -1551,7 +1765,8 @@ class ReportGeneratorTool(BaseTool):
 
     @staticmethod
     def _rec_json_to_md(data: Dict[str, Any]) -> str:
-        """Convert a structured InvestmentRecommendation JSON dict to readable markdown."""
+        """Convert a structured InvestmentRecommendation JSON dict to readable
+        markdown."""
         lines = [f"## Investment Recommendation: {data.get('recommendation', 'N/A')}"]
         fields = [
             ("Target Price", data.get("target_price")),
@@ -1579,7 +1794,7 @@ class ReportGeneratorTool(BaseTool):
         ]:
             items = data.get(key) or []
             if items:
-                lines += [f"", f"### {section}"]
+                lines += ["", f"### {section}"]
                 lines += [f"- {item}" for item in items]
         return "\n".join(lines)
 
@@ -1658,7 +1873,8 @@ class ReportGeneratorTool(BaseTool):
         else:
             rec_class = "hold"
 
-        # Fall back to parsing the markdown file when the LLM didn't pass structured JSON.
+        # Fall back to parsing the markdown file when the LLM didn't
+        # pass structured JSON.
         if not inv_rec:
             inv_rec = self._extract_rec_from_md(symbol)
             rating = str(inv_rec.get("rating") or "").upper()
@@ -1724,7 +1940,7 @@ class ReportGeneratorTool(BaseTool):
                 range_bar_svg(
                     pt["low"],
                     pt["high"],
-                    [(l, v, c) for l, v, c in markers if v is not None],
+                    [(m, v, c) for m, v, c in markers if v is not None],
                     title="Analyst Price Targets (12-month)",
                 )
             )
@@ -1751,7 +1967,8 @@ class ReportGeneratorTool(BaseTool):
             sentiment_chips.append(
                 (
                     "Retail (Stocktwits)",
-                    f"{_fmt(ss['stocktwits_bullish_pct'])}% bullish of {ss.get('stocktwits_labeled', 0)} labeled",
+                    f"{_fmt(ss['stocktwits_bullish_pct'])}% bullish of "
+                    f"{ss.get('stocktwits_labeled', 0)} labeled",
                 )
             )
         if ss.get("put_call_oi_ratio") is not None:
@@ -1826,7 +2043,8 @@ class ReportGeneratorTool(BaseTool):
             sentiment_chips.append(
                 (
                     "Retail Trend",
-                    f"{_fmt(last_val)}% bullish (was {_fmt(prev_val)}% on {prev_label})",
+                    f"{_fmt(last_val)}% bullish "
+                    f"(was {_fmt(prev_val)}% on {prev_label})",
                 )
             )
         if ss.get("search_momentum_pct") is not None:
@@ -1882,6 +2100,10 @@ class ReportGeneratorTool(BaseTool):
 
         peers_table = _peers_table_html(peers)
         scenarios_table = _scenarios_table_html(valuation_scenarios)
+        sensitivity_table = _sensitivity_table_html(
+            chart_data.get("dcf_sensitivity") or {},
+            (chart_data.get("key_stats") or {}).get("current_price"),
+        )
 
         def _chips_html(chips: List[Tuple[str, str]]) -> str:
             if not chips:
@@ -1919,6 +2141,8 @@ class ReportGeneratorTool(BaseTool):
             valuation_parts.append(f'<div class="chart">{target_range_svg}</div>')
         if scenarios_table:
             valuation_parts.append(scenarios_table)
+        if sensitivity_table:
+            valuation_parts.append(sensitivity_table)
         if valuation_parts:
             visual_groups["valuation"] = Markup("".join(valuation_parts))
         if range_52w_svg:

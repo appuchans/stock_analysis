@@ -43,7 +43,8 @@ from ..models.stock_data import RiskLevel
 
 
 def _parse_list(value, default=None):
-    """Accept a JSON-array string OR a Python list. Strips whitespace; treats null/empty as default."""
+    """Accept a JSON-array string OR a Python list. Strips whitespace; treats
+    null/empty as default."""
     if default is None:
         default = []
     if value is None:
@@ -60,7 +61,8 @@ def _parse_list(value, default=None):
 
 
 def _parse_dict(value, default=None):
-    """Accept a JSON-object string OR a Python dict. Strips whitespace; treats null/empty as default."""
+    """Accept a JSON-object string OR a Python dict. Strips whitespace; treats
+    null/empty as default."""
     if default is None:
         default = {}
     if value is None:
@@ -81,17 +83,20 @@ class TechnicalAnalysisTool(BaseTool):
 
     name: str = "Technical Analysis Tool"
     description: str = (
-        "Performs comprehensive technical analysis including indicators, patterns, and signals"
+        "Performs comprehensive technical analysis: indicators, patterns, "
+        "and signals"
     )
 
     def _run(self, price_data: str, volume_data: str) -> Dict[str, Any]:
-        """Perform technical analysis. price_data and volume_data are JSON arrays of OHLCV records."""
+        """Perform technical analysis. price_data and volume_data are JSON arrays
+        of OHLCV records."""
         try:
             price_list = _parse_list(price_data)
             vol_list = _parse_list(volume_data)
             if not price_list:
                 return {
-                    "error": "price_data is empty or null — pass a JSON array of OHLCV records"
+                    "error": "price_data is empty or null — pass a "
+                    "JSON array of OHLCV records"
                 }
             # Convert to DataFrame
             df = pd.DataFrame(price_list)
@@ -102,7 +107,8 @@ class TechnicalAnalysisTool(BaseTool):
                 vol_df = pd.DataFrame(vol_list)
                 vol_df["timestamp"] = pd.to_datetime(vol_df["timestamp"])
                 vol_df.set_index("timestamp", inplace=True)
-                # Drop columns already present in the price frame to avoid join collisions
+                # Drop columns already present in the price
+                # frame to avoid join collisions
                 vol_df = vol_df[[c for c in vol_df.columns if c not in df.columns]]
                 df = df.join(vol_df, how="left")
             if "volume" not in df.columns:
@@ -354,11 +360,13 @@ class FundamentalAnalysisTool(BaseTool):
 
     name: str = "Fundamental Analysis Tool"
     description: str = (
-        "Performs comprehensive fundamental analysis including valuation, profitability, and financial health"
+        "Performs comprehensive fundamental analysis: valuation, "
+        "profitability, and financial health"
     )
 
     def _run(self, fundamental_data: str, market_data: str) -> Dict[str, Any]:
-        """Perform fundamental analysis. fundamental_data and market_data are JSON objects."""
+        """Perform fundamental analysis. fundamental_data and market_data are JSON
+        objects."""
         try:
             fundamental_data = _parse_dict(fundamental_data)
             market_data = _parse_dict(market_data)
@@ -647,11 +655,13 @@ class RiskAnalysisTool(BaseTool):
 
     name: str = "Risk Analysis Tool"
     description: str = (
-        "Performs comprehensive risk analysis including market risk, credit risk, and operational risk"
+        "Performs comprehensive risk analysis: market risk, credit "
+        "risk, and operational risk"
     )
 
     def _run(self, price_data: str, fundamental_data: str) -> Dict[str, Any]:
-        """Perform risk analysis. price_data is a JSON array of OHLCV records; fundamental_data is a JSON object."""
+        """Perform risk analysis. price_data is a JSON array of OHLCV records;
+        fundamental_data is a JSON object."""
         try:
             fundamental_data = _parse_dict(fundamental_data)
             price_list = _parse_list(price_data)
@@ -910,7 +920,8 @@ class ValuationTool(BaseTool):
     )
 
     def _run(self, fundamental_data: str, market_data: str) -> Dict[str, Any]:
-        """Perform valuation analysis. fundamental_data and market_data are JSON objects."""
+        """Perform valuation analysis. fundamental_data and market_data are JSON
+        objects."""
         try:
             fundamental_data = _parse_dict(fundamental_data)
             market_data = _parse_dict(market_data)
@@ -963,7 +974,8 @@ class ValuationTool(BaseTool):
                 "intrinsic_value": None,
                 "method": "DCF",
                 "status": "not_applicable",
-                "note": "Earnings growth exceeds discount rate; perpetuity model not valid",
+                "note": "Earnings growth exceeds discount rate; "
+                "perpetuity model not valid",
             }
 
         # Simple perpetuity growth model
@@ -1087,7 +1099,8 @@ class ComparisonTool(BaseTool):
     description: str = "Compares stocks against industry peers and market benchmarks"
 
     def _run(self, stock_data: str, industry_data: str) -> Dict[str, Any]:
-        """Perform comparison analysis. stock_data and industry_data are JSON objects."""
+        """Perform comparison analysis. stock_data and industry_data are JSON
+        objects."""
         try:
             stock_data = _parse_dict(stock_data)
             industry_data = _parse_dict(industry_data)

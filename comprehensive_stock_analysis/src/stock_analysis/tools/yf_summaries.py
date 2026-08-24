@@ -1267,6 +1267,70 @@ def fcf_dcf_scenarios(
     return out
 
 
+def fcf_dcf_sensitivity(
+    fcf_m: Optional[float],
+    shares_m: Optional[float],
+    net_debt_m: float = 0.0,
+    base_wacc_pct: Optional[float] = None,
+    growth_pct: Optional[float] = None,
+    terminal_pct: float = 2.5,
+    high_growth_years: int = 5,
+    fade_years: int = 5,
+) -> Dict[str, Any]:
+    """Implied value/share across a discount-rate × growth-rate grid.
+
+    Each cell runs the *same* two-stage model as ``fcf_dcf_scenarios`` (by
+    calling it with one variant), so the grid's centre equals the Base case by
+    construction and the two exhibits can never disagree. Cells where the
+    discount rate fails the Gordon-spread guard are omitted rather than shown
+    as a number nobody can defend.
+    """
+    if not fcf_m or fcf_m <= 0 or not shares_m or shares_m <= 0:
+        return {}
+    g0 = 8.0 if growth_pct is None else float(growth_pct)
+    if not _USABLE_DCF_GROWTH_PCT[0] <= g0 <= _USABLE_DCF_GROWTH_PCT[1]:
+        return {}
+    g0 = max(_MIN_DCF_GROWTH_PCT, min(g0, _MAX_DCF_GROWTH_PCT))
+    wacc = float(base_wacc_pct) if base_wacc_pct else 9.0
+
+    # ±2pp around each axis; odd counts keep the base case at the centre.
+    discounts = [wacc - 2.0, wacc, wacc + 2.0]
+    growths = [g0 - 2.0, g0, g0 + 2.0]
+
+    grid: List[List[Optional[float]]] = []
+    for d_pct in discounts:
+        row: List[Optional[float]] = []
+        for g_pct in growths:
+            scen = fcf_dcf_scenarios(
+                fcf_m=fcf_m,
+                shares_m=shares_m,
+                net_debt_m=net_debt_m,
+                base_wacc_pct=d_pct,
+                growth_pct=g_pct,
+                terminal_pct=terminal_pct,
+                high_growth_years=high_growth_years,
+                fade_years=fade_years,
+            )
+            # The single-variant call returns exactly one scenario (Base).
+            base_cell = next(
+                (s["intrinsic_per_share"] for s in scen if s["scenario"] == "Base"),
+                None,
+            )
+            # None = guard rejected the cell (e.g. discount ≤ terminal + spread).
+            row.append(base_cell)
+        grid.append(row)
+
+    if not any(v is not None for row in grid for v in row):
+        return {}
+    return {
+        "discount_rates": [round(d, 2) for d in discounts],
+        "growth_rates": [round(g, 1) for g in growths],
+        "values": grid,
+        "base": {"discount_pct": round(wacc, 2), "growth_pct": round(g0, 1)},
+        "terminal_pct": terminal_pct,
+    }
+
+
 def dcf_scenarios(eps_base: float, growth_pct: float) -> List[Dict[str, Any]]:
     """Bear/base/bull intrinsic-value-per-share grid with disclosed assumptions.
 

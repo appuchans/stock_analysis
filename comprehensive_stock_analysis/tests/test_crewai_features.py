@@ -1,4 +1,4 @@
-"""Tests for CrewAI feature adoption: rate limits, guardrails, markdown, date injection."""
+"""Tests for CrewAI features: rate limits, guardrails, markdown, dates."""
 
 from src.stock_analysis.crew.flow_crew import _narrative_guardrail
 

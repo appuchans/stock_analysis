@@ -2,8 +2,6 @@
 
 import re
 
-import pytest
-
 from src.stock_analysis.config.loader import config_loader
 
 # Every {placeholder} referenced in flow_tasks.yaml must be provided at kickoff

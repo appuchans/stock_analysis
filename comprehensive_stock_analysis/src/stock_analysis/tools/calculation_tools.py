@@ -42,13 +42,14 @@ from ._indicators import (
 
 _logger = logging.getLogger(__name__)
 
-from crewai.tools import BaseTool
+from crewai.tools import BaseTool  # noqa: E402  (after _indicators re-export)
 
-from ..models.stock_data import RiskLevel
+from ..models.stock_data import RiskLevel  # noqa: E402
 
 
 def _parse_list(value, default=None):
-    """Accept a JSON-array string OR a Python list. Strips whitespace; treats null/empty as default."""
+    """Accept a JSON-array string OR a Python list. Strips whitespace; treats
+    null/empty as default."""
     if default is None:
         default = []
     if value is None:
@@ -65,7 +66,8 @@ def _parse_list(value, default=None):
 
 
 def _parse_dict(value, default=None):
-    """Accept a JSON-object string OR a Python dict. Strips whitespace; treats null/empty as default."""
+    """Accept a JSON-object string OR a Python dict. Strips whitespace; treats
+    null/empty as default."""
     if default is None:
         default = {}
     if value is None:
@@ -86,11 +88,12 @@ class FinancialCalculatorTool(BaseTool):
 
     name: str = "Financial Calculator Tool"
     description: str = (
-        "Performs various financial calculations including ratios, returns, and valuations"
+        "Performs various financial calculations: ratios, returns, " "and valuations"
     )
 
     def _run(self, calculation_type: str, params: str = "{}") -> Dict[str, Any]:
-        """Perform financial calculations. params is a JSON object of keyword arguments for the chosen calculation_type."""
+        """Perform financial calculations. params is a JSON object of keyword
+        arguments for the chosen calculation_type."""
         try:
             kwargs = _parse_dict(params)
             if calculation_type == "ratios":
@@ -307,7 +310,8 @@ class TechnicalIndicatorTool(BaseTool):
     def _run(
         self, price_data: str, indicator_type: str, params: str = "{}"
     ) -> Dict[str, Any]:
-        """Calculate technical indicators. price_data is a JSON array of OHLCV records; params is an optional JSON object of extra kwargs."""
+        """Calculate technical indicators. price_data is a JSON array of OHLCV
+        records; params is an optional JSON object of extra kwargs."""
         try:
             kwargs = _parse_dict(params)
             price_list = _parse_list(price_data)
@@ -344,21 +348,21 @@ class TechnicalIndicatorTool(BaseTool):
 
     def _calculate_momentum_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate momentum indicators."""
-        c, h, l = df["close"], df["high"], df["low"]
+        c, h, low = df["close"], df["high"], df["low"]
         return {
             "rsi": _last(rsi(c, 14)),
             "macd": _last(macd_line(c)),
             "macd_signal": _last(macd_signal_line(c)),
             "macd_histogram": _last(macd_diff(c)),
-            "stochastic_k": _last(stoch(h, l, c)),
-            "stochastic_d": _last(stoch_signal(h, l, c)),
-            "williams_r": _last(williams_r(h, l, c)),
+            "stochastic_k": _last(stoch(h, low, c)),
+            "stochastic_d": _last(stoch_signal(h, low, c)),
+            "williams_r": _last(williams_r(h, low, c)),
             "roc": _last(roc(c, 10)),
         }
 
     def _calculate_volatility_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate volatility indicators."""
-        c, h, l = df["close"], df["high"], df["low"]
+        c, h, low = df["close"], df["high"], df["low"]
         bb_u = bollinger_upper(c)
         bb_m = bollinger_middle(c)
         bb_l = bollinger_lower(c)
@@ -372,34 +376,34 @@ class TechnicalIndicatorTool(BaseTool):
             "bollinger_middle": _last(bb_m),
             "bollinger_lower": _last(bb_l),
             "bollinger_width": bb_width,
-            "atr": _last(atr(h, l, c)),
-            "keltner_upper": _last(keltner_upper(h, l, c)),
+            "atr": _last(atr(h, low, c)),
+            "keltner_upper": _last(keltner_upper(h, low, c)),
             "keltner_middle": _last(keltner_middle(c)),
-            "keltner_lower": _last(keltner_lower(h, l, c)),
+            "keltner_lower": _last(keltner_lower(h, low, c)),
         }
 
     def _calculate_volume_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate volume indicators."""
-        c, h, l, v = df["close"], df["high"], df["low"], df["volume"]
+        c, h, low, v = df["close"], df["high"], df["low"], df["volume"]
         return {
             "obv": _last(obv(c, v)),
-            "ad_line": _last(acc_dist_index(h, l, c, v)),
-            "mfi": _last(money_flow_index(h, l, c, v)),
+            "ad_line": _last(acc_dist_index(h, low, c, v)),
+            "mfi": _last(money_flow_index(h, low, c, v)),
             "vpt": _last(volume_price_trend(c, v)),
-            "cmf": _last(chaikin_money_flow(h, l, c, v)),
+            "cmf": _last(chaikin_money_flow(h, low, c, v)),
         }
 
     def _calculate_trend_indicators(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate trend indicators."""
-        c, h, l = df["close"], df["high"], df["low"]
+        c, h, low = df["close"], df["high"], df["low"]
         return {
-            "adx": _last(adx(h, l, c)),
-            "cci": _last(cci(h, l, c)),
+            "adx": _last(adx(h, low, c)),
+            "cci": _last(cci(h, low, c)),
             "aroon_up": _last(aroon_up(h)),
-            "aroon_down": _last(aroon_down(l)),
-            "psar": _last(psar_approx(h, l, c)),
-            "ichimoku_a": _last(ichimoku_a(h, l)),
-            "ichimoku_b": _last(ichimoku_b(h, l)),
+            "aroon_down": _last(aroon_down(low)),
+            "psar": _last(psar_approx(h, low, c)),
+            "ichimoku_a": _last(ichimoku_a(h, low)),
+            "ichimoku_b": _last(ichimoku_b(h, low)),
         }
 
 
@@ -633,7 +637,8 @@ class ValuationCalculatorTool(BaseTool):
     description: str = "Calculates various valuation metrics and models"
 
     def _run(self, valuation_type: str, params: str = "{}") -> Dict[str, Any]:
-        """Calculate valuation metrics. params is a JSON object of keyword arguments for the chosen valuation_type."""
+        """Calculate valuation metrics. params is a JSON object of keyword
+        arguments for the chosen valuation_type."""
         try:
             kwargs = _parse_dict(params)
             if valuation_type == "dcf":

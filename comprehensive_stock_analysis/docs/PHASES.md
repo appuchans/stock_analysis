@@ -72,10 +72,14 @@ another enumerated list, since enumerating is what let these slip the first time
 - ✅ **black and isort are now blocking in CI**, with versions pinned (`black==26.5.1`,
   `isort==8.0.1`) so an unpinned formatter release can't fail the build on a version bump
   alone. Bump those pins deliberately and reformat in the same PR.
-- 🟡 **Dev venv drift is only partly resolved.** `black`, `isort`, and `flake8` are now
-  installed in the working `.venv`; **`mypy` still is not**, so `mypy src/` from `CLAUDE.md`
-  fails locally even though CI installs it. There is still no `make setup` or CI check that
+- 🟡 **Dev venv drift is only partly resolved.** `black`, `isort`, `flake8`, and `mypy`
+  are installed in the working `.venv`; there is still no `make setup` or CI check that
   fails loudly when the dev venv drifts from `pyproject.toml`'s `dev` extra.
-- ⬜ **flake8 and mypy remain advisory** (`continue-on-error: true`). flake8 reports ~204
-  findings (down from 478 — the reformat absorbed the rest) and mypy has never been run
-  clean. Each can be promoted to blocking independently once its backlog is cleared.
+- ✅ **flake8 is now blocking (2026-08-23).** The full backlog (~204 findings: 169 E501,
+  19 E402, 15 F401, plus E741/F841/F824/F541) was worked to zero — unused imports removed,
+  late imports moved to the top, ambiguous names (`l` → `low`/`label`) renamed, and long
+  lines wrapped. The suite passed unchanged (751 tests) throughout. CI's
+  `continue-on-error` on the flake8 step has been removed.
+- ⬜ **mypy remains advisory** (`continue-on-error: true`). It has never been run clean
+  under the strict config in `pyproject.toml`. Promote it independently once its backlog
+  is cleared.

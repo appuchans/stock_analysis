@@ -46,7 +46,8 @@ class BacktestTool(BaseTool):
                 )
             else:
                 return {
-                    "error": f"Unknown strategy '{strategy}'. Use sma_crossover or rsi_reversion."
+                    "error": f"Unknown strategy '{strategy}'. "
+                    "Use sma_crossover or rsi_reversion."
                 }
 
             return self._compute_performance(close, signals, symbol, strategy)

@@ -189,7 +189,7 @@ class TestLiveCaptureOnJobCompletion:
         assert rows[0]["recorded_at"] == "2026-07-23T10:00:00"
 
     def test_capture_rec_history_reads_price_from_chart_data(self, _temp_reports):
-        from src.stock_analysis.web import _paths, db
+        from src.stock_analysis.web import db
         from src.stock_analysis.web.jobs import Job, manager
 
         d = _temp_reports / "MSFT"

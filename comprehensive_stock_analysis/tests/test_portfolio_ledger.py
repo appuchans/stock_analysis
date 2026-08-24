@@ -161,7 +161,10 @@ class TestParseTransactionsCSV:
         assert rows[0]["qty"] == 10.0
 
     def test_parses_optional_fees_and_note(self):
-        csv_text = "date,symbol,side,qty,price,fees,note\n2026-01-01,AAPL,buy,10,150.5,4.95,core position\n"
+        csv_text = (
+            "date,symbol,side,qty,price,fees,note\n"
+            "2026-01-01,AAPL,buy,10,150.5,4.95,core position\n"
+        )
         rows = parse_transactions_csv(csv_text)
         assert rows[0]["fees"] == 4.95
         assert rows[0]["note"] == "core position"

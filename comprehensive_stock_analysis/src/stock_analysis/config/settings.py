@@ -203,6 +203,44 @@ class Settings(BaseSettings):
         "extra": "ignore",
     }
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,  # type: ignore[no-untyped-def]
+        init_settings,  # type: ignore[no-untyped-def]
+        env_settings,  # type: ignore[no-untyped-def]
+        dotenv_settings,  # type: ignore[no-untyped-def]
+        file_secret_settings,  # type: ignore[no-untyped-def]
+    ):
+        # An empty env var (``LLM_TEMPERATURE=`` in .env, or an exported-but-
+        # empty shell variable) reaches pydantic-settings as the empty string,
+        # which no numeric type accepts — Settings() then raises at import time
+        # and every entry point dies before printing anything useful. Dropping
+        # empty values at the source level makes an empty var behave exactly
+        # like an unset one for every field: Optional fields stay None,
+        # non-Optional fields keep their defaults.
+        return (
+            init_settings,
+            _skip_empty(env_settings),
+            _skip_empty(dotenv_settings),
+            file_secret_settings,
+        )
+
+
+def _skip_empty(source):  # type: ignore[no-untyped-def]
+    """Wrap a pydantic-settings source so empty-string values are dropped."""
+
+    class _NonEmptySource:
+        def __call__(self) -> dict:
+            data = source()
+            return {
+                k: v
+                for k, v in data.items()
+                if not (isinstance(v, str) and not v.strip())
+            }
+
+    return _NonEmptySource()
+
 
 # Global settings instance
 settings = Settings()

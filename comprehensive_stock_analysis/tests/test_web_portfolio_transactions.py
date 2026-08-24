@@ -125,7 +125,11 @@ class TestTransactionEndpoints:
 
 class TestCSVImport:
     def test_import_valid_csv(self):
-        csv_text = "date,symbol,side,qty,price\n2026-01-01,AAPL,buy,10,150.0\n2026-01-02,MSFT,buy,5,300.0\n"
+        csv_text = (
+            "date,symbol,side,qty,price\n"
+            "2026-01-01,AAPL,buy,10,150.0\n"
+            "2026-01-02,MSFT,buy,5,300.0\n"
+        )
         resp = client.post("/api/portfolio/transactions/import", json={"csv": csv_text})
         assert resp.status_code == 200
         assert resp.json()["imported"] == 2

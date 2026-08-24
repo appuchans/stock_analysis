@@ -96,7 +96,8 @@ CREATE TABLE IF NOT EXISTS schedules (
     cron_expr     TEXT NOT NULL,                -- 5-field cron, e.g. "0 18 * * 1-5"
     depth         TEXT NOT NULL DEFAULT 'standard',
     use_cache     INTEGER NOT NULL DEFAULT 0,
-    monitor_only  INTEGER NOT NULL DEFAULT 0,   -- data-only refresh; skip the LLM pipeline
+    monitor_only  INTEGER NOT NULL DEFAULT 0,   -- data-only refresh;
+                                                  -- skips the LLM pipeline
     enabled       INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT NOT NULL,
     last_run_at   TEXT,
@@ -105,9 +106,10 @@ CREATE TABLE IF NOT EXISTS schedules (
 CREATE TABLE IF NOT EXISTS rules (
     id            TEXT PRIMARY KEY,
     symbol        TEXT NOT NULL,
-    rule_type     TEXT NOT NULL,   -- price_above|price_below|pct_move_day|target_price_hit|
-                                    -- stop_loss_hit|recommendation_changed|confidence_dropped|
-                                    -- earnings_within_days
+    rule_type     TEXT NOT NULL,   -- price_above|price_below|pct_move_day
+                                    -- |target_price_hit|stop_loss_hit
+                                    -- |recommendation_changed|confidence_dropped
+                                    -- |earnings_within_days
     threshold     REAL,
     cooldown_min  INTEGER NOT NULL DEFAULT 60,
     enabled       INTEGER NOT NULL DEFAULT 1,
@@ -166,7 +168,8 @@ def _import_legacy_watchlist() -> None:
                 src.close()
             for r in rows:
                 conn.execute(
-                    "INSERT OR IGNORE INTO watchlist (symbol, added_at, notes) VALUES (?, ?, ?)",
+                    "INSERT OR IGNORE INTO watchlist "
+                    "(symbol, added_at, notes) VALUES (?, ?, ?)",
                     (r["symbol"], r["added_at"], r["notes"]),
                 )
             conn.commit()
@@ -185,7 +188,8 @@ def add_symbol(symbol: str, notes: str = "") -> bool:
     _ensure()
     with _connect() as conn:
         cursor = conn.execute(
-            "INSERT OR IGNORE INTO watchlist (symbol, added_at, notes) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO watchlist "
+            "(symbol, added_at, notes) VALUES (?, ?, ?)",
             (symbol, _now_iso(), notes),
         )
         conn.commit()
@@ -340,6 +344,16 @@ def list_rec_history(symbol: str) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def list_all_rec_history() -> List[Dict[str, Any]]:
+    """Every recorded recommendation across symbols (scorecard input)."""
+    _ensure()
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM rec_history ORDER BY symbol, recorded_at ASC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 # ── Alert log ────────────────────────────────────────────────────────────────
 def append_alert(entry: Dict[str, Any]) -> None:
     _ensure()
@@ -404,7 +418,8 @@ def add_schedule(schedule: Dict[str, Any]) -> None:
     with _connect() as conn:
         conn.execute(
             "INSERT INTO schedules "
-            "(id, target, cron_expr, depth, use_cache, monitor_only, enabled, created_at) "
+            "(id, target, cron_expr, depth, use_cache, monitor_only, "
+            "enabled, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 schedule["id"],
@@ -471,7 +486,8 @@ def add_rule(rule: Dict[str, Any]) -> None:
     _ensure()
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO rules (id, symbol, rule_type, threshold, cooldown_min, enabled, created_at) "
+            "INSERT INTO rules (id, symbol, rule_type, threshold, "
+            "cooldown_min, enabled, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 rule["id"],
@@ -540,7 +556,8 @@ def add_transaction(tx: Dict[str, Any]) -> int:
     _ensure()
     with _connect() as conn:
         cursor = conn.execute(
-            "INSERT INTO transactions (symbol, side, qty, price, fees, date, note, created_at) "
+            "INSERT INTO transactions (symbol, side, qty, price, fees, "
+            "date, note, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 tx["symbol"],

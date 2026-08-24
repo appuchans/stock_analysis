@@ -248,6 +248,43 @@ class TestInvestorFeatureSummarizers:
         # Growth is capped at 30%
         assert dcf_scenarios(10.0, 90.0)[1]["growth_pct"] == 30.0
 
+    def test_dcf_sensitivity_center_matches_base_case(self):
+        """Grid centre must equal the scenario Base case — one math path.
+
+        The sensitivity grid calls fcf_dcf_scenarios per cell, so if the two
+        ever diverge (a copy-pasted second model), this catches it.
+        """
+        from src.stock_analysis.tools import yf_summaries as ys
+
+        common = dict(
+            fcf_m=500.0,
+            shares_m=100.0,
+            net_debt_m=200.0,
+            base_wacc_pct=9.0,
+            growth_pct=8.0,
+        )
+        grid = ys.fcf_dcf_sensitivity(**common)
+        scen = ys.fcf_dcf_scenarios(**common)
+        base = next(s for s in scen if s["scenario"] == "Base")
+        di = grid["discount_rates"].index(9.0)
+        gi = grid["growth_rates"].index(8.0)
+        assert grid["values"][di][gi] == base["intrinsic_per_share"]
+        assert len(grid["values"]) == 3 and len(grid["values"][0]) == 3
+        # Monotone: higher discount → lower value; higher growth → higher value.
+        assert grid["values"][0][1] > grid["values"][2][1]
+        assert grid["values"][1][0] < grid["values"][1][2]
+
+    def test_dcf_sensitivity_rejects_bad_inputs(self):
+        from src.stock_analysis.tools import yf_summaries as ys
+
+        assert ys.fcf_dcf_sensitivity(fcf_m=None, shares_m=100.0) == {}
+        assert ys.fcf_dcf_sensitivity(fcf_m=-1, shares_m=100.0) == {}
+        assert ys.fcf_dcf_sensitivity(fcf_m=500.0, shares_m=None) == {}
+        # Growth outside the usable band → no grid, same refusal as scenarios.
+        assert (
+            ys.fcf_dcf_sensitivity(fcf_m=500.0, shares_m=100.0, growth_pct=-28.0) == {}
+        )
+
     def test_catalysts_from_calendar(self):
         import datetime
 

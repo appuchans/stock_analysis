@@ -55,12 +55,14 @@ jobs:
       - name: isort
         run: isort --check-only src/ tests/
 
-      # Still advisory: flake8 has a backlog of ~204 findings and mypy has
-      # never been run clean. Promote each by removing continue-on-error once
-      # its backlog is worked through (see docs/PHASES.md).
+      # flake8 is blocking as of the 2026-08 backlog cleanup (was ~204
+      # findings, now zero). Run `flake8 src/` locally before pushing.
       - name: flake8
-        continue-on-error: true
         run: flake8 src/
+
+      # Still advisory: mypy has never been run clean under the strict config.
+      # Promote by removing continue-on-error once its backlog is worked
+      # through (see docs/PHASES.md).
       - name: mypy
         continue-on-error: true
         run: mypy src/

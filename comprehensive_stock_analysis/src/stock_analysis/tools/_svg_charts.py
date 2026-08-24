@@ -54,7 +54,10 @@ def line_chart_svg(
         return pad_t + (1 - (v - vmin) / vrange) * plot_h
 
     poly = " ".join(f"{x(i):.1f},{y(v):.1f}" for i, (_, v) in enumerate(pts))
-    area = f"{pad_l:.1f},{pad_t + plot_h:.1f} {poly} {pad_l + plot_w:.1f},{pad_t + plot_h:.1f}"
+    area = (
+        f"{pad_l:.1f},{pad_t + plot_h:.1f} {poly} "
+        f"{pad_l + plot_w:.1f},{pad_t + plot_h:.1f}"
+    )
 
     parts = [
         f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" '
@@ -62,7 +65,8 @@ def line_chart_svg(
     ]
     if title:
         parts.append(
-            f'<text x="{pad_l}" y="18" font-size="13" font-weight="600" fill="{_TEXT}">{title}</text>'
+            f'<text x="{pad_l}" y="18" font-size="13" font-weight="600" '
+            f'fill="{_TEXT}">{title}</text>'
         )
     # Horizontal gridlines + y labels
     for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
@@ -92,8 +96,9 @@ def line_chart_svg(
     parts.append(f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="3.5" fill="{_BLUE}"/>')
     anchor = "end" if lx > width - 90 else "start"
     parts.append(
-        f'<text x="{lx - 6 if anchor == "end" else lx + 6:.1f}" y="{ly - 8:.1f}" font-size="12" '
-        f'font-weight="600" fill="{_BLUE}" text-anchor="{anchor}">{currency}{_fmt(pts[-1][1])}</text>'
+        f'<text x="{lx - 6 if anchor == "end" else lx + 6:.1f}" y="{ly - 8:.1f}" '
+        f'font-size="12" font-weight="600" fill="{_BLUE}" text-anchor="{anchor}">'
+        f"{currency}{_fmt(pts[-1][1])}</text>"
     )
     parts.append("</svg>")
     return "".join(parts)
@@ -111,8 +116,8 @@ def bar_chart_svg(
 ) -> str:
     """Bar chart. Vertical by default; horizontal for long category labels."""
     data = [
-        (html.escape(str(l), quote=True), float(v))
-        for l, v in zip(labels, values)
+        (html.escape(str(label), quote=True), float(v))
+        for label, v in zip(labels, values)
         if v is not None
     ]
     if not data:
@@ -125,7 +130,8 @@ def bar_chart_svg(
     ]
     if title:
         parts.append(
-            f'<text x="16" y="18" font-size="13" font-weight="600" fill="{_TEXT}">{title}</text>'
+            f'<text x="16" y="18" font-size="13" font-weight="600" '
+            f'fill="{_TEXT}">{title}</text>'
         )
 
     if horizontal:
@@ -145,8 +151,9 @@ def bar_chart_svg(
                 f'rx="3" fill="{_BLUE}"/>'
             )
             parts.append(
-                f'<text x="{pad_l + bw + 8:.1f}" y="{by + bar_h / 2 + 4:.1f}" font-size="12" '
-                f'font-weight="600" fill="{_TEXT}">{unit}{_fmt(v)}{suffix}</text>'
+                f'<text x="{pad_l + bw + 8:.1f}" y="{by + bar_h / 2 + 4:.1f}" '
+                f'font-size="12" font-weight="600" fill="{_TEXT}">'
+                f"{unit}{_fmt(v)}{suffix}</text>"
             )
     else:
         pad_l, pad_r, pad_t, pad_b = 64, 16, 30, 28
@@ -159,8 +166,8 @@ def bar_chart_svg(
         bar_w = slot * 0.62
         zero_y = pad_t + (vmax / vrange) * plot_h
         parts.append(
-            f'<line x1="{pad_l}" y1="{zero_y:.1f}" x2="{pad_l + plot_w}" y2="{zero_y:.1f}" '
-            f'stroke="{_GRID}" stroke-width="1"/>'
+            f'<line x1="{pad_l}" y1="{zero_y:.1f}" x2="{pad_l + plot_w}" '
+            f'y2="{zero_y:.1f}" stroke="{_GRID}" stroke-width="1"/>'
         )
         for i, (label, v) in enumerate(data):
             bx = pad_l + i * slot + (slot - bar_w) / 2
@@ -168,17 +175,19 @@ def bar_chart_svg(
             by = zero_y - bh if v >= 0 else zero_y
             color = _BLUE if v >= 0 else "#c53030"
             parts.append(
-                f'<rect x="{bx:.1f}" y="{by:.1f}" width="{bar_w:.1f}" height="{bh:.1f}" '
-                f'rx="3" fill="{color}"/>'
+                f'<rect x="{bx:.1f}" y="{by:.1f}" width="{bar_w:.1f}" '
+                f'height="{bh:.1f}" rx="3" fill="{color}"/>'
             )
             parts.append(
-                f'<text x="{bx + bar_w / 2:.1f}" y="{by - 6 if v >= 0 else by + bh + 14:.1f}" '
-                f'font-size="11" font-weight="600" fill="{_TEXT}" text-anchor="middle">'
+                f'<text x="{bx + bar_w / 2:.1f}" '
+                f'y="{by - 6 if v >= 0 else by + bh + 14:.1f}" '
+                f'font-size="11" font-weight="600" fill="{_TEXT}" '
+                f'text-anchor="middle">'
                 f"{unit}{_fmt(v)}{suffix}</text>"
             )
             parts.append(
-                f'<text x="{bx + bar_w / 2:.1f}" y="{height - 8}" font-size="11" fill="{_TEXT}" '
-                f'text-anchor="middle">{label}</text>'
+                f'<text x="{bx + bar_w / 2:.1f}" y="{height - 8}" '
+                f'font-size="11" fill="{_TEXT}" text-anchor="middle">{label}</text>'
             )
     parts.append("</svg>")
     return "".join(parts)
@@ -226,7 +235,8 @@ def range_bar_svg(
     ]
     if title:
         parts.append(
-            f'<text x="{pad_l}" y="16" font-size="13" font-weight="600" fill="{_TEXT}">{title}</text>'
+            f'<text x="{pad_l}" y="16" font-size="13" font-weight="600" '
+            f'fill="{_TEXT}">{title}</text>'
         )
     # Band
     parts.append(
@@ -235,12 +245,12 @@ def range_bar_svg(
     )
     # Band end labels
     parts.append(
-        f'<text x="{x(low_f):.1f}" y="{band_y + band_h + 16}" font-size="11" fill="{_TEXT}" '
-        f'text-anchor="middle">{currency}{_fmt(low_f)}</text>'
+        f'<text x="{x(low_f):.1f}" y="{band_y + band_h + 16}" font-size="11" '
+        f'fill="{_TEXT}" text-anchor="middle">{currency}{_fmt(low_f)}</text>'
     )
     parts.append(
-        f'<text x="{x(high_f):.1f}" y="{band_y + band_h + 16}" font-size="11" fill="{_TEXT}" '
-        f'text-anchor="middle">{currency}{_fmt(high_f)}</text>'
+        f'<text x="{x(high_f):.1f}" y="{band_y + band_h + 16}" font-size="11" '
+        f'fill="{_TEXT}" text-anchor="middle">{currency}{_fmt(high_f)}</text>'
     )
     # Markers (staggered label heights to avoid overlap)
     for i, (label, value, color) in enumerate(markers):
@@ -248,13 +258,15 @@ def range_bar_svg(
             continue
         mx = x(float(value))
         parts.append(
-            f'<line x1="{mx:.1f}" y1="{band_y - 6}" x2="{mx:.1f}" y2="{band_y + band_h + 6}" '
-            f'stroke="{color}" stroke-width="2.5"/>'
+            f'<line x1="{mx:.1f}" y1="{band_y - 6}" x2="{mx:.1f}" '
+            f'y2="{band_y + band_h + 6}" stroke="{color}" stroke-width="2.5"/>'
         )
         ly = band_y - 10 - (i % 2) * 14
         parts.append(
-            f'<text x="{mx:.1f}" y="{ly}" font-size="11.5" font-weight="600" fill="{color}" '
-            f'text-anchor="middle">{html.escape(str(label), quote=True)} {currency}{_fmt(float(value))}</text>'
+            f'<text x="{mx:.1f}" y="{ly}" font-size="11.5" font-weight="600" '
+            f'fill="{color}" text-anchor="middle">'
+            f"{html.escape(str(label), quote=True)} {currency}{_fmt(float(value))}"
+            f"</text>"
         )
     parts.append("</svg>")
     return "".join(parts)
@@ -299,12 +311,14 @@ def rating_bar_svg(
             continue
         w = n / total * plot_w
         parts.append(
-            f'<rect x="{cx:.1f}" y="{bar_y}" width="{w:.1f}" height="{bar_h}" fill="{color}"/>'
+            f'<rect x="{cx:.1f}" y="{bar_y}" width="{w:.1f}" '
+            f'height="{bar_h}" fill="{color}"/>'
         )
         if w > 34:
             parts.append(
-                f'<text x="{cx + w / 2:.1f}" y="{bar_y + bar_h / 2 + 4:.1f}" font-size="11.5" '
-                f'font-weight="700" fill="#ffffff" text-anchor="middle">{n}</text>'
+                f'<text x="{cx + w / 2:.1f}" y="{bar_y + bar_h / 2 + 4:.1f}" '
+                f'font-size="11.5" font-weight="700" fill="#ffffff" '
+                f'text-anchor="middle">{n}</text>'
             )
         parts.append(
             f'<text x="{cx + w / 2:.1f}" y="{bar_y + bar_h + 16}" font-size="10.5" '
