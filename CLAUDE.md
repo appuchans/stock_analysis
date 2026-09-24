@@ -109,7 +109,7 @@ Memory is configured **at the Crew level only** — individual agents do not hav
 
 ### Pipeline
 
-One pipeline: `StockAnalysisFlow` (`crew/flow_crew.py`), selected with `--depth quick|standard|deep`. (A second sequential crew once existed but was removed — it duplicated the flow with lossy LLM-forwarded data and a kitchen-sink report.)
+One pipeline: `StockAnalysisFlow` (`crew/flow_crew.py`), selected with `--depth quick|standard|deep`.
 
 - **Flow API**: `Flow[StockAnalysisState]` with `@start`, `@listen`, `@router`, `or_()`. `analysis_depth` routes to `"quick"` / `"standard"` / `"deep"` listener methods. Independent stages run **concurrently** (`_run_stages`, capped by `MAX_WORKERS`).
 - **Deterministic data collection**: `collect_data` runs a structured fetch — one shared `yf.Ticker` feeds the `yf_summaries` summarizers in parallel, and results pass verbatim into prompts as `{analyst_data}`, `{financials_data}`, `{ownership_data}`, `{sentiment_data}`, `{technical_data}` side-channels (no LLM in the loop).

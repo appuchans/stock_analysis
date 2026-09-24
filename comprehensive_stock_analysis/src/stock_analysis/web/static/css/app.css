@@ -150,6 +150,10 @@ a { color: var(--accent); text-decoration: none; }
 
 /* ── Forms ─────────────────────────────────────────────────────────────── */
 .analyze-form { display: grid; grid-template-columns: 1.1fr 1.7fr 1fr; gap: 18px 20px; align-items: end; margin-top: 22px; }
+.settings-form { display: grid; grid-template-columns: minmax(180px, 280px) minmax(220px, 360px); gap: 20px; align-items: end; }
+.settings-actions { display: flex; gap: 10px; grid-column: 1 / -1; }
+.settings-status { grid-column: 1 / -1; margin: 0; color: var(--pos); font-size: 13px; }
+.settings-status.error { color: var(--neg); }
 .field { display: flex; flex-direction: column; gap: 7px; }
 .field label, .field-label { font-size: 11.5px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .05em; }
 .field input, .field select, .filter-input {
@@ -426,7 +430,7 @@ tr.wl-row.clickable:hover { background: var(--surface-2); }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 
 /* ── Responsive ────────────────────────────────────────────────────────── */
-@media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } .analyze-form { grid-template-columns: 1fr; } .watchlist-form { grid-template-columns: 1fr; } }
+@media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } .analyze-form, .settings-form { grid-template-columns: 1fr; } .watchlist-form { grid-template-columns: 1fr; } }
 @media (max-width: 760px) {
   .sidebar { position: fixed; left: 0; top: 0; z-index: 50; transform: translateX(-100%); transition: transform .25s ease; box-shadow: var(--shadow-lg); }
   .app.sb-open .sidebar { transform: translateX(0); }

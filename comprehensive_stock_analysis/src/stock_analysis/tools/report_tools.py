@@ -12,6 +12,7 @@ from crewai.tools import BaseTool
 
 from ..config.settings import settings
 from ..symbols import normalize_symbol
+from .report_model import ReportModel
 
 _logger = logging.getLogger(__name__)
 
@@ -1386,7 +1387,9 @@ def _peers_table_html(peers: List[Dict[str, Any]]) -> str:
     )
 
 
-def _scenarios_table_html(scenarios: List[Dict[str, Any]]) -> str:
+def _scenarios_table_html(
+    scenarios: List[Dict[str, Any]], identity_line: str = ""
+) -> str:
     """Bear/base/bull DCF grid with disclosed assumptions."""
     if not scenarios:
         return ""
@@ -1409,7 +1412,9 @@ def _scenarios_table_html(scenarios: List[Dict[str, Any]]) -> str:
         + "".join(rows)
         + '</table><p class="meta">Two-stage DCF on consensus current-year EPS: '
         "3 years at scenario growth, 2 years fading to terminal, Gordon terminal "
-        "value. Illustrative — sensitive to assumptions shown.</p></div>"
+        "value. Illustrative — sensitive to assumptions shown.</p>"
+        + (f'<p class="meta">{html.escape(identity_line)}</p>' if identity_line else "")
+        + "</div>"
     )
 
 
@@ -1608,11 +1613,14 @@ class ReportGeneratorTool(BaseTool):
                 data = json.loads(json_path.read_text(encoding="utf-8"))
                 # Normalise field names to what the template expects
                 rec = data.get("recommendation", data.get("rating", ""))
+                # House rule (see ReportModel.stop_loss_display): a stop with
+                # no stored basis is automation data, not a client exhibit.
+                stop = data.get("stop_loss") if data.get("stop_loss_basis") else None
                 return {
                     "rating": str(rec).upper(),
                     "recommendation": rec,
                     "target_price": data.get("target_price"),
-                    "stop_loss": data.get("stop_loss"),
+                    "stop_loss": stop,
                     "time_horizon": data.get("time_horizon"),
                     "risk_level": data.get("risk_level"),
                     "confidence": data.get("confidence"),
@@ -1770,7 +1778,11 @@ class ReportGeneratorTool(BaseTool):
         lines = [f"## Investment Recommendation: {data.get('recommendation', 'N/A')}"]
         fields = [
             ("Target Price", data.get("target_price")),
-            ("Stop Loss", data.get("stop_loss")),
+            # Same house rule as the template tile: no basis, no exhibit.
+            (
+                "Stop Loss",
+                data.get("stop_loss") if data.get("stop_loss_basis") else None,
+            ),
             ("Time Horizon", data.get("time_horizon")),
             ("Risk Level", data.get("risk_level")),
             (
@@ -2099,7 +2111,11 @@ class ReportGeneratorTool(BaseTool):
         narrative_html = Markup(_md_to_html(narrative_md)) if narrative_md else ""
 
         peers_table = _peers_table_html(peers)
-        scenarios_table = _scenarios_table_html(valuation_scenarios)
+        try:
+            identity_line = ReportModel(symbol).valuation_identity_line
+        except Exception:
+            identity_line = ""
+        scenarios_table = _scenarios_table_html(valuation_scenarios, identity_line)
         sensitivity_table = _sensitivity_table_html(
             chart_data.get("dcf_sensitivity") or {},
             (chart_data.get("key_stats") or {}).get("current_price"),

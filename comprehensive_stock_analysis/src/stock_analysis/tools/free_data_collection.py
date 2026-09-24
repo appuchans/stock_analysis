@@ -280,8 +280,19 @@ class YahooFinanceTool(BaseTool):
 
     name: str = "Yahoo Finance Data Collector"
     description: str = (
-        "Collects comprehensive stock data from Yahoo Finance: "
-        "prices, fundamentals, and company information"
+        "Fetches one symbol's Yahoo Finance snapshot: company profile (sector, "
+        "industry, "
+        "business summary, CEO), market data (price, day change, market cap, 52-week "
+        "range), "
+        "fundamentals (valuation multiples, margins, ROE/ROA), short interest, and a "
+        "computed technical summary (SMA 20/50/90, RSI 14, MACD, Bollinger Bands, "
+        "ATR). "
+        "Args: symbol (ticker, e.g. 'AAPL'); period "
+        "(1d/5d/1mo/3mo/6mo/1y/2y/5y/10y/ytd/max, "
+        "default 1y) and interval (default 1d) control the price history used. "
+        "Use it when the pre-collected data in the task lacks a figure you need. "
+        "It does not return financial statements, filings, analyst targets or news. "
+        "On failure it returns an 'error' key instead of data."
     )
 
     def _run(
@@ -847,7 +858,17 @@ class FreeFREDTool(BaseTool):
 
     name: str = "Free FRED Economic Data Collector"
     description: str = (
-        "Collects economic indicators from Federal Reserve Economic Data (FRED) - FREE"
+        "Fetches one Federal Reserve Economic Data (FRED) series by ID, e.g. 'DGS10' "
+        "(10-year "
+        "Treasury yield), 'CPIAUCSL' (CPI), 'UNRATE' (unemployment), 'FEDFUNDS' or "
+        "'GDP'. "
+        "start_date and end_date are YYYY-MM-DD and default to the last 12 months. "
+        "Returns the raw "
+        "observations under data, the series metadata (title, units, frequency) under "
+        "info, and "
+        "series_id. Use it for one specific series; the economic data collector gives "
+        "a ready-made "
+        "macro overview. On failure it returns an 'error' key."
     )
     api_key: str = _PydanticField(default="demo", exclude=True)
 
@@ -924,8 +945,16 @@ class FreeNewsTool(BaseTool):
 
     name: str = "Free News Data Collector"
     description: str = (
-        "Collects news articles and sentiment data using free RSS feeds "
-        "(Google News and others) and web scraping"
+        "Fetches recent news headlines for one ticker from free RSS feeds (Google "
+        "News, with Bing "
+        "News and Yahoo Finance as fallbacks). symbol must be a ticker such as 'AAPL', "
+        "not a company "
+        "or industry name; query optionally narrows the search and limit (default 10) "
+        "caps the count. "
+        "Returns news_data (title, link, source, and a summary where the feed has one) "
+        "and total_count. It returns headlines and summaries, not full articles, and "
+        "no sentiment "
+        "score. An invalid ticker or a total failure returns an 'error' key."
     )
 
     @cached_tool(ttl=1800)
@@ -1461,7 +1490,12 @@ class FreeWebSearchTool(BaseTool):
 
     name: str = "Free Web Search Tool"
     description: str = (
-        "Performs web searches using free methods like DuckDuckGo and web scraping"
+        "Runs a DuckDuckGo web search and returns up to num_results (default 5) hits, "
+        "each with title, url and snippet. Use it to fill qualitative gaps — recent "
+        "news, product launches, management commentary — that the structured data "
+        "does not cover. It returns snippets only, not page contents, so treat a "
+        "snippet as a lead rather than a verified figure. On failure it returns an "
+        "'error' key."
     )
 
     @cached_tool(ttl=3600)
@@ -1513,8 +1547,18 @@ class FreeCompetitorAnalysisTool(BaseTool):
 
     name: str = "Free Competitor Analysis Tool"
     description: str = (
-        "Analyzes competitors using free data sources like Yahoo "
-        "Finance and web scraping"
+        "Finds likely competitors for a ticker: it looks up the company's sector and "
+        "industry on "
+        "Yahoo Finance, runs a web search for competitors, and extracts candidate "
+        "tickers from the "
+        "results. industry optionally overrides the looked-up industry. Returns "
+        "competitors "
+        "(candidate tickers with whatever Yahoo data resolved), sector, industry and "
+        "total_found. "
+        "Candidates come from search snippets and can include false matches, so prefer "
+        "the named "
+        "peer set in the task's pre-collected data when it exists. Failure returns an "
+        "'error' key."
     )
 
     @cached_tool(ttl=43200)
@@ -1731,7 +1775,17 @@ class FreeIndustryAnalysisTool(BaseTool):
     """Tool for industry analysis using free data sources."""
 
     name: str = "Free Industry Analysis Tool"
-    description: str = "Analyzes industry trends using free data sources"
+    description: str = (
+        "Gathers context on an industry in parallel: web search results on its current "
+        "trends, a "
+        "macro snapshot, and recent industry news. industry is a name such as "
+        "'Semiconductors'; "
+        "sector is optional. Returns search_results (title, url, snippet), "
+        "economic_context and "
+        "news_sentiment. Search snippets are leads, not verified figures. Each part "
+        "fails "
+        "independently, and a failed part comes back empty or carrying an 'error' key."
+    )
 
     @cached_tool(ttl=43200)
     def _run(self, industry: str, sector: Optional[str] = None) -> Dict[str, Any]:

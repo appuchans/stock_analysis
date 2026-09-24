@@ -12,6 +12,7 @@ which the HTML renderer reads too — both state the same numbers because they
 resolve them in the same place.
 """
 
+import html
 import logging
 import re
 import tempfile
@@ -46,6 +47,7 @@ def _str(text: str) -> str:
 _BOLD = re.compile(r"\*\*(.+?)\*\*")
 _ITALIC = re.compile(r"(?<!\*)\*([^*\n]+?)\*(?!\*)")
 _CODE = re.compile(r"`([^`\n]+?)`")
+_HTML_TAG = re.compile(r"</?[A-Za-z][^>\n]*>")
 
 
 def _inline(text: str) -> str:
@@ -55,6 +57,10 @@ def _inline(text: str) -> str:
     asterisk in the prose cannot be mistaken for emphasis and vice versa.
     """
     tokens: List[str] = []
+    # Narratives are normally Markdown, but an agent can occasionally return
+    # HTML copied from a tool response. The HTML report can render that; Typst
+    # must receive plain text instead of exposing tags in the PDF.
+    text = html.unescape(_HTML_TAG.sub("", str(text)))
 
     def stash(rendered: str) -> str:
         tokens.append(rendered)
@@ -457,6 +463,13 @@ def _forecast_table(model: ReportModel) -> str:
             )
             + "\n"
         )
+    # The valuation identity: how the published target derives from the
+    # exhibits on this page, in one line. Without it the reader sees two
+    # per-share figures ($267.45 target, $243.74 cross-check) and no stated
+    # relationship between them.
+    identity = model.valuation_identity_line
+    if identity:
+        out.append(f"\n#text(7.5pt, fill: muted)[{_inline(identity)}]\n")
     return "".join(out)
 
 

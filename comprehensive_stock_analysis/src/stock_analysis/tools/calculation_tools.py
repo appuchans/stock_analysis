@@ -88,7 +88,22 @@ class FinancialCalculatorTool(BaseTool):
 
     name: str = "Financial Calculator Tool"
     description: str = (
-        "Performs various financial calculations: ratios, returns, " "and valuations"
+        "Runs one financial calculation on numbers you supply; it fetches no data. "
+        "calculation_type selects the formula and params is a JSON object of its "
+        "arguments: "
+        "'ratios' (price, earnings, book_value, sales, market_cap; growth_rate as a "
+        "whole-number "
+        "percent for PEG) returns P/E, P/B, P/S and PEG; 'returns' (prices list, "
+        "periods) returns "
+        "total, annualised and per-period returns; 'valuation' (current_price, "
+        "earnings, "
+        "growth_rate, discount_rate, terminal_growth_rate) returns a simple DCF "
+        "intrinsic value "
+        "and upside; 'risk_metrics' (returns list, risk_free_rate) returns volatility, "
+        "Sharpe, "
+        "Sortino, VaR/CVaR 95% and max drawdown. Rates other than PEG growth are "
+        "decimals "
+        "(0.10 = 10%). An unknown type or bad params returns an 'error' key."
     )
 
     def _run(self, calculation_type: str, params: str = "{}") -> Dict[str, Any]:
@@ -305,7 +320,20 @@ class TechnicalIndicatorTool(BaseTool):
     """Tool for technical indicator calculations."""
 
     name: str = "Technical Indicator Tool"
-    description: str = "Calculates various technical indicators for stock analysis"
+    description: str = (
+        "Computes one family of technical indicators from price history you supply. "
+        "price_data is a JSON array of OHLCV records (timestamp, open, high, low, "
+        "close, volume); "
+        "indicator_type is one of 'moving_averages' (SMA and EMA; params may set "
+        "periods, "
+        "default [20, 50, 200]), 'momentum' (RSI, MACD, stochastic, Williams %R, ROC, "
+        "CCI, MFI), "
+        "'volatility' (Bollinger, ATR, Keltner), 'volume' (OBV, A/D line, CMF, VPT) or "
+        "'trend' "
+        "(ADX, Aroon, PSAR, Ichimoku). Returns the latest value of each indicator, not "
+        "a series. "
+        "It fetches no data; empty input or an unknown type returns an 'error' key."
+    )
 
     def _run(
         self, price_data: str, indicator_type: str, params: str = "{}"
@@ -634,7 +662,23 @@ class ValuationCalculatorTool(BaseTool):
     """Tool for valuation calculations."""
 
     name: str = "Valuation Calculator Tool"
-    description: str = "Calculates various valuation metrics and models"
+    description: str = (
+        "Runs one valuation model on figures you supply; it fetches no data. "
+        "valuation_type selects the model and params is a JSON object of its "
+        "arguments: "
+        "'dcf' (current_earnings above 0, growth_rate, discount_rate, "
+        "terminal_growth_rate "
+        "default 0.02, years default 5; discount_rate must exceed "
+        "terminal_growth_rate), "
+        "'comparable' (current_price, pe_ratio, industry_pe, pb_ratio, industry_pb), "
+        "'asset_based' (total_assets, total_liabilities, intangible_assets) or "
+        "'dividend_discount' (current_dividend, dividend_growth_rate, "
+        "required_return). "
+        "Rates are decimals. Returns intrinsic value, upside versus current price "
+        "where one is "
+        "given, and the assumptions used. Invalid inputs return an 'error' key, not a "
+        "value."
+    )
 
     def _run(self, valuation_type: str, params: str = "{}") -> Dict[str, Any]:
         """Calculate valuation metrics. params is a JSON object of keyword

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to Codex when working with code in this repository.
 
 ## Common Commands
 
@@ -37,7 +37,7 @@ python -m stock_analysis.main AAPL
 python -m stock_analysis.main AAPL MSFT GOOGL
 python -m stock_analysis.main AAPL --depth deep
 python -m stock_analysis.main AAPL --no-cache   # force a fresh data pull
-python -m stock_analysis.main AAPL --llm-provider anthropic --model Codex-sonnet-4-6
+python -m stock_analysis.main AAPL --llm-provider anthropic --model claude-sonnet-4-6
 
 # Run the local web UI (http://127.0.0.1:8000 by default)
 python -m stock_analysis.web
@@ -80,7 +80,7 @@ Memory is configured **at the Crew level only** — individual agents do not hav
 
 ### Pipeline
 
-One pipeline: `StockAnalysisFlow` (`crew/flow_crew.py`), selected with `--depth quick|standard|deep`. (A second sequential crew once existed but was removed — it duplicated the flow with lossy LLM-forwarded data and a kitchen-sink report.)
+One pipeline: `StockAnalysisFlow` (`crew/flow_crew.py`), selected with `--depth quick|standard|deep`.
 
 - **Flow API**: `Flow[StockAnalysisState]` with `@start`, `@listen`, `@router`, `or_()`. `analysis_depth` routes to `"quick"` / `"standard"` / `"deep"` listener methods. Independent stages run **concurrently** (`_run_stages`, capped by `MAX_WORKERS`).
 - **Deterministic data collection**: `collect_data` runs a structured fetch — one shared `yf.Ticker` feeds the `yf_summaries` summarizers in parallel, and results pass verbatim into prompts as `{analyst_data}`, `{financials_data}`, `{ownership_data}`, `{sentiment_data}`, `{technical_data}` side-channels (no LLM in the loop).
@@ -106,7 +106,7 @@ Two independent consumers: the flow's deep-run enrichment (above) and the web la
 
 A local single-user interface in `src/stock_analysis/web/` — FastAPI backend + no-build vanilla-JS/Chart.js frontend, launched with `python -m stock_analysis.web` (`__main__.py`; reuses `main.py` logging, warns-not-exits on missing keys, `uvicorn` with **`workers=1`**).
 
-**Run serialization is mandatory.** `token_meter`/`llm_budget` are process-global and reset per run, so runs must never overlap. `jobs.py` `JobManager` uses a `ThreadPoolExecutor(max_workers=1)`; a second submit while one is active returns **HTTP 409**. The blocking analysis runs in the worker thread (never the async handler), so `GET /api/jobs/{id}` stays responsive and is **polled every 1s** (not SSE).
+**Run serialization is mandatory.** `token_meter`/`llm_budget` are process-global and reset per run, so runs must never overlap. `jobs.py` `JobManager` uses a `ThreadPoolExecutor(max_workers=1)` with a persistent FIFO queue; later submissions wait behind the active run, and an equal-or-deeper queued/running analysis for the same symbol is coalesced instead of duplicated. The blocking analysis runs in the worker thread (never the async handler), so `GET /api/jobs/{id}` stays responsive and is **polled every 1s** (not SSE).
 
 - **Live progress** with no new flow plumbing: the status endpoint reads `token_meter.snapshot()` + `llm_budget.used()` directly; `progress.py` registers one persistent CrewAI-event-bus listener (`CrewKickoffCompleteEvent`) forwarding to the active run's `StageTracker`, mapping completed crews → stage label + 0–1 fraction (set-active/clear-active around each run avoids the unsubscribe problem).
 - **Cancel / Refresh**: `POST /api/jobs/{id}/cancel` sets a flag + `llm_budget.request_abort()`, making the next `check_and_increment()` raise `AnalysisAbortedError` (cooperative — stops at the next LLM call). `_run()` decides the final state from the **result, not the flag**: a `status: completed` result always wins (a run that finished is finished, even if cancellation raced completion); only an incomplete result with `cancel_requested` is `aborted`, otherwise `failed`. **Refresh** is just `POST /api/analyze` with `use_cache:false` — no separate endpoint.
@@ -137,10 +137,10 @@ A local single-user interface in `src/stock_analysis/web/` — FastAPI backend +
   - *Price* (`price_above`, `price_below`, `pct_move_day`) — evaluated by a periodic quote-poll job (every 15 min via `ROUTER`), with per-rule cooldown.
   - *Post-run* (`target_price_hit`, `stop_loss_hit`, `recommendation_changed`, `confidence_dropped`) — evaluated from `alerts.check_and_dispatch` right after an analysis completes.
   - Both dispatch through the existing `alerts.py` email/webhook/log machinery.
-  - ⚠️ **Known gap**: `earnings_within_days` is accepted by `schemas.py` (and required to carry a threshold) but has **no evaluator in `rules.py`** — such a rule can be created and will silently never fire. Fix the evaluator or reject the type; don't assume it works.
+  - *Calendar* (`earnings_within_days`) — evaluated by the periodic poll through `ROUTER.get_calendar`, with a 24-hour minimum effective cooldown so an approaching date does not alert every 15 minutes.
 - `GET /api/providers/status` (`routes/providers.py`) reports which of FMP / Polygon / yfinance are configured.
 
-**Tests**: `tests/test_web_*.py` use FastAPI `TestClient` with `analyze_stock` mocked; an autouse fixture points `report_output_dir` at a tmp dir so worker status markers never touch the real `reports/`.
+**Tests**: `tests/test_web_*.py` use FastAPI `TestClient` with `analyze_stock` mocked. The shared autouse fixture redirects both report and data output to per-test temporary directories and disables live Redis by default, so tests never consume developer reports/cache entries or write into the real `reports/` and `data/` trees. Tests that exercise Redis replace the disabled client with an explicit mock.
 
 ### Data Flow
 

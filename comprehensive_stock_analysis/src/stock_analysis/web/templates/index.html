@@ -55,6 +55,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           Automation
         </a>
+        <a href="#/settings" data-nav="settings" class="sb-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 6 4.6a1.65 1.65 0 0 0 1.51-1H8a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15z"/></svg>
+          Settings
+        </a>
       </nav>
       <div class="sb-spacer"></div>
       <button id="theme-toggle" class="sb-toggle" type="button">
@@ -134,6 +138,36 @@
             </div>
             <div id="progress-queue" class="progress-queue hidden"></div>
             <div id="progress-error" class="error-banner hidden"></div>
+          </div>
+        </section>
+
+        <!-- Settings -->
+        <section id="view-settings" class="view">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Analysis settings</h1>
+              <p class="page-sub">Choose the LLM used for new analyses. The selection is saved in this browser.</p>
+            </div>
+          </div>
+          <div class="card settings-card">
+            <form id="settings-form" class="settings-form" autocomplete="off">
+              <div class="field">
+                <label for="settings-llm-provider">LLM provider</label>
+                <select id="settings-llm-provider" name="llm_provider">
+                  <option value="">Configured default</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="settings-llm-model">Model</label>
+                <input id="settings-llm-model" name="model" list="settings-llm-models" type="text" placeholder="Configured default" />
+                <datalist id="settings-llm-models"></datalist>
+              </div>
+              <div class="settings-actions">
+                <button type="submit" class="btn btn-primary">Save settings</button>
+                <button id="settings-reset" type="button" class="btn btn-secondary">Use configured defaults</button>
+              </div>
+              <p id="settings-status" class="settings-status hidden" role="status"></p>
+            </form>
           </div>
         </section>
 

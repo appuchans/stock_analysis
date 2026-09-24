@@ -116,6 +116,29 @@ class ReportModel:
         return raw[:16].replace("T", " ")
 
     @property
+    def shares_m(self) -> Optional[float]:
+        """The run's one share count (millions), frozen in the snapshot.
+
+        Every per-share figure in the file — cover market cap included — is
+        built from this number against the snapshot price, so dividing one by
+        the other must return it. None for artifacts predating snapshots.
+        """
+        return _num(self.snapshot.get("shares_m"))
+
+    @property
+    def market_cap(self) -> Optional[float]:
+        """The run's one market cap: snapshot math first, key_stats fallback.
+
+        The snapshot value is shares_m × snapshot price by construction.
+        key_stats is kept only for artifacts written before the snapshot
+        carried it.
+        """
+        snap_mcap = _num(self.snapshot.get("market_cap"))
+        if snap_mcap:
+            return snap_mcap
+        return _num((self.chart.get("key_stats") or {}).get("market_cap"))
+
+    @property
     def price_label(self) -> str:
         """How the price must be described, in words the reader can trust.
 
@@ -176,6 +199,22 @@ class ReportModel:
         return round((t - p) / p * 100, 1) if p and t else None
 
     @property
+    def stop_loss_display(self) -> Optional[float]:
+        """The stop-loss for client documents, or None.
+
+        House rule: a stop with no stated basis (volatility band,
+        thesis-break price, risk budget) is omitted from client documents —
+        it reads as precision the analysis did not earn. The raw figure stays
+        in the JSON for the automation rules engine, which needs a level to
+        evaluate stop_loss_hit against. If the advisor ever writes a
+        `stop_loss_basis`, this property (and the renderers gating on it)
+        publishes the pair together.
+        """
+        if not str(self.rec.get("stop_loss_basis") or "").strip():
+            return None
+        return _num(self.rec.get("stop_loss"))
+
+    @property
     def rating(self) -> str:
         return str(self.rec.get("recommendation") or "").strip()
 
@@ -209,17 +248,21 @@ class ReportModel:
     def target_bridge_required(self) -> bool:
         """Whether the target needs an explanation the note may not have given.
 
-        True when a published target sits outside the modelled range, or lands
-        on the consensus mean while the model says something different. Both
-        are publishable — with the bridging assumption stated. Neither is
-        publishable silently, which is what "the alignment with Street is a
-        cross-check rather than the basis" amounted to when the target was the
-        Street mean to within sixteen cents.
+        True when a published target sits outside the modelled range, lands
+        on the consensus mean while the model says something different, or
+        disagrees with the exit-multiple cross-check by more than
+        _CROSSCHECK_GAP_PCT. All three are publishable — with the bridging
+        assumption stated. None is publishable silently, which is what "the
+        alignment with Street is a cross-check rather than the basis" amounted
+        to when the target was the Street mean to within sixteen cents.
         """
         if self.target is None:
             return False
         rng = self.valuation_range
         if rng and not rng[0] <= self.target <= rng[1]:
+            return True
+        gap = self.crosscheck_gap_pct
+        if gap is not None and abs(gap) > self._CROSSCHECK_GAP_PCT:
             return True
         mean = ((self.chart.get("analyst") or {}).get("price_targets") or {}).get(
             "mean"
@@ -238,6 +281,77 @@ class ReportModel:
                 if base and abs(self.target - base) / base > 0.05:
                     return True
         return False
+
+    # A cross-check this far from the target stops being confirmation and
+    # becomes a second view the memo must address (see target_bridge_required).
+    _CROSSCHECK_GAP_PCT = 10.0
+
+    @property
+    def _base_case_value(self) -> Optional[float]:
+        for s in self.scenarios:
+            if str(s.get("scenario", "")).lower() == "base":
+                return _num(s.get("intrinsic_per_share"))
+        return None
+
+    @property
+    def crosscheck_value(self) -> Optional[float]:
+        """The exit-multiple value derived from the explicit forecast.
+
+        A second method, not a second target: it exists so the reader can see
+        whether the forecast underneath the thesis points at the same price.
+        """
+        return _num((self.chart.get("forecast_valuation") or {}).get("value_per_share"))
+
+    @property
+    def crosscheck_gap_pct(self) -> Optional[float]:
+        """Signed % gap between cross-check and published target."""
+        t, c = self.target, self.crosscheck_value
+        if t is None or not c:
+            return None
+        return round((c - t) / t * 100, 1)
+
+    @property
+    def valuation_identity(self) -> Dict[str, Any]:
+        """How the published target is derived, as data.
+
+        The house target is the base-case DCF (weight 1.0); the exit-multiple
+        value is a cross-check, not a blended component. Stating the weights
+        is what makes the target an output of the identity rather than a
+        number with prose stapled on.
+        """
+        return {
+            "method": "base-case DCF",
+            "target": self.target,
+            "base_value": self._base_case_value,
+            "weight_base": 1.0,
+            "crosscheck_value": self.crosscheck_value,
+            "crosscheck_gap_pct": self.crosscheck_gap_pct,
+            "crosscheck_method": (
+                (self.chart.get("forecast_valuation") or {}).get("method") or ""
+            ),
+        }
+
+    @property
+    def valuation_identity_line(self) -> str:
+        """One plain-English line renderers print under the valuation exhibit."""
+        t = self.target
+        if t is None:
+            return ""
+        base = self._base_case_value
+        if base is not None and abs(t - base) / t < 0.005:
+            line = f"Target ${t:,.2f} = base-case DCF (${base:,.2f}, weight 1.0)."
+        else:
+            line = (
+                f"Target ${t:,.2f} differs from the base-case DCF "
+                f"(${base:,.2f} — see Target reconciliation)."
+                if base is not None
+                else f"Target ${t:,.2f} (no base-case DCF produced)."
+            )
+        c = self.crosscheck_value
+        gap = self.crosscheck_gap_pct
+        if c is not None and gap is not None:
+            line += f" Exit-multiple cross-check ${c:,.2f} ({gap:+.1f}%)."
+        return line
 
     def football_field_bands(self) -> List[Tuple[str, float, float]]:
         """Comparable value ranges, widest context first."""
@@ -338,7 +452,7 @@ class ReportModel:
             tiles.append(("Price", f"${self.price:,.2f}"))
         if self.upside_pct is not None:
             tiles.append(("Upside", f"{self.upside_pct:+.1f}%"))
-        mcap = _num(ks.get("market_cap"))
+        mcap = self.market_cap
         if mcap:
             tiles.append(("Market cap", f"${mcap / 1e9:,.1f}B"))
         pe = _num(ks.get("pe_ratio"))

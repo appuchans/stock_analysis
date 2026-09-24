@@ -50,7 +50,13 @@ def submit_analysis(req: AnalyzeRequest) -> AnalyzeResponse:
             )
 
     job = manager.submit(
-        req.symbol, req.depth, req.asset_type, req.use_cache, resume=req.resume
+        req.symbol,
+        req.depth,
+        req.asset_type,
+        req.use_cache,
+        resume=req.resume,
+        llm_provider=req.llm_provider,
+        model=req.model,
     )
     return AnalyzeResponse(job_id=job.id, state=job.state)
 

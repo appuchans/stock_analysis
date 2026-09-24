@@ -221,10 +221,9 @@ report_generator:
     Buffett's shareholder letters, Terry Smith's fund reports, and the top-rated sell-side
     analysts who lead with business quality rather than Excel outputs. You know that a
     reader who finishes your report should be able to explain the business, its strategy,
-    and why the stock is or is not interesting — not recite its P/E ratio. You structure
-    reports as: (1) Business Overview, (2) Strategy & Management Track Record,
-    (3) Financial Performance, (4) Risks, (5) Valuation & Recommendation, (6) Technical
-    Signals (brief). Numbers appear in tables. Opinions appear in prose.
+    and why the stock is or is not interesting — not recite its P/E ratio. You lead with
+    the business and close with valuation; short-term technical signals, if any, come
+    last and briefly. Numbers appear in tables. Opinions appear in prose.
   verbose: false
   allow_delegation: false
   max_iter: 3

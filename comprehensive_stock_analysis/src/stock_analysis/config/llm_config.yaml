@@ -2,7 +2,12 @@
 #
 # Priority chain (highest wins):
 #   constructor args  >  agents.yaml llm_config block  >  this file per-agent
-#   >  environment variables  >  this file global defaults
+#   >  this file categories  >  environment variables  >  this file global defaults
+#
+# Category tier: change the model for a whole class of agents at once by
+# editing one `categories` entry below. An agent's category comes from
+# `agent_categories`; per-agent entries under `agents` still win over the
+# category for fine-grained overrides.
 #
 # Environment variable overrides (global):
 #   LLM_PROVIDER      — e.g. openai | anthropic | ollama | azure | groq | mistral
@@ -25,6 +30,41 @@ global:
   max_tokens: 16000
   timeout: 120        # seconds before LLM call is aborted
   max_retries: 3      # retry attempts on transient errors
+
+# ── Category defaults ────────────────────────────────────────────────────────
+# One model per workload class. Values below track the global default —
+# change a single entry to switch that class (e.g. give `synthesis` a
+# stronger reasoning model while keeping `extraction` on fast/cheap flash,
+# or point a class at openrouter/z-ai/glm-5.3-flash).
+# Recognised keys per category: provider, model, temperature, max_tokens,
+# timeout, max_retries (unset keys inherit from global/env).
+categories:
+  extraction:       # data_collector — high-volume fetch/summarise, cheap + fast
+    provider: openai
+    model: gpt-5.6-luna
+  quantitative:     # technical/fundamental/risk — calculator-driven, deterministic
+    provider: openai
+    model: gpt-5.6-luna
+  narrative:        # sentiment/market/industry/competitor/economic — web-grounded prose
+    provider: openai
+    model: gpt-5.6-luna
+  synthesis:        # investment_advisor/report_generator — judgment + long-form thesis
+    provider: openai
+    model: gpt-5.6-luna
+
+# ── Agent → category mapping ───────────────────────────────────────────────
+agent_categories:
+  data_collector: extraction
+  technical_analyst: quantitative
+  fundamental_analyst: quantitative
+  risk_analyst: quantitative
+  sentiment_analyst: narrative
+  market_analyst: narrative
+  industry_analyst: narrative
+  competitor_analyst: narrative
+  economic_analyst: narrative
+  investment_advisor: synthesis
+  report_generator: synthesis
 
 # ── Per-agent overrides ────────────────────────────────────────────────────────
 # Set only the values that differ from the global defaults above.
@@ -70,6 +110,7 @@ provider_prefixes:
   deepseek: "deepseek/"
   openrouter: "openrouter/"
   xai: "xai/"
+  zai: "zai/"
   perplexity: "perplexity/"
   fireworks_ai: "fireworks_ai/"
   together_ai: "together_ai/"

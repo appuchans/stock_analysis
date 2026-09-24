@@ -9,6 +9,7 @@
 // server is ACTUALLY running, and everything else the user queued is listed
 // beside it. Cancellation happens only when the user clicks Cancel.
 import { $, $$, fetchJSON, fmtNum, navigate } from "./util.js";
+import { getLLMSelection } from "./settings.js";
 
 let polling = null;
 // Jobs submitted in this session, in submission order: id → {symbol, state}.
@@ -48,6 +49,7 @@ export function refreshSymbol(symbol, assetType, resume = false) {
 
 export async function startAnalysis(payload) {
   if (!payload.symbol) return;
+  payload = { ...getLLMSelection(), ...payload };
   const btn = $("#run-btn");
   btn.disabled = true;
   $("#progress-card").classList.remove("hidden");

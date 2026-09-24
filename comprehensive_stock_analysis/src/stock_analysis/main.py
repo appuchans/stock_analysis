@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from . import diagnostics
 from .config.settings import settings
 from .crew.flow_crew import StockAnalysisFlow
 
@@ -30,6 +31,18 @@ def _print_token_usage(
         f"total: {total:,}{cached_str}{calls_str}"
     )
     print(line, flush=True)
+    by_cat = token_usage.get("by_category") or {}
+    for cat in sorted(by_cat):
+        vals = by_cat[cat] or {}
+        c_in = vals.get("prompt_tokens", 0)
+        c_out = vals.get("completion_tokens", 0)
+        c_total = vals.get("total_tokens", c_in + c_out)
+        c_calls = vals.get("successful_requests", 0)
+        print(
+            f"    {cat}: {c_total:,} tokens "
+            f"(in {c_in:,}, out {c_out:,}, {c_calls} calls)",
+            flush=True,
+        )
     _logger.info(
         "[token-usage] symbol=%s input=%d output=%d total=%d cached=%d llm_calls=%d",
         symbol,
@@ -194,6 +207,9 @@ def _quiet_noisy_loggers() -> None:
 
 def main() -> None:
     """CLI entry point."""
+    # Before anything prints: a legacy console codepage turns the stage-progress
+    # '✓' lines into UnicodeEncodeError, failing successful stages.
+    diagnostics.ensure_utf8_stdio()
     parser = argparse.ArgumentParser(
         description="Comprehensive Stock Analysis Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,

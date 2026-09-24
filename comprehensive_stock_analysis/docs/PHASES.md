@@ -9,13 +9,17 @@ for the architecture these build on.
 > history (persistent job queue → provider router/portfolio/automation → tool telemetry). That
 > was a separate workstream that has shipped.
 
-**Status as of 2026-08-11** (verified against code, not assumed):
+**Status as of 2026-09-10** (verified against code and the local quality gates):
 
 | Phase | Status |
 |---|---|
 | 1 — Web UI security hardening | **Not started (0/3).** Deferred: feature work comes first before shipping. |
 | 2 — Zero-value truthy checks | **Done (2/2)** — but the same bug class survives in unlisted methods, see below. |
-| 3 — Dev tooling housekeeping | **Partially done** — formatting resolved and now blocking in CI; flake8/mypy still open. |
+| 3 — Dev tooling housekeeping | **Partially done** — formatting and flake8 blocking in CI; mypy still open. |
+
+Current verification snapshot (Python 3.13.6): **775 tests passed** with 12 warnings;
+`black --check` and `isort --check-only` passed across 130 files. flake8 is blocking
+and clean; mypy remains advisory with 357 errors across 44 of 83 source files. Tests run with isolated temporary report/data directories and no live Redis.
 
 ## Phase 1 — Web UI security hardening — ⬜ NOT STARTED
 
@@ -72,14 +76,17 @@ another enumerated list, since enumerating is what let these slip the first time
 - ✅ **black and isort are now blocking in CI**, with versions pinned (`black==26.5.1`,
   `isort==8.0.1`) so an unpinned formatter release can't fail the build on a version bump
   alone. Bump those pins deliberately and reformat in the same PR.
-- 🟡 **Dev venv drift is only partly resolved.** `black`, `isort`, `flake8`, and `mypy`
-  are installed in the working `.venv`; there is still no `make setup` or CI check that
-  fails loudly when the dev venv drifts from `pyproject.toml`'s `dev` extra.
+- 🟡 **Dev venv drift is only partly resolved.** All four quality tools are available in
+  the working system-site-enabled `.venv`, and the project is installed editable after
+  restoring the missing Hatchling/editables build support. Commands run reliably as
+  `.venv\\Scripts\\python.exe -m <tool>` without a `PYTHONPATH` workaround. There is still
+  no setup command or CI check that fails loudly when the dev environment drifts from
+  `pyproject.toml`'s `dev` extra.
 - ✅ **flake8 is now blocking (2026-08-23).** The full backlog (~204 findings: 169 E501,
   19 E402, 15 F401, plus E741/F841/F824/F541) was worked to zero — unused imports removed,
   late imports moved to the top, ambiguous names (`l` → `low`/`label`) renamed, and long
   lines wrapped. The suite passed unchanged (751 tests) throughout. CI's
   `continue-on-error` on the flake8 step has been removed.
-- ⬜ **mypy remains advisory** (`continue-on-error: true`). It has never been run clean
-  under the strict config in `pyproject.toml`. Promote it independently once its backlog
-  is cleared.
+- ⬜ **mypy remains advisory** (`continue-on-error: true`). The 2026-09-10 snapshot is
+  357 errors across 44 source files under the strict config in `pyproject.toml`. Promote
+  it independently once its backlog is cleared.

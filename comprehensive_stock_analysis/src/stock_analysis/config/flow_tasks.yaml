@@ -117,8 +117,9 @@ shared:
 
     MARKET SNAPSHOT: {snapshot_data}
 
-    IMPORTANT: Write your entire response in clean, human-readable markdown.
-    Do NOT output raw JSON or code blocks — use prose, bullet points, and tables.
+    Write your response as human-readable markdown — prose, bullet points and
+    tables — because it is published to clients as-is; raw JSON or code blocks
+    would appear in the report verbatim.
 
   # Expected output for the parallel analysis stages
   stage_expected_output: >-
@@ -129,7 +130,7 @@ shared:
 
 collect_data:
   stock: |
-    Collect comprehensive data for {symbol}. You MUST include ALL of the following:
+    Collect comprehensive data for {symbol}, covering each of the following:
     1. Business description: what the company makes/sells, its core segments,
        key customers, and why someone would choose its product over an alternative.
     2. Strategy: what management says it is building toward — new products,
@@ -143,7 +144,7 @@ collect_data:
     7. Macro context: relevant economic indicators (rates, GDP, sector conditions).
     Pull from SEC EDGAR filings (focus on MD&A), recent earnings commentary, and news.
   etf: |
-    Collect comprehensive data for the ETF {symbol}. You MUST include ALL of:
+    Collect comprehensive data for the ETF {symbol}, covering each of:
     1. Mandate: which index or theme the fund tracks, and its methodology
        (cap-weighted vs equal-weighted, full replication vs sampling).
     2. Fund facts: expense ratio, AUM, inception date, issuer, and domicile.
@@ -491,7 +492,8 @@ recommendation:
     it — an earnings miss, a guidance change, a major deal — then what kind of
     holding it is and the main reservation. No jargon, no ratios, no DCF or
     positioning talk. This is read first, above the charts, so it must stand
-    on its own. For example:
+    on its own. One illustration of the register (match its plainness, not
+    its content or shape):
       "IBM's stock is up solidly this year but stumbled after a Q2 earnings
       miss and softer guidance, so growth momentum looks shaky. It's a decent,
       income-generating holding thanks to steady cash flow and dividends, but
@@ -583,8 +585,8 @@ report:
        difference. Never quote individual social-media posts.
        Take every figure in this section from {positioning_data}, which states
        the short interest, analyst mix and consensus targets as verified data.
-       Do not re-derive them from the stage summaries — that is how one report
-       published short interest as 2.1% of float when the data said 2.62%.
+       Do not re-derive them from the stage summaries, which round and drift
+       from the verified figures.
     {decision_data}
     7. '## Valuation & Recommendation' — close the argument: tie valuation back to the
        thesis pillars and restate the rating and target with the key trade-off.
@@ -614,8 +616,8 @@ report:
       price/market cap boilerplate across sections.
     - Vary section lengths by importance to the thesis; do not pad.
 
-    Other rules: cite numbers (value, period, source) as in the source material.
-    Do NOT include a 'Data Sources & Gaps' section (the report appendix consolidates
+    Other rules: give each number with its value and fiscal period as in the
+    source material; sources stay out of the body. Do NOT include a 'Data Sources & Gaps' section (the report appendix consolidates
     those). Never mention errors, unavailability mechanics, or tools.
 
     Your final answer must be ONLY the narrative document itself, starting
@@ -692,9 +694,8 @@ recommendation_summary:
 
     Base every statement on the material below and never invent an event or a
     number. The price figures are authoritative — describe the move as they
-    show it. An earlier attempt claimed the stock was "near its recent high"
-    while it sat 28% below that high, so state direction and magnitude only as
-    the data supports. Do not mention the rating or target price (shown
+    show it: state direction and magnitude, including distance from recent
+    highs and lows, only as the data supports. Do not mention the rating or target price (shown
     alongside), and never comment on the data itself.
 
     Share price performance and recent news:

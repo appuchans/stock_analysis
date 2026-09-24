@@ -83,8 +83,17 @@ class TechnicalAnalysisTool(BaseTool):
 
     name: str = "Technical Analysis Tool"
     description: str = (
-        "Performs comprehensive technical analysis: indicators, patterns, "
-        "and signals"
+        "Runs a full technical read on price history you supply: indicator values (SMA "
+        "20/50/200, "
+        "EMA 12/26, RSI, MACD, Bollinger, stochastic, ADX, ATR, OBV and others), chart "
+        "patterns, "
+        "buy/sell/neutral signal counts with an overall recommendation, trend strength "
+        "(regression slope and R-squared) and support/resistance levels. "
+        "price_data and volume_data are JSON arrays of OHLCV records with a timestamp "
+        "field; "
+        "volume_data may be empty when price_data already carries volume. "
+        "It fetches no data and returns point-in-time values, not series. "
+        "Empty price_data returns an 'error' key."
     )
 
     def _run(self, price_data: str, volume_data: str) -> Dict[str, Any]:
@@ -360,8 +369,18 @@ class FundamentalAnalysisTool(BaseTool):
 
     name: str = "Fundamental Analysis Tool"
     description: str = (
-        "Performs comprehensive fundamental analysis: valuation, "
-        "profitability, and financial health"
+        "Scores a company's fundamentals from figures you supply: valuation (P/E, P/B, "
+        "P/S, PEG, "
+        "EV/EBITDA), profitability (margins, ROE, ROA, ROIC), financial health "
+        "(current and quick "
+        "ratios, debt/equity, interest coverage) and growth (revenue, earnings, book "
+        "value), each "
+        "with a component score, plus an overall_score. fundamental_data and "
+        "market_data are JSON "
+        "objects keyed by those metric names, with ratios as decimals. Missing metrics "
+        "are skipped "
+        "rather than scored as zero. It fetches no data; unparseable input returns an "
+        "'error' key."
     )
 
     def _run(self, fundamental_data: str, market_data: str) -> Dict[str, Any]:
@@ -655,8 +674,21 @@ class RiskAnalysisTool(BaseTool):
 
     name: str = "Risk Analysis Tool"
     description: str = (
-        "Performs comprehensive risk analysis: market risk, credit "
-        "risk, and operational risk"
+        "Assesses four risk dimensions from data you supply: market risk from price "
+        "returns "
+        "(volatility, VaR 95%, max drawdown, beta), credit risk (debt/equity, interest "
+        "coverage), "
+        "liquidity risk (current, quick and cash ratios) and operational risk (growth "
+        "and ROE), "
+        "combined into an overall risk score and level. price_data is a JSON array of "
+        "OHLCV "
+        "records with timestamp and close; fundamental_data is a JSON object of those "
+        "ratios. "
+        "Scores normalise over the metrics actually present. To get beta, VaR or "
+        "Sharpe for a "
+        "ticker without supplying prices, use the Risk Calculator Tool, which fetches "
+        "history. "
+        "Empty or too-short price data returns an 'error' key."
     )
 
     def _run(self, price_data: str, fundamental_data: str) -> Dict[str, Any]:
@@ -916,7 +948,19 @@ class ValuationTool(BaseTool):
 
     name: str = "Valuation Tool"
     description: str = (
-        "Performs comprehensive valuation analysis using multiple methodologies"
+        "Combines three valuation methods on figures you supply: a DCF from net_income "
+        "and "
+        "earnings_growth (10% discount rate; 5% growth when none is given), a "
+        "comparable-multiples "
+        "valuation, and an asset-based valuation from total_assets and "
+        "total_liabilities, averaged "
+        "into an overall intrinsic value with upside versus market_data.current_price. "
+        "fundamental_data and market_data are JSON objects. A method whose inputs are "
+        "missing "
+        "returns status 'insufficient_data' rather than a zero value, and each method "
+        "lists the "
+        "assumptions it used. It fetches no data. For a DCF on your own assumptions "
+        "use the Valuation Calculator Tool."
     )
 
     def _run(self, fundamental_data: str, market_data: str) -> Dict[str, Any]:
@@ -1096,7 +1140,18 @@ class ComparisonTool(BaseTool):
     """Tool for comparing stocks and industries."""
 
     name: str = "Comparison Tool"
-    description: str = "Compares stocks against industry peers and market benchmarks"
+    description: str = (
+        "Compares one stock against industry and market figures you supply: its P/E "
+        "against "
+        "industry_data.pe_ratio_avg (above, below or equal, and the difference), plus "
+        "peer and "
+        "broad-market comparisons where stock_data carries them. stock_data and "
+        "industry_data are "
+        "JSON objects. It fetches no peer data itself, so without supplied industry "
+        "figures the "
+        "comparison is empty; prefer the peer set in the task's pre-collected data. "
+        "Unparseable input returns an 'error' key."
+    )
 
     def _run(self, stock_data: str, industry_data: str) -> Dict[str, Any]:
         """Perform comparison analysis. stock_data and industry_data are JSON

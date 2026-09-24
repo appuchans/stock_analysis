@@ -194,26 +194,26 @@ class TestEarningsWithinDaysRule:
         return fired, rules_mod
 
     def test_fires_when_earnings_are_inside_the_window(self, monkeypatch):
-        from datetime import date, timedelta
+        from datetime import datetime, timedelta, timezone
 
-        soon = (date.today() + timedelta(days=3)).isoformat()
+        soon = (datetime.now(timezone.utc).date() + timedelta(days=3)).isoformat()
         fired, rules_mod = self._patch(monkeypatch, self._rule(threshold=7), soon)
         rules_mod.evaluate_calendar_rules_for_symbol("AAPL")
         assert len(fired) == 1
         assert "3 day" in fired[0]
 
     def test_does_not_fire_when_earnings_are_far_off(self, monkeypatch):
-        from datetime import date, timedelta
+        from datetime import datetime, timedelta, timezone
 
-        far = (date.today() + timedelta(days=40)).isoformat()
+        far = (datetime.now(timezone.utc).date() + timedelta(days=40)).isoformat()
         fired, rules_mod = self._patch(monkeypatch, self._rule(threshold=7), far)
         rules_mod.evaluate_calendar_rules_for_symbol("AAPL")
         assert fired == []
 
     def test_does_not_fire_for_a_past_earnings_date(self, monkeypatch):
-        from datetime import date, timedelta
+        from datetime import datetime, timedelta, timezone
 
-        past = (date.today() - timedelta(days=2)).isoformat()
+        past = (datetime.now(timezone.utc).date() - timedelta(days=2)).isoformat()
         fired, rules_mod = self._patch(monkeypatch, self._rule(), past)
         rules_mod.evaluate_calendar_rules_for_symbol("AAPL")
         assert fired == []
@@ -227,9 +227,9 @@ class TestEarningsWithinDaysRule:
     def test_daily_cooldown_floor_prevents_realerting_every_poll(self, monkeypatch):
         """The window stays satisfied for days; a 0-minute cooldown would
         otherwise re-alert on every 15-minute poll."""
-        from datetime import date, datetime, timedelta, timezone
+        from datetime import datetime, timedelta, timezone
 
-        soon = (date.today() + timedelta(days=3)).isoformat()
+        soon = (datetime.now(timezone.utc).date() + timedelta(days=3)).isoformat()
         just_fired = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         fired, rules_mod = self._patch(
             monkeypatch, self._rule(last_fired=just_fired), soon

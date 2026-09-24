@@ -4,9 +4,24 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _clear_tool_caches():
-    """The tool caches (memory + disk) must not leak results between tests."""
+def _isolate_runtime_state(monkeypatch, tmp_path):
+    """Keep tests independent of developer reports, data, and live Redis.
+
+    Tests that exercise Redis explicitly replace ``_get_redis`` with their own
+    mock.  Every other test uses the temporary memory/disk fallback so a Redis
+    service running on the developer machine cannot serve stale application
+    data into the suite.
+    """
+    from src.stock_analysis.config.settings import settings
     from src.stock_analysis.tools import cache
+    from src.stock_analysis.web import db
+
+    monkeypatch.setattr(settings, "report_output_dir", str(tmp_path / "reports"))
+    monkeypatch.setattr(settings, "data_output_dir", str(tmp_path / "data"))
+    # A fresh data dir means a fresh app.db; let db create its tables there.
+    monkeypatch.setattr(db, "_initialized", False)
+    monkeypatch.setattr(cache, "_get_redis", lambda: None)
+    cache.reset_disk_dir()
 
     def _wipe():
         cache._memory_cache.clear()
@@ -24,6 +39,7 @@ def _clear_tool_caches():
     _wipe()
     yield
     _wipe()
+    cache.reset_disk_dir()
 
 
 @pytest.fixture(autouse=True)

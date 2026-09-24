@@ -59,6 +59,8 @@ class Job:
     depth: str
     asset_type: str
     use_cache: bool
+    llm_provider: Optional[str] = None
+    model: Optional[str] = None
     # True = reuse specialist stage outputs already on disk instead of paying
     # for them again. Set when refreshing a run that finished incomplete.
     resume: bool = False
@@ -138,12 +140,14 @@ class JobManager:
         use_cache: bool,
         origin: str = "manual",
         resume: bool = False,
+        llm_provider: Optional[str] = None,
+        model: Optional[str] = None,
     ) -> Job:
         """Enqueue an analysis. If an equal-or-deeper run for the same symbol is
         already queued/running, return that job instead (coalescing) so repeated
         or scheduled submissions never pile up duplicate work."""
         with self._lock:
-            existing = self._find_coalescible(symbol, depth)
+            existing = self._find_coalescible(symbol, depth, llm_provider, model)
             if existing is not None:
                 return existing
             job = Job(
@@ -152,6 +156,8 @@ class JobManager:
                 depth=depth,
                 asset_type=asset_type,
                 use_cache=use_cache,
+                llm_provider=llm_provider,
+                model=model,
                 resume=resume,
                 origin=origin,
             )
@@ -161,7 +167,13 @@ class JobManager:
         self._executor.submit(self._run_wrapper, job.id)
         return job
 
-    def _find_coalescible(self, symbol: str, depth: str) -> Optional[Job]:
+    def _find_coalescible(
+        self,
+        symbol: str,
+        depth: str,
+        llm_provider: Optional[str],
+        model: Optional[str],
+    ) -> Optional[Job]:
         """A queued/running job for *symbol* whose depth covers *depth* (caller
         must hold the lock)."""
         want = _DEPTH_RANK.get(depth, 1)
@@ -172,6 +184,8 @@ class JobManager:
                 and job.symbol == symbol
                 and job.state in _ACTIVE_STATES
                 and _DEPTH_RANK.get(job.depth, 1) >= want
+                and job.llm_provider == llm_provider
+                and job.model == model
             ):
                 return job
         return None
@@ -334,6 +348,8 @@ class JobManager:
                     exc,
                 )
             app = StockAnalysisApp(
+                llm_provider=job.llm_provider,
+                model=job.model,
                 depth=job.depth,
                 asset_type=job.asset_type,
                 use_data_cache=job.use_cache,

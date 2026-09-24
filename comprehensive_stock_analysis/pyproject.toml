@@ -26,7 +26,7 @@ classifiers = [
 
 dependencies = [
     # Agent framework
-    "crewai==1.14.5",  # 1.14.6+ needs lancedb>=0.29 (no build for this platform)
+    "crewai[anthropic,google-genai]==1.14.5",  # 1.14.6+ needs lancedb>=0.29 (no build for this platform)
     "crewai-tools>=0.8.0",
     # LLM providers
     "openai>=1.0.0",

@@ -54,11 +54,39 @@ class LLMGlobalConfig(BaseModel):
     max_retries: int = 3
 
 
+# Canonical agent → category mapping. Mirrored in llm_config.yaml's
+# `agent_categories` block (the yaml wins when present); kept here so
+# resolution works for config files predating the category tier.
+_DEFAULT_AGENT_CATEGORIES: Dict[str, str] = {
+    "data_collector": "extraction",
+    "technical_analyst": "quantitative",
+    "fundamental_analyst": "quantitative",
+    "risk_analyst": "quantitative",
+    "sentiment_analyst": "narrative",
+    "market_analyst": "narrative",
+    "industry_analyst": "narrative",
+    "competitor_analyst": "narrative",
+    "economic_analyst": "narrative",
+    "investment_advisor": "synthesis",
+    "report_generator": "synthesis",
+}
+
+
 class LLMConfig(BaseModel):
     """Root LLM configuration loaded from llm_config.yaml."""
 
     global_defaults: LLMGlobalConfig = Field(
         default_factory=LLMGlobalConfig, alias="global"
+    )
+    # Category tier: named model buckets (e.g. extraction, quantitative,
+    # narrative, synthesis) so a whole class of agents can be switched at
+    # once. Keys per category: provider, model, temperature, max_tokens,
+    # timeout, max_retries — all optional, unset keys inherit.
+    categories: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    # Agent → category mapping. Falls back to _DEFAULT_AGENT_CATEGORIES when
+    # the yaml omits it, so old config files keep working.
+    agent_categories: Dict[str, str] = Field(
+        default_factory=lambda: dict(_DEFAULT_AGENT_CATEGORIES)
     )
     agents: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     provider_prefixes: Dict[str, str] = Field(
@@ -77,6 +105,7 @@ class LLMConfig(BaseModel):
             "deepseek": "deepseek/",
             "openrouter": "openrouter/",
             "xai": "xai/",
+            "zai": "zai/",
             "perplexity": "perplexity/",
             "fireworks_ai": "fireworks_ai/",
             "together_ai": "together_ai/",

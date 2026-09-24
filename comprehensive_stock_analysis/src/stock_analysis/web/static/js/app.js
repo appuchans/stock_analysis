@@ -9,12 +9,14 @@ import { loadPortfolio } from "./portfolio.js";
 import { loadCompare } from "./compare.js";
 import { loadAlerts } from "./alerts.js";
 import { loadAutomation } from "./automation.js";
+import { initSettings } from "./settings.js";
 
 const VIEWS = {
   new: "view-new", report: "view-report", history: "view-history",
   scorecard: "view-scorecard",
   watchlist: "view-watchlist", portfolio: "view-portfolio", compare: "view-compare",
   alerts: "view-alerts", automation: "view-automation",
+  settings: "view-settings",
 };
 
 function showView(name) {
@@ -34,6 +36,7 @@ function route() {
   else if (view === "compare") { showView("compare"); loadCompare(); }
   else if (view === "alerts") { showView("alerts"); loadAlerts(); }
   else if (view === "automation") { showView("automation"); loadAutomation(); }
+  else if (view === "settings") { showView("settings"); }
   else showView("new");
 }
 
@@ -80,5 +83,6 @@ window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", () => {
   initChrome();
   initAnalyzeForm();
+  initSettings();
   route();
 });

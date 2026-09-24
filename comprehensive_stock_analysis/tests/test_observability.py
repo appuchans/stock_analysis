@@ -81,6 +81,27 @@ def test_preflight_ollama_needs_no_key(monkeypatch):
     assert preflight_llm_credentials(provider_override="ollama") == []
 
 
+def test_openrouter_model_ids_get_the_openrouter_prefix(monkeypatch):
+    from src.stock_analysis.agents import base_agent
+
+    monkeypatch.setattr(base_agent, "LLM", lambda **kwargs: kwargs)
+    monkeypatch.setattr(base_agent, "_with_llm_param_fallbacks", lambda llm: llm)
+    monkeypatch.setattr(base_agent, "_with_budget", lambda llm: llm)
+    agent = object.__new__(base_agent.BaseAgent)
+    agent._resolved = {
+        "provider": "openrouter",
+        "model": "z.ai/glm-5.3.flash",
+        "temperature": None,
+        "max_tokens": 4000,
+        "timeout": 120,
+        "max_retries": 1,
+    }
+
+    llm = agent._build_llm()
+
+    assert llm["model"] == "openrouter/z-ai/glm-5.3.flash"
+
+
 # ── shared HTTP session ────────────────────────────────────────────────────────
 
 

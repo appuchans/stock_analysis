@@ -119,14 +119,50 @@ def _step_callback(step_output: Any) -> None:
     _logger.info("[flow-step] %s", str(step_output)[:200])
 
 
+_AGENT_CLASS_NAMES: Dict[type, str] = {
+    DataCollectorAgent: "data_collector",
+    TechnicalAnalystAgent: "technical_analyst",
+    FundamentalAnalystAgent: "fundamental_analyst",
+    RiskAnalystAgent: "risk_analyst",
+    SentimentAnalystAgent: "sentiment_analyst",
+    MarketAnalystAgent: "market_analyst",
+    IndustryAnalystAgent: "industry_analyst",
+    CompetitorAnalystAgent: "competitor_analyst",
+    EconomicAnalystAgent: "economic_analyst",
+    InvestmentAdvisorAgent: "investment_advisor",
+    ReportGeneratorAgent: "report_generator",
+}
+
+
+def _category_for_agent_class(cls: type) -> Optional[str]:
+    """Workload category for an agent class, via llm_config's mapping.
+
+    Resolved live (not hardcoded) so editing `agent_categories` in
+    llm_config.yaml re-buckets accounting with no code change. Unknown
+    classes yield None and are counted in the run total only.
+    """
+    name = _AGENT_CLASS_NAMES.get(cls)
+    if not name:
+        return None
+    try:
+        return config_loader.load_llm_config().agent_categories.get(name)
+    except Exception:
+        return None
+
+
 def _run_crew(
-    agents_list: list, tasks_list: list, inputs: dict, log_suffix: str = ""
+    agents_list: list,
+    tasks_list: list,
+    inputs: dict,
+    log_suffix: str = "",
+    category: Optional[str] = None,
 ) -> Any:
     """Helper: build and kick off a mini crew, returning the raw result.
 
     `log_suffix` (typically the stage key) routes concurrent stage crews to
     their own log file, avoiding interleaved writes to the shared crew log
-    when several stages run at once.
+    when several stages run at once. `category` attributes the crew's tokens
+    and requests to a workload class for per-category cost reporting.
     """
     log_file = (
         f"{settings.crew_log_file}.{log_suffix}"
@@ -147,7 +183,7 @@ def _run_crew(
     try:
         from ..token_meter import add as _add_tokens
 
-        _add_tokens(getattr(c, "usage_metrics", None))
+        _add_tokens(getattr(c, "usage_metrics", None), category)
     except Exception:
         pass
     return result
@@ -642,7 +678,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             expected_output=self._expected_for("collect_data"),
             agent=agent,
         )
-        result = _run_crew([agent], [t], self._inputs())
+        result = _run_crew([agent], [t], self._inputs(), category="extraction")
         raw = _result_str(result)
         self.state.data = {"raw": raw}
         _write_report_file(
@@ -868,6 +904,31 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             "technical_summary": technical_summary,
         }
 
+        # The one share count for this fetch, assigned inside the chart block
+        # below and finalised against the settled close in the snapshot block
+        # after it. Hoisted so the snapshot can reference it even when the
+        # chart block exits early.
+        subject_shares_m: Optional[float] = None
+
+        # The settled close, resolved ONCE up front so every division below —
+        # key_stats price, the share-count fallback, market cap, analyst
+        # upside — uses the same price. Previously the live quote fed the
+        # fallbacks while the snapshot carried the settled close: a PEGA
+        # artifact valued 164.4M shares (raw cap ÷ live $35.17) beside a
+        # $36.07 settled close implying 160.3M.
+        try:
+            from ..tools.providers import ROUTER as _ROUTER
+
+            _early_settled = _ROUTER.get_last_close(sym) or ys.last_settled_close(
+                ticker
+            )
+        except Exception as exc:
+            _logger.debug("settled close unavailable, using live quote: %s", exc)
+            _early_settled = {}
+        _early_px = (_early_settled or {}).get("price")
+        if not isinstance(_early_px, (int, float)):
+            _early_px = None
+
         # Chart data for the HTML report (1y weekly closes + quarterly revenue)
         try:
             hist = ticker.history(period="1y", interval="1wk")
@@ -995,7 +1056,12 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             md = (yf_result or {}).get("market_data") or {}
             fd = (yf_result or {}).get("fundamental_data") or {}
             chart["key_stats"] = {
-                "current_price": _f(md.get("current_price")),
+                # Settled close when known — the snapshot block below used to
+                # overwrite this after the fact while market cap (and the
+                # share-count fallback) had already divided by the live quote.
+                "current_price": _f(
+                    _early_px if _early_px is not None else md.get("current_price")
+                ),
                 "market_cap": _f(md.get("market_cap")),
                 "pe_ratio": _f(fd.get("pe_ratio")),
                 "high_52w": _f(md.get("high_52w")),
@@ -1023,9 +1089,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             # (market_cap_b, current_price) pair, and every other dollar
             # figure in the file — cover market cap included — is built by
             # multiplying that share count back out against the settled
-            # close, so cover mcap / cover price is exactly the share count
-            # the valuation uses, by construction rather than by coincidence.
-            subject_shares_m = None
+            # close (finalised in the snapshot block below, where the settled
+            # price is known), so cover mcap / cover price is exactly the
+            # share count the valuation uses, by construction rather than by
+            # coincidence.
             if me.get("market_cap_b") and me.get("current_price"):
                 subject_shares_m = (
                     (me["market_cap_b"] * 1e9) / me["current_price"] / 1e6
@@ -1202,9 +1269,10 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         # inferring it from a bar's date against market hours. Alpaca does;
         # nothing else in the chain has the concept, so the yfinance-derived
         # fallback stays for every keyless install.
-        from ..tools.providers import ROUTER as _ROUTER
-
-        settled = _ROUTER.get_last_close(sym) or ys.last_settled_close(ticker)
+        # Reuses the up-front resolution: a second provider call here could
+        # return a different bar across a session boundary and re-split the
+        # prices this block exists to unify.
+        settled = _early_settled or {}
         px = settled.get("price")
         price_date = settled.get("date")
         basis = settled.get("basis")
@@ -1226,6 +1294,39 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
                 else None
             ),
         }
+        # Finalise the one share count against the settled close. The chart
+        # block above rebuilt key_stats.market_cap from these same shares but
+        # against the *live* quote (the settled overwrite happens below), so
+        # an IBM artifact carried a $217.5B cover cap alongside a 942.1M
+        # valuation share count — 914.7M implied. Rebuilding here, where the
+        # settled price is known, makes cover mcap / cover price exactly the
+        # valuation share count. The snapshot carries both so renderers and
+        # reviewers never re-derive them from different inputs.
+        #
+        # When the peers subject row is missing there is no subject_shares_m
+        # and the forecast fell back to raw cap ÷ live price (a PEGA artifact
+        # valued 164.4M shares beside a close implying 160.3M). The same
+        # fallback is recomputed here against the settled close, so the
+        # snapshot still freezes exactly what the cover implies.
+        final_shares_m = subject_shares_m
+        if not final_shares_m:
+            _mcap_now = ((bundle.get("chart") or {}).get("key_stats") or {}).get(
+                "market_cap"
+            )
+            if (
+                isinstance(_mcap_now, (int, float))
+                and isinstance(px, (int, float))
+                and px > 0
+            ):
+                final_shares_m = _mcap_now / px / 1e6
+        if final_shares_m and isinstance(px, (int, float)) and px > 0:
+            settled_px = round(px, 2)
+            snap_mcap = final_shares_m * 1e6 * settled_px
+            bundle["snapshot"]["shares_m"] = round(final_shares_m, 1)
+            bundle["snapshot"]["market_cap"] = snap_mcap
+            chart_snap = bundle.get("chart") or {}
+            if isinstance(chart_snap.get("key_stats"), dict):
+                chart_snap["key_stats"]["market_cap"] = snap_mcap
         # One price in the file, not two. key_stats.current_price carried the
         # live bar while the snapshot carried the settled close, so a single
         # report could show $232.67 in the header and compute upside off
@@ -1528,6 +1629,40 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
 
     # ── stage runner ───────────────────────────────────────────────────────────
 
+    # Markers that only ever appear when the model emitted machinery instead
+    # of analysis: tracebacks, provider error envelopes, HTTP mechanics.
+    # Kept tight — ordinary prose ("the company failed to meet guidance")
+    # must never trip them.
+    _STAGE_ERROR_MARKERS = (
+        "traceback (most recent call",
+        "error code:",
+        "status code",
+        "exception:",
+        "failed with status",
+    )
+
+    def _stage_problem(self, key: str, text: str) -> Optional[str]:
+        """Why a stage output is unusable, or None when it is acceptable.
+
+        Catches what the per-stage except cannot: a crew that *succeeded*
+        while producing nothing a reader could use — an empty answer, a stub
+        below the resumability floor, prose without sections, or leaked
+        machinery. Returning a reason (rather than raising) lets the caller
+        retry boundedly before recording the error. Instance method (not
+        classmethod): on this Flow subclass underscore attributes are
+        Pydantic private attributes and only resolve via the instance.
+        """
+        body = text or ""
+        if len(body) < self._MIN_RESUMABLE_CHARS:
+            return f"only {len(body)} chars (floor {self._MIN_RESUMABLE_CHARS})"
+        if "## " not in body:
+            return "no markdown sections"
+        lowered = body.lower()
+        for marker in self._STAGE_ERROR_MARKERS:
+            if marker in lowered:
+                return f"leaked machinery ({marker!r})"
+        return None
+
     def _run_stages(self, stages: List[Tuple[type, str, str]]) -> None:
         """Run independent analysis stages concurrently.
 
@@ -1544,18 +1679,53 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             if not stages:
                 return
 
+        # One retry for a stage that errored or produced an unusable
+        # document. Bounded at one: the per-run LLM budget is the backstop,
+        # but a retry loop here would spend it on a stage that keeps failing
+        # instead of letting the surviving stages complete.
+        _STAGE_MAX_ATTEMPTS = 2
+
         def _one(spec: Tuple[type, str, str]) -> Tuple[str, str]:
             cls, key, desc = spec
-            ag = self._make_agent(cls)
-            t = Task(
-                name=f"{key.replace('_', ' ').title()} Analysis",
-                description=self._with_data(desc),
-                expected_output=stage_expected,
-                agent=ag,
-                markdown=True,
-            )
-            stage_inputs = dict(inputs, analysis_key=key)
-            return key, _result_str(_run_crew([ag], [t], stage_inputs, log_suffix=key))
+            last_exc: Optional[Exception] = Exception(f"{key}: no attempt ran")
+            for attempt in range(1, _STAGE_MAX_ATTEMPTS + 1):
+                try:
+                    ag = self._make_agent(cls)
+                    t = Task(
+                        name=f"{key.replace('_', ' ').title()} Analysis",
+                        description=self._with_data(desc),
+                        expected_output=stage_expected,
+                        agent=ag,
+                        markdown=True,
+                    )
+                    stage_inputs = dict(inputs, analysis_key=key)
+                    text = _result_str(
+                        _run_crew(
+                            [ag],
+                            [t],
+                            stage_inputs,
+                            log_suffix=key,
+                            category=_category_for_agent_class(cls),
+                        )
+                    )
+                    problem = self._stage_problem(key, text)
+                    if problem is None:
+                        if attempt > 1:
+                            _logger.info(
+                                "Stage '%s' recovered on attempt %d", key, attempt
+                            )
+                        return key, text
+                    last_exc = Exception(f"{key}: rejected output ({problem})")
+                except Exception as exc:
+                    last_exc = exc
+                _logger.warning(
+                    "Stage '%s' attempt %d/%d failed: %s",
+                    key,
+                    attempt,
+                    _STAGE_MAX_ATTEMPTS,
+                    last_exc,
+                )
+            raise last_exc
 
         max_workers = max(1, min(len(stages), settings.max_workers))
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -1764,7 +1934,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
             historical_context=self._format_historical_context(),
         )
         try:
-            result = _run_crew([agent], [t], inputs)
+            result = _run_crew([agent], [t], inputs, category="synthesis")
             rec_text = _result_str(result)
         except Exception as exc:
             _logger.warning(
@@ -1833,7 +2003,7 @@ class StockAnalysisFlow(Flow[StockAnalysisState]):
         )
         report_inputs = dict(self._inputs(), analyses_summary=summary)
         try:
-            result = _run_crew([agent], [t], report_inputs)
+            result = _run_crew([agent], [t], report_inputs, category="synthesis")
             narrative = _strip_md_fences(_result_str(result))
         except Exception as exc:
             _logger.warning(

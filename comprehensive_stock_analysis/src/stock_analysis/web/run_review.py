@@ -136,6 +136,8 @@ def _check_chart_data(symbol: str, issues: List[Dict[str, str]]) -> None:
             )
         )
 
+    _check_snapshot_math(chart, issues)
+
     history = chart.get("price_history") or []
     if not history:
         issues.append(
@@ -147,6 +149,63 @@ def _check_chart_data(symbol: str, issues: List[Dict[str, str]]) -> None:
                 "warning",
                 "price_history_unusable",
                 "price_history has no numeric closes — sparkline will be blank",
+            )
+        )
+
+
+def _check_snapshot_math(chart: Dict[str, Any], issues: List[Dict[str, str]]) -> None:
+    """Cover price / cover cap / valuation shares must be one consistent triple.
+
+    An IBM artifact carried a $217.5B cover cap (built from shares × the live
+    quote) beside a $237.75 settled close and a 942.1M valuation share count —
+    914.7M implied. Each figure was defensible alone; together they published
+    two different share counts. Tolerance is 1%: below that is rounding, above
+    it is a second price source leaking back in.
+    """
+    snap = chart.get("snapshot") or {}
+    stats = chart.get("key_stats") or {}
+    price = snap.get("price") if _is_number(snap.get("price")) else None
+    ks_price = (
+        stats.get("current_price") if _is_number(stats.get("current_price")) else None
+    )
+    if price and ks_price and abs(price - ks_price) / price > 0.01:
+        issues.append(
+            _issue(
+                "warning",
+                "snapshot_price_mismatch",
+                f"snapshot price {price} disagrees with key_stats price "
+                f"{ks_price} — one of them is not the settled close",
+            )
+        )
+    shares = snap.get("shares_m") if _is_number(snap.get("shares_m")) else None
+    if shares and price:
+        implied_mcap = shares * 1e6 * price
+        for label, value in (
+            ("snapshot.market_cap", snap.get("market_cap")),
+            ("key_stats.market_cap", stats.get("market_cap")),
+        ):
+            if (
+                _is_number(value)
+                and abs(float(value) - implied_mcap) / implied_mcap > 0.01
+            ):
+                issues.append(
+                    _issue(
+                        "warning",
+                        "snapshot_market_cap_inconsistent",
+                        f"{label} {float(value):,.0f} is not shares "
+                        f"({shares:.1f}M) × price ({price}) — the cover "
+                        "implies a different share count than the valuation",
+                    )
+                )
+    fcast = chart.get("forecast_valuation") or {}
+    f_shares = fcast.get("shares_m") if _is_number(fcast.get("shares_m")) else None
+    if shares and f_shares and abs(f_shares - shares) / shares > 0.01:
+        issues.append(
+            _issue(
+                "warning",
+                "forecast_shares_drifted",
+                f"forecast valued over {f_shares:.1f}M shares but the snapshot "
+                f"freezes {shares:.1f}M — per-share figures disagree",
             )
         )
 
@@ -237,6 +296,24 @@ def _check_target_against_model(
             )
         )
 
+    # The exit-multiple cross-check is a second method, not a second target —
+    # but past 10% apart it reads as one, and the memo must bridge them.
+    # Mirrors ReportModel._CROSSCHECK_GAP_PCT (one threshold, two enforcers).
+    fcast = (chart.get("forecast_valuation") or {}).get("value_per_share")
+    if _is_number(target) and _is_number(fcast) and float(target):
+        gap = (float(fcast) - float(target)) / float(target)
+        if abs(gap) > 0.10:
+            issues.append(
+                _issue(
+                    "warning",
+                    "target_crosscheck_diverges",
+                    f"target {float(target):.2f} differs from the forecast "
+                    f"exit-multiple cross-check {float(fcast):.2f} by "
+                    f"{gap:+.1%} — the note must state which one the target "
+                    "follows and why",
+                )
+            )
+
     price = (chart.get("key_stats") or {}).get("current_price")
     rating = str(rec.get("recommendation") or "").upper()
     if _is_number(price) and hi < float(price) and "BUY" in rating:
@@ -319,6 +396,21 @@ def _check_recommendation(
     if stop is not None and not _is_number(stop):
         issues.append(
             _issue("warning", "stop_loss_not_numeric", f"stop_loss is {stop!r}")
+        )
+    elif _is_number(stop) and not str(rec.get("stop_loss_basis") or "").strip():
+        # House rule (see ReportModel.stop_loss_display): the renderers now
+        # suppress this from client documents, but its presence without a
+        # basis means the advisor is still emitting unjustified precision —
+        # worth a prompt-side look, not silent acceptance.
+        issues.append(
+            _issue(
+                "warning",
+                "stop_loss_without_basis",
+                f"stop_loss {float(stop):.2f} has no stop_loss_basis — "
+                "suppressed from client documents; give it a basis "
+                "(volatility band, thesis-break price, risk budget) or "
+                "stop emitting it",
+            )
         )
 
 

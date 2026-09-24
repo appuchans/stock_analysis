@@ -18,6 +18,8 @@ class AnalyzeRequest(BaseModel):
     depth: Literal["quick", "standard", "deep"] = "standard"
     asset_type: Literal["auto", "stock", "etf"] = "auto"
     use_cache: bool = True
+    llm_provider: Optional[str] = Field(None, max_length=64)
+    model: Optional[str] = Field(None, max_length=160)
     # Reuse specialist stage outputs already on disk and re-run only what is
     # missing. Set when refreshing a run that finished incomplete, so the user
     # does not pay again for the stages that already succeeded.
@@ -36,6 +38,14 @@ class AnalyzeRequest(BaseModel):
             raise ValueError("symbol must be 1–10 chars: letters, digits, '.', '-'")
         return v
 
+    @field_validator("llm_provider", "model", mode="before")
+    @classmethod
+    def _blank_to_none(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        value = str(v).strip()
+        return value or None
+
 
 class JobState(BaseModel):
     """Snapshot returned by GET /api/jobs/{id}."""
@@ -51,7 +61,8 @@ class JobState(BaseModel):
     activity: Optional[str] = None
     progress: float = 0.0
     queue_position: int = 0
-    token_usage: Dict[str, int] = Field(default_factory=dict)
+    # Totals are ints; by_category maps category → its own totals dict.
+    token_usage: Dict[str, Any] = Field(default_factory=dict)
     llm_calls: int = 0
     error: Optional[str] = None
     result_ready: bool = False

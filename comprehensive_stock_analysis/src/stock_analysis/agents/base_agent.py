@@ -36,7 +36,10 @@ _PROVIDER_API_KEY_ENV = {
     "fireworks_ai": "FIREWORKS_AI_API_KEY",
     "together_ai": "TOGETHERAI_API_KEY",
     "cerebras": "CEREBRAS_API_KEY",
+    "zai": "ZAI_API_KEY",
 }
+
+_PROVIDER_ALIASES = {"z.ai": "zai"}
 
 # Matches OpenAI's 400 when a reasoning model can't combine tools + reasoning_effort
 # on /v1/chat/completions, e.g. "Function tools with reasoning_effort are not
@@ -141,9 +144,10 @@ def preflight_llm_credentials(provider_override: Optional[str] = None) -> List[s
     """Return human-readable problems (empty list = OK) for the run's providers.
 
     Resolves every LLM provider the run could use — CLI override, else the env
-    global, else the llm_config global plus any per-agent provider overrides —
-    and checks each has its API key set. Lets a misconfigured run fail in ~1s
-    with a clear message instead of after a full data-collection pass.
+    global, else the llm_config global plus any category/per-agent provider
+    overrides — and checks each has its API key set. Lets a misconfigured run
+    fail in ~1s with a clear message instead of after a full data-collection
+    pass.
     """
     llm_cfg = config_loader.load_llm_config()
     providers = set()
@@ -151,6 +155,10 @@ def preflight_llm_credentials(provider_override: Optional[str] = None) -> List[s
         providers.add(provider_override)  # CLI override applies to every agent
     else:
         providers.add(settings.llm_provider or llm_cfg.global_defaults.provider)
+        # Category providers still take effect under an env global
+        for cat_cfg in llm_cfg.categories.values():
+            if isinstance(cat_cfg, dict) and cat_cfg.get("provider"):
+                providers.add(cat_cfg["provider"])
         # Per-agent provider overrides still take effect under an env global
         for agent_cfg in llm_cfg.agents.values():
             if isinstance(agent_cfg, dict) and agent_cfg.get("provider"):
@@ -192,7 +200,8 @@ class BaseAgent:
 
     Priority (highest wins):
       constructor args  >  agents.yaml llm_config  >  llm_config.yaml per-agent
-      >  env vars (settings)  >  llm_config.yaml global defaults
+      >  llm_config.yaml categories  >  env vars (settings)
+      >  llm_config.yaml global defaults
     """
 
     def __init__(
@@ -220,9 +229,10 @@ class BaseAgent:
         Resolution order (lowest → highest priority):
           1. llm_config.yaml global defaults
           2. env vars via settings (global deployment override)
-          3. llm_config.yaml per-agent overrides
-          4. agents.yaml llm_config block (per-agent fine-grained)
-          5. constructor args (programmatic override)
+          3. llm_config.yaml category for this agent's workload class
+          4. llm_config.yaml per-agent overrides
+          5. agents.yaml llm_config block (per-agent fine-grained)
+          6. constructor args (programmatic override)
         """
         llm_file_cfg = config_loader.load_llm_config()
         g = llm_file_cfg.global_defaults
@@ -251,7 +261,23 @@ class BaseAgent:
             resolved["temperature"] = settings.temperature
         resolved["max_tokens"] = settings.max_tokens
 
-        # 3. Apply llm_config.yaml per-agent overrides
+        # 3. Apply llm_config.yaml category for this agent's workload class
+        category = llm_file_cfg.agent_categories.get(self.agent_name)
+        resolved["category"] = category
+        if category:
+            cat_yaml = llm_file_cfg.categories.get(category) or {}
+            for key in (
+                "provider",
+                "model",
+                "temperature",
+                "max_tokens",
+                "timeout",
+                "max_retries",
+            ):
+                if cat_yaml.get(key) is not None:
+                    resolved[key] = cat_yaml[key]
+
+        # 4. Apply llm_config.yaml per-agent overrides
         agent_yaml = llm_file_cfg.agents.get(self.agent_name) or {}
         for key in (
             "provider",
@@ -264,7 +290,7 @@ class BaseAgent:
             if agent_yaml.get(key) is not None:
                 resolved[key] = agent_yaml[key]
 
-        # 4. Apply agents.yaml llm_config block (provider/model/temperature/max_tokens)
+        # 5. Apply agents.yaml llm_config block (provider/model/temperature/max_tokens)
         agent_block = self.config.llm_config or {}
         for key in (
             "provider",
@@ -277,7 +303,7 @@ class BaseAgent:
             if agent_block.get(key) is not None:
                 resolved[key] = agent_block[key]
 
-        # 5. Apply constructor args (highest priority)
+        # 6. Apply constructor args (highest priority)
         if self._init_provider is not None:
             resolved["provider"] = self._init_provider
         if self._init_model is not None:
@@ -297,8 +323,22 @@ class BaseAgent:
 
     def _build_llm(self) -> LLM:
         """Construct a crewai.LLM from the resolved config."""
-        provider = self._resolved["provider"]
-        model = self._resolved["model"]
+        provider = _PROVIDER_ALIASES.get(
+            str(self._resolved["provider"]).strip().lower(),
+            str(self._resolved["provider"]).strip().lower(),
+        )
+        model = str(self._resolved["model"]).strip()
+
+        # LiteLLM calls Z.AI ``zai`` when it is selected as the direct
+        # provider. OpenRouter keeps the upstream model ID inside its own
+        # provider prefix, so do not rewrite that ID in the OpenRouter case.
+        if provider == "zai" and model.lower().startswith("z.ai/"):
+            model = "zai/" + model.split("/", 1)[1]
+        if provider == "openrouter" and model.lower().startswith("z.ai/"):
+            model = "z-ai/" + model.split("/", 1)[1]
+        if provider == "openai" and model.lower().startswith("z.ai/"):
+            model = "zai/" + model.split("/", 1)[1]
+            provider = "zai"
 
         # Validate API key before attempting to construct the LLM
         if provider == "openai" and not settings.openai_api_key:
@@ -312,14 +352,14 @@ class BaseAgent:
                 "Set it in .env or as an environment variable."
             )
 
-        # Build the LiteLLM model string: "<prefix><model>"
+        # Build the LiteLLM model string: "<prefix><model>". A slash inside
+        # an OpenRouter model ID is not itself a LiteLLM provider prefix.
         llm_cfg = config_loader.load_llm_config()
         prefix = llm_cfg.provider_prefixes.get(provider, f"{provider}/")
-        # Avoid double-prefixing if caller already included the prefix
-        if "/" in model:
+        if model.lower().startswith(prefix.lower()):
             litellm_model = model
         else:
-            litellm_model = f"{prefix}{model}"
+            litellm_model = f"{prefix}{model.lstrip('/')}"
 
         # Newer OpenAI models (o1, o3, gpt-5, …) only accept max_completion_tokens.
         # The crewai native OpenAI class branches on which parameter is set.

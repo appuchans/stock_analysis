@@ -177,6 +177,24 @@ def _install_exit_logging(role: str) -> None:
     atexit.register(_on_exit)
 
 
+def ensure_utf8_stdio() -> None:
+    """Make stdout/stderr tolerate non-ASCII output on any console.
+
+    Windows consoles default to a legacy codepage (cp1252/cp437), so a plain
+    ``print("✓ …")`` raises ``UnicodeEncodeError``. Inside a worker thread that
+    exception is caught by the per-stage handler in ``flow_crew._run_stages``
+    and recorded as an analysis-stage failure, so a run that actually succeeded
+    reports as failed. Reconfiguring to UTF-8 with ``errors="replace"`` makes
+    every such print safe regardless of the console's codepage.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            # No reconfigure (e.g. pythonw, a wrapped stream) — nothing to do.
+            pass
+
+
 def attach_uvicorn_logging(level: Optional[int] = None) -> None:
     """Route uvicorn's loggers through the root handlers (our file handler).
 

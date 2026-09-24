@@ -52,6 +52,9 @@ def _setup_logging() -> None:
 
 
 def main() -> None:
+    # Legacy console codepages cannot encode the progress glyphs CrewAI prints;
+    # the same guard the CLI uses keeps the server's console output from raising.
+    diagnostics.ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description="Stock Analysis web UI")
     parser.add_argument("--host", default=settings.web_host)
     parser.add_argument("--port", type=int, default=settings.web_port)

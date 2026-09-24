@@ -115,6 +115,12 @@ class TestTargetBridge:
         assert "Target reconciliation" not in P.build_typst_source(model, {})
 
 
+def test_inline_text_strips_html_fragments():
+    assert P._inline("<p><strong>IBM</strong> leads &amp; grows.</p>") == (
+        "IBM leads & grows."
+    )
+
+
 class TestTheDocumentActuallyCompiles:
     """A render failure returns None, which is easy to miss and easy to ship.
 

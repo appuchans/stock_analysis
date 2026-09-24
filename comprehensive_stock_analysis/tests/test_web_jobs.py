@@ -26,9 +26,10 @@ class _FakeApp:
 
     result = None
     gate = None  # threading.Event the run waits on before returning
+    last_init = None
 
     def __init__(self, *a, **k):
-        pass
+        _FakeApp.last_init = k
 
     def analyze_stock(self, symbol, **k):
         if _FakeApp.gate is not None:
@@ -52,6 +53,7 @@ def _isolate_reports(monkeypatch, tmp_path):
 def _patch_app(monkeypatch):
     monkeypatch.setattr("src.stock_analysis.main.StockAnalysisApp", _FakeApp)
     _FakeApp.gate = None
+    _FakeApp.last_init = None
     _FakeApp.result = {
         "status": "completed",
         "report": "/tmp/x.html",
@@ -87,6 +89,21 @@ def test_completed_job_surfaces_result():
     assert job["token_usage"]["total_tokens"] == 1234
     assert job["llm_calls"] == 7
     assert job["recommendation"]["recommendation"] == "Buy"
+
+
+def test_llm_selection_reaches_analysis_app():
+    response = client.post(
+        "/api/analyze",
+        json={
+            "symbol": "AAPL",
+            "llm_provider": "anthropic",
+            "model": "claude-sonnet-4-6",
+        },
+    )
+    job = _poll(response.json()["job_id"])
+    assert job["state"] == "completed"
+    assert _FakeApp.last_init["llm_provider"] == "anthropic"
+    assert _FakeApp.last_init["model"] == "claude-sonnet-4-6"
 
 
 def test_failed_job_surfaces_error():
@@ -300,6 +317,7 @@ class TestWatchlistBatchAnalyze:
 
         monkeypatch.setattr(db_mod, "_db_path", lambda: tmp_path / "app.db")
         monkeypatch.setattr(db_mod, "_initialized", False)
+        db_mod.init_db()
 
     def test_empty_watchlist_400(self):
         resp = client.post("/api/watchlist/analyze", json={})

@@ -32,3 +32,12 @@ def test_invalid_depth_or_asset_422():
 
 def test_unknown_job_404():
     assert client.get("/api/jobs/does-not-exist").status_code == 404
+
+
+def test_llm_options_exposes_configured_defaults_and_providers():
+    response = client.get("/api/llm/options")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["default_provider"]
+    assert body["default_model"]
+    assert any(item["id"] == body["default_provider"] for item in body["providers"])
